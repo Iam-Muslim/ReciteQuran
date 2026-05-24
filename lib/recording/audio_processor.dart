@@ -27,13 +27,13 @@ class AudioProcessor {
 
   // Emit a dynamic snapshot of the phrase every 250ms for responsive real-time UI
   // (was 200ms — reduced to cut inference frequency by 20%, lowering CPU heat)
-  static const int expandStepBytes = (bytesPerSec * 250) ~/ 1000;
+  static const int expandStepBytes = (bytesPerSec * 500) ~/ 1000;
 
-  static final int maxBufferBytes = (bytesPerSec * 2.5).toInt();
+  // Updated based on streaming-asr experiment which showed 2-3s chunks are optimal
+  // for Arabic context, significantly improving accuracy over 1.0s or 1.5s chunks.
+  static final int maxBufferBytes = (bytesPerSec * 3.5).toInt();
   // Non-final chunks use a sliding window to prevent CTC hallucination
-  // (was 1.5s — reduced to 1.0s so each inference is ~33% faster)
-  //static const int slidingWindowBytes = bytesPerSec; // 1.0 second
-  static const int slidingWindowBytes = bytesPerSec * 3 ~/ 2; // 1.5 seconds
+  static const int slidingWindowBytes = bytesPerSec * 2; // 2.0 seconds
 
   Uint8List _frameBuffer = Uint8List(0);
   final List<Uint8List> _speechChunks = [];
@@ -70,18 +70,24 @@ class AudioProcessor {
     );
 
     _subscription = recordStream.listen((Uint8List rawData) {
+      Uint8List allBytes;
       if (_frameBuffer.isEmpty) {
-        _frameBuffer = rawData;
+        allBytes = rawData;
       } else {
-        final next = Uint8List(_frameBuffer.length + rawData.length);
-        next.setAll(0, _frameBuffer);
-        next.setAll(_frameBuffer.length, rawData);
-        _frameBuffer = next;
+        allBytes = Uint8List(_frameBuffer.length + rawData.length);
+        allBytes.setAll(0, _frameBuffer);
+        allBytes.setAll(_frameBuffer.length, rawData);
       }
 
-      while (_frameBuffer.length >= frameBytes) {
-        final frame = _frameBuffer.sublist(0, frameBytes);
-        _frameBuffer = _frameBuffer.sublist(frameBytes);
+      int offset = 0;
+      while (allBytes.length - offset >= frameBytes) {
+        final frame = Uint8List.view(
+          allBytes.buffer,
+          allBytes.offsetInBytes + offset,
+          frameBytes,
+        );
+        offset += frameBytes;
+        
         double rms = _calculateRms(frame);
 
         if (!_isCalibrated) {
@@ -105,7 +111,7 @@ class AudioProcessor {
         }
 
         if (_isSpeaking) {
-          _speechChunks.add(frame);
+          _speechChunks.add(Uint8List.fromList(frame));
           _speechLength += frame.length;
 
           while (_speechLength > maxBufferBytes) {
@@ -153,10 +159,10 @@ class AudioProcessor {
           if (silenceTimeout) {
             if (_speechLength > 0) {
               Uint8List all = Uint8List(_speechLength);
-              int offset = 0;
+              int innerOffset = 0;
               for (final chunk in _speechChunks) {
-                all.setAll(offset, chunk);
-                offset += chunk.length;
+                all.setAll(innerOffset, chunk);
+                innerOffset += chunk.length;
               }
               onChunk(all, true);
             }
@@ -167,6 +173,13 @@ class AudioProcessor {
             _lastEmitBytes = 0;
           }
         }
+      }
+      
+      // Retain the remaining bytes that didn't fit into a frame
+      if (offset < allBytes.length) {
+        _frameBuffer = Uint8List.fromList(Uint8List.view(allBytes.buffer, allBytes.offsetInBytes + offset));
+      } else {
+        _frameBuffer = Uint8List(0);
       }
     });
   }

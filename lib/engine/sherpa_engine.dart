@@ -160,7 +160,12 @@ class SherpaEngine {
     });
 
     if (_isBusy) {
-      _pendingMessage = msg; // Queue the chunk instead of dropping it
+      if (isFinal) {
+        _pendingMessage = msg; // Queue the final chunk so it isn't dropped
+      }
+      // Drop intermediate chunks if the engine is busy. This provides a critical
+      // relief valve for the CPU, preventing thermal throttling death spirals 
+      // where inference takes longer than the chunk emission rate.
       return;
     }
 
@@ -246,8 +251,8 @@ class SherpaEngine {
             audio[i] = (sample * softwareGain).clamp(-1.0, 1.0);
           }
 
-          // INCREASED to 1 full second to prevent dropping trailing words
-          final int padding = isFinal ? 16000 : 0;
+          // INCREASED to  quarter second to prevent dropping trailing words
+          final int padding = isFinal ? 4000 : 0;
           final Float32List padded = Float32List(audio.length + padding);
           padded.setAll(0, audio);
 
