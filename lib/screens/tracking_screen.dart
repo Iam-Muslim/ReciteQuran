@@ -42,11 +42,6 @@ class _TrackingScreenState extends State<TrackingScreen>
   Timer? _autoScrollTimer;
   Ticker? _scrollTicker;
 
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 950),
-  )..repeat(reverse: true);
-
   @override
   void initState() {
     super.initState();
@@ -58,7 +53,6 @@ class _TrackingScreenState extends State<TrackingScreen>
   void dispose() {
     widget.controller.removeListener(_onControllerUpdate);
     _scroll.dispose();
-    _pulse.dispose();
     _scrollTicker?.dispose();
 
     // SAFETY CATCH: Force release the wakelock if screen is destroyed mid-session
@@ -142,8 +136,10 @@ class _TrackingScreenState extends State<TrackingScreen>
           Navigator.pop(context);
           await widget.controller.setTargetSurah(n);
           widget.onClearBuffer();
-          _keys.clear();
-          _lastAyah = null;
+          setState(() {
+            _keys.clear();
+            _lastAyah = null;
+          });
           Future.delayed(const Duration(milliseconds: 100), () {
             if (_scroll.hasClients) {
               _scroll.jumpTo(0);
@@ -167,12 +163,6 @@ class _TrackingScreenState extends State<TrackingScreen>
       listenable: app,
       builder: (_, __) {
         final c = app.colors;
-
-        final allVerses = widget.controller.repository.getSurah(
-          widget.controller.targetSurah,
-        );
-
-        final displayVerses = allVerses;
 
         return Directionality(
           textDirection: TextDirection.rtl,
@@ -204,82 +194,83 @@ class _TrackingScreenState extends State<TrackingScreen>
                           alignment: Alignment.topCenter,
                           child: Container(
                             key: const ValueKey('header'),
-                          margin: EdgeInsets.only(
-                            top: top + 8,
-                            left: 24,
-                            right: 24,
-                            bottom: 4,
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 8,
-                            horizontal: 16,
-                          ),
-                          decoration: BoxDecoration(
-                            color: c.surface.withValues(alpha: 0.8),
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.1),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                            border: Border.all(
-                              color: c.border.withValues(alpha: 0.3),
+                            margin: EdgeInsets.only(
+                              top: top + 8,
+                              left: 24,
+                              right: 24,
+                              bottom: 4,
                             ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              GestureDetector(
-                                onTap: _showSurahPicker,
-                                behavior: HitTestBehavior.opaque,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    ListenableBuilder(
-                                      listenable: widget.controller,
-                                      builder: (context, _) {
-                                        final displayVerses = widget
-                                            .controller
-                                            .repository
-                                            .getSurah(
-                                              widget.controller.targetSurah,
-                                            );
-                                        return Text(
-                                          app.isArabic
-                                              ? "${displayVerses.first.surahName} - ${displayVerses.first.surahNameEn}"
-                                              : "${displayVerses.first.surahNameEn} - ${displayVerses.first.surahName}",
-                                          style: TextStyle(
-                                            color: c.gold,
-                                            fontFamily: 'ScheherazadeNew-Bold',
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Icon(
-                                      Icons.keyboard_arrow_down_rounded,
-                                      color: c.muted,
-                                      size: 16,
-                                    ),
-                                  ],
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 8,
+                              horizontal: 16,
+                            ),
+                            decoration: BoxDecoration(
+                              color: c.surface.withValues(alpha: 0.8),
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.1),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
                                 ),
+                              ],
+                              border: Border.all(
+                                color: c.border.withValues(alpha: 0.3),
                               ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                GestureDetector(
+                                  onTap: _showSurahPicker,
+                                  behavior: HitTestBehavior.opaque,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      ListenableBuilder(
+                                        listenable: widget.controller,
+                                        builder: (context, _) {
+                                          final displayVerses = widget
+                                              .controller
+                                              .repository
+                                              .getSurah(
+                                                widget.controller.targetSurah,
+                                              );
+                                          return Text(
+                                            app.isArabic
+                                                ? "${displayVerses.first.surahName} - ${displayVerses.first.surahNameEn}"
+                                                : "${displayVerses.first.surahNameEn} - ${displayVerses.first.surahName}",
+                                            style: TextStyle(
+                                              color: c.gold,
+                                              fontFamily:
+                                                  'ScheherazadeNew-Bold',
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        color: c.muted,
+                                        size: 16,
+                                      ),
+                                    ],
+                                  ),
+                                ),
 
-                              // Settings Button
-                              const SizedBox(width: 16),
-                              GestureDetector(
-                                onTap: _showSettingsDialog,
-                                behavior: HitTestBehavior.opaque,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(4.0),
-                                  child: Icon(
-                                    Icons.settings_rounded,
-                                    color: c.gold.withValues(alpha: 0.8),
+                                // Settings Button
+                                const SizedBox(width: 16),
+                                GestureDetector(
+                                  onTap: _showSettingsDialog,
+                                  behavior: HitTestBehavior.opaque,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(4.0),
+                                    child: Icon(
+                                      Icons.settings_rounded,
+                                      color: c.gold.withValues(alpha: 0.8),
                                       size: 18,
                                     ),
                                   ),
@@ -292,9 +283,8 @@ class _TrackingScreenState extends State<TrackingScreen>
                 ),
                 // ── Main Recitation List ──────────────────────────────────────────
                 Expanded(
-                  child: ListenableBuilder(
-                    listenable: widget.controller,
-                    builder: (context, _) {
+                  child: Builder(
+                    builder: (context) {
                       final displayVerses = widget.controller.repository
                           .getSurah(widget.controller.targetSurah);
                       return ListView.builder(
@@ -324,12 +314,14 @@ class _TrackingScreenState extends State<TrackingScreen>
                 SafeArea(
                   top: false,
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     child: BottomActionBar(
                       isRecording: widget.isRecording,
                       isLoadingEngine: widget.isLoadingEngine,
                       isAutoScrolling: _isAutoScrolling,
-                      pulse: _pulse,
                       c: c,
                       onMic: widget.onToggleRecord,
                       onToggleAutoScroll: _toggleAutoScroll,

@@ -92,7 +92,7 @@ class SherpaEngine {
   Future<void> initialize() {
     if (_isInitialized) return Future.value();
     if (_initFuture != null) return _initFuture!;
-    
+
     _initFuture = _doInitialize();
     return _initFuture!;
   }

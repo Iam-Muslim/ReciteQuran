@@ -5,7 +5,6 @@ class BottomActionBar extends StatefulWidget {
   final bool isRecording;
   final bool isLoadingEngine;
   final bool isAutoScrolling;
-  final AnimationController pulse;
   final ThemeColors c;
   final VoidCallback onMic;
   final VoidCallback onToggleAutoScroll;
@@ -16,7 +15,6 @@ class BottomActionBar extends StatefulWidget {
     required this.isRecording,
     required this.isLoadingEngine,
     required this.isAutoScrolling,
-    required this.pulse,
     required this.c,
     required this.onMic,
     required this.onToggleAutoScroll,
