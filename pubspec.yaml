@@ -1,0 +1,50 @@
+name: the_great_quran
+description: "The Great Quran — Real-time recitation tracker"
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  package_info_plus: ^10.1.0
+  path_provider: ^2.1.5
+  permission_handler: ^12.0.1
+  record: ^6.2.0
+  shared_preferences: ^2.2.0
+  sherpa_onnx: ^1.13.1
+  wakelock_plus: ^1.6.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/model/fastconformer_ar_ctc_q8.onnx
+    - assets/model/quran.json
+    - assets/model/tokens.txt
+    - assets/icon/app_icon.png
+
+  fonts:
+    - family: ScheherazadeNew
+      fonts:
+        - asset: assets/fonts/ScheherazadeNew-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/ScheherazadeNew-Meduim.ttf
+          weight: 500
+        - asset: assets/fonts/ScheherazadeNew-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/ScheherazadeNew-Bold.ttf
+          weight: 700
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
