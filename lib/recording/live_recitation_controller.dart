@@ -149,11 +149,13 @@ class LiveRecitationController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _clearTrackingState() {
+  void _clearTrackingState({bool preservePrevWords = false}) {
     _lastCommittedWordIdx = -1;
     _cachedExpectedNorm = null;
     _cachedVerseAyah = null;
-    _prevSpokenWords = [];
+    if (!preservePrevWords) {
+      _prevSpokenWords = [];
+    }
   }
 
   void _onResult(TranscriptionResult result) {
@@ -212,6 +214,8 @@ class LiveRecitationController extends ChangeNotifier {
         spokenWords[commonPrefix] == _prevSpokenWords[commonPrefix]) {
       commonPrefix++;
     }
+    // Save reference before overwriting (for stale word detection in Pass 2)
+    final List<String> prevCycleWords = _prevSpokenWords;
     _prevSpokenWords = List<String>.from(spokenWords);
 
     // If the transcript is identical to the previous one, nothing new.
@@ -228,6 +232,15 @@ class LiveRecitationController extends ChangeNotifier {
     int targetIndex = math.max(0, _lastCommittedWordIdx + 1);
     bool anyProgress = false;
 
+    // For lookahead > 1: build a set of words from the previous cycle's
+    // transcript. Words that already existed there are likely residual from
+    // the sliding window (stale audio re-decoded by CTC). They must NOT
+    // trigger lookahead jumps, which would falsely skip/red-mark words.
+    final Set<String>? staleWordsSet =
+        (maxLookahead > 1 && prevCycleWords.isNotEmpty)
+            ? prevCycleWords.toSet()
+            : null;
+
     // Forward-only greedy alignment (reference: _align_position in server.py):
     // Scan NEW spoken words left-to-right and match each to the earliest
     // available expected word. _lastCommittedWordIdx is monotonic — it
@@ -238,20 +251,62 @@ class LiveRecitationController extends ChangeNotifier {
       int foundAt = -1;
       int foundSpokenAt = -1;
 
-      for (int i = spokenPtr; i < spokenWords.length; i++) {
-        final String spoken = spokenWords[i];
-        if (spoken.isEmpty) continue;
-
-        for (int j = targetIndex; j < limit; j++) {
-          double threshold = (j == targetIndex) ? 0.70 : 0.85;
-          if (_calculateMatchScore(spoken, _cachedExpectedNorm![j]) >=
-              threshold) {
-            foundAt = j;
+      // ── Lookahead > 1 fix: two-pass matching ──────────────────────────
+      // Pass 1: Try to match the current expected word ONLY (no jumping).
+      //         This prevents the highlight from skipping ahead to a
+      //         better-scoring lookahead word when reciting fast.
+      // Pass 2: If pass 1 fails, expand search to lookahead positions.
+      // When lookahead == 1, limit == targetIndex + 1, so both passes
+      // collapse into the original single-pass behavior (no change).
+      if (maxLookahead > 1) {
+        // Pass 1: current expected word only
+        for (int i = spokenPtr; i < spokenWords.length; i++) {
+          final String spoken = spokenWords[i];
+          if (spoken.isEmpty) continue;
+          if (_calculateMatchScore(spoken, _cachedExpectedNorm![targetIndex]) >=
+              0.70) {
+            foundAt = targetIndex;
             foundSpokenAt = i;
             break;
           }
         }
-        if (foundAt != -1) break;
+        // Pass 2: try lookahead positions (skip targetIndex, already tried)
+        if (foundAt == -1) {
+          for (int i = spokenPtr; i < spokenWords.length; i++) {
+            final String spoken = spokenWords[i];
+            if (spoken.isEmpty) continue;
+            // Skip stale words: if this word existed in the previous
+            // cycle's transcript, it's residual from the sliding window
+            // and must not trigger a lookahead jump.
+            if (staleWordsSet!.contains(spoken)) continue;
+            for (int j = targetIndex + 1; j < limit; j++) {
+              if (_calculateMatchScore(spoken, _cachedExpectedNorm![j]) >=
+                  0.85) {
+                foundAt = j;
+                foundSpokenAt = i;
+                break;
+              }
+            }
+            if (foundAt != -1) break;
+          }
+        }
+      } else {
+        // Original single-pass behavior for lookahead == 1
+        for (int i = spokenPtr; i < spokenWords.length; i++) {
+          final String spoken = spokenWords[i];
+          if (spoken.isEmpty) continue;
+
+          for (int j = targetIndex; j < limit; j++) {
+            double threshold = (j == targetIndex) ? 0.70 : 0.85;
+            if (_calculateMatchScore(spoken, _cachedExpectedNorm![j]) >=
+                threshold) {
+              foundAt = j;
+              foundSpokenAt = i;
+              break;
+            }
+          }
+          if (foundAt != -1) break;
+        }
       }
 
       if (foundAt == -1) break;
@@ -354,7 +409,15 @@ class LiveRecitationController extends ChangeNotifier {
 
     if (next != null) {
       _currentMatch = VerseMatch(verse: next, score: 1.0);
-      _clearTrackingState();
+      // Bug 3 fix: When lookahead > 1 and reciting fast, the sliding
+      // window still contains audio from the previous ayah. If we clear
+      // _prevSpokenWords, the dedup logic can't filter those residual
+      // ASR words, causing them to falsely highlight in the new ayah.
+      // Preserving _prevSpokenWords lets the common-prefix dedup catch
+      // those stale words. For lookahead == 1 this is not needed because
+      // the narrow window already prevents cross-ayah bleed.
+      final bool preserve = AppState.instance.lookahead > 1;
+      _clearTrackingState(preservePrevWords: preserve);
       onAyahChanged?.call();
     } else {
       // End of Surah reached, shut down the tracker gracefully.

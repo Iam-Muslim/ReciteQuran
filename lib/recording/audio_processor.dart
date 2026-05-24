@@ -25,8 +25,9 @@ class AudioProcessor {
   static const int maxSilenceMs = 800;
   static const int maxSilenceFrames = maxSilenceMs ~/ frameMs; // ~26 frames
 
-  // Emit a dynamic snapshot of the phrase every 200ms for instantly responsive real-time UI
-  static const int expandStepBytes = (bytesPerSec * 200) ~/ 1000;
+  // Emit a dynamic snapshot of the phrase every 250ms for responsive real-time UI
+  // (was 200ms — reduced to cut inference frequency by 20%, lowering CPU heat)
+  static const int expandStepBytes = (bytesPerSec * 250) ~/ 1000;
 
   static final int maxBufferBytes = (bytesPerSec * 2.5).toInt();
   // Non-final chunks use a sliding window to prevent CTC hallucination
