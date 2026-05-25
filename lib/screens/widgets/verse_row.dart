@@ -105,8 +105,12 @@ class _VerseRowState extends State<VerseRow> {
     hash = hash * 31 + (isActive ? ctrl.currentWordIndex : 0);
     hash = hash * 31 + (isCompleted ? 1 : 0);
 
-    // Hash green/red word sets for this ayah
-    if (ctrl.isWordGreen(ayah, 0) || !isCompleted) {
+    // Hash green/red word sets for this ayah.
+    // Completed ayahs have frozen state — skip the word loop entirely.
+    // This eliminates ~30 function calls per completed visible verse per cycle.
+    if (isCompleted) {
+      hash = hash * 31 + 999; // Stable constant — hash never changes
+    } else {
       final wordCount = widget.verse.uthmaniWords.length;
       for (int i = 0; i < wordCount; i++) {
         if (ctrl.isWordGreen(ayah, i)) hash = hash * 31 + (i + 1) * 7;

@@ -9,8 +9,8 @@
 ///   Speech buffer accumulation → Sliding window emission → ASR engine
 ///
 /// Key parameters (tuned for Arabic recitation):
-/// - [expandStepBytes]: 300ms — how often audio is sent to ASR (latency knob)
-/// - [slidingWindowBytes]: 2.0s — rolling window size for inference
+/// - [expandStepBytes]: 400ms — how often audio is sent to ASR (latency knob)
+/// - [slidingWindowBytes]: 1.5s — rolling window size for inference
 /// - [maxBufferBytes]: 3.5s — maximum speech buffer before trimming
 /// - [maxSilenceMs]: 800ms — silence duration to finalize a phrase
 import 'dart:async';
@@ -22,7 +22,8 @@ class AudioProcessor {
   // ── Audio format constants ─────────────────────────────────────────────────
   static const int sampleRate = 16000;
   static const int bytesPerSample = 2; // 16-bit PCM = 2 bytes per sample
-  static const int bytesPerSec = sampleRate * bytesPerSample; // 32,000 bytes/sec
+  static const int bytesPerSec =
+      sampleRate * bytesPerSample; // 32,000 bytes/sec
 
   // ── VAD (Voice Activity Detection) parameters ─────────────────────────────
   /// Frame duration for RMS analysis — 30ms strikes a balance between
@@ -46,19 +47,21 @@ class AudioProcessor {
   static const int maxSilenceFrames = maxSilenceMs ~/ frameMs;
 
   // ── Emission control ──────────────────────────────────────────────────────
-  /// Send audio to ASR every 300ms of new speech data.
-  /// Lower = less latency but more inference calls.
-  /// The engine's busy-check drops overlapping chunks, so this won't
-  /// increase CPU load — it just ensures the engine gets fresher audio sooner.
-  static const int expandStepBytes = (bytesPerSec * 300) ~/ 1000;
+  /// Send audio to ASR every 400ms of new speech data.
+  /// 400ms balances latency vs CPU heat: guarantees ~25% idle time between
+  /// inference calls, preventing thermal throttling that causes progressive
+  /// slowdown after many ayahs. (Was 500ms originally, then 300ms too aggressive.)
+  static const int expandStepBytes = (bytesPerSec * 400) ~/ 1000;
 
   /// Maximum total speech buffer before oldest audio is discarded.
   /// 3.5 seconds provides enough context for Arabic phrase matching.
   static final int maxBufferBytes = (bytesPerSec * 3.5).toInt();
 
   /// Sliding window size for non-final emissions.
-  /// Caps inference time and prevents CTC decoder hallucination.
-  static const int slidingWindowBytes = bytesPerSec * 2;
+  /// 1.5s is sufficient for word-by-word matching (single Arabic word ≈ 0.3-0.5s)
+  /// while reducing inference time by ~25% vs 2.0s, preventing CPU thermal
+  /// throttling during sustained recitation sessions.
+  static final int slidingWindowBytes = (bytesPerSec * 1.5).toInt();
 
   // ── Internal state ────────────────────────────────────────────────────────
   Uint8List _frameBuffer = Uint8List(0);
@@ -178,7 +181,11 @@ class AudioProcessor {
                 length - windowOffset,
               );
               window.setRange(
-                  windowOffset, windowOffset + bytesToCopy, chunk, chunkStart);
+                windowOffset,
+                windowOffset + bytesToCopy,
+                chunk,
+                chunkStart,
+              );
               windowOffset += bytesToCopy;
               currentGlobalIndex += chunk.length;
               if (windowOffset >= length) break;
@@ -212,7 +219,8 @@ class AudioProcessor {
       // Save remaining bytes that don't form a complete frame
       if (offset < allBytes.length) {
         _frameBuffer = Uint8List.fromList(
-            Uint8List.view(allBytes.buffer, allBytes.offsetInBytes + offset));
+          Uint8List.view(allBytes.buffer, allBytes.offsetInBytes + offset),
+        );
       } else {
         _frameBuffer = Uint8List(0);
       }

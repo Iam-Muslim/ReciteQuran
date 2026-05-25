@@ -160,12 +160,13 @@ class SherpaEngine {
     });
 
     if (_isBusy) {
-      if (isFinal) {
-        _pendingMessage = msg; // Queue the final chunk so it isn't dropped
-      }
-      // Drop intermediate chunks if the engine is busy. This provides a critical
-      // relief valve for the CPU, preventing thermal throttling death spirals 
-      // where inference takes longer than the chunk emission rate.
+      // Queue the LATEST chunk (replaces any previous pending).
+      // When inference finishes, the engine processes this queued chunk
+      // immediately, ensuring it always works on the freshest audio.
+      // Only one chunk is ever queued, so at most 2 consecutive inferences
+      // run before the engine waits for the next emission — the CPU still
+      // gets breathing room between cycles.
+      _pendingMessage = msg;
       return;
     }
 

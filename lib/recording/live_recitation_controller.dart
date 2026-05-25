@@ -74,7 +74,17 @@ class LiveRecitationController extends ChangeNotifier {
   bool isWordRed(int ayah, int wordIndex) =>
       _redWordsByVerse[ayah]?.contains(wordIndex) ?? false;
 
-  int get currentWordIndex => math.max(0, _lastCommittedWordIdx + 1);
+  /// Index of the word the user should recite next (the orange-highlighted one).
+  /// Clamped to the valid range so the orange never goes out-of-bounds,
+  /// which would cause it to vanish between matching the last word and
+  /// advancing to the next ayah.
+  int get currentWordIndex {
+    final idx = _lastCommittedWordIdx + 1;
+    final match = _currentMatch;
+    if (match == null) return 0;
+    final maxIdx = match.verse.cleanWords.length - 1;
+    return idx.clamp(0, maxIdx);
+  }
 
   // ── Session Management API ─────────────────────────────────────────────────
 
@@ -337,9 +347,10 @@ class LiveRecitationController extends ChangeNotifier {
     if (anyProgress) {
       _freshAyah = false; // Grace period over after first progress
       if (_lastCommittedWordIdx >= expectedWords.length - 1) {
-        _advanceToNextAyah();
+        _advanceToNextAyah(); // Already calls notifyListeners() internally
+      } else {
+        notifyListeners(); // Only notify if advance didn't fire
       }
-      notifyListeners();
     }
   }
 
@@ -413,6 +424,11 @@ class LiveRecitationController extends ChangeNotifier {
 
     // Always mark the current Ayah as completed, even if it's the last one
     _completedAyahs.add(current.ayah);
+
+    // Free memory: the green word set is redundant once the ayah is in
+    // _completedAyahs (isWordGreen checks _completedAyahs.contains first).
+    // Red sets are kept — they're still needed to show mistake words.
+    _greenWordsByVerse.remove(current.ayah);
 
     if (next != null) {
       _currentMatch = VerseMatch(verse: next, score: 1.0);
