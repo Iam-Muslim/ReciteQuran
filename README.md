@@ -1,25 +1,34 @@
- <div align="center">  بسم الله الرحمن الرحيم </div>
-<br>
  <div align="center"> ولقد يسرنا القرآن للذكر فهل من مدكر  </div>
 
 
  
-<br><br>
 
+
+# Real-Time Quran Recitation Tracker
+An offline Android app that listens to your Quran recitation and tracks your progress word-by-word in real time.
+
+<br>
 <div align="center">
   <a href="https://recitequran.pages.dev/">
     <img src="https://img.shields.io/badge/Download-For android-2ea44f?style=for-the-badge&logo=download" alt="Recite Quran Download" />
   </a>
 </div>
-<br>
-
-# Real-Time Quran Recitation Tracker
-An offline Android app that listens to your Quran recitation and tracks your progress word-by-word in real time.
-
 
 ## Screenshots
 
 
+<img width="270" height="585" alt="Screenshot_20260525-181306_Recite Quran" src="https://github.com/user-attachments/assets/6b5a7e9b-9b94-49a0-b45b-a8cb7177a004" />
+
+<img width="270" height="585" alt="Screenshot_20260525-181234_Recite Quran" src="https://github.com/user-attachments/assets/81411b9e-79a1-490d-81fc-606895efeace" />
+
+<img width="270" height="585" alt="Screenshot_20260525-181317_Recite Quran" src="https://github.com/user-attachments/assets/0c56f56c-7fe9-49f9-b570-0a118cece212" />
+<br>
+<img width="279" height="585" alt="White-Record" src="https://github.com/user-attachments/assets/cc9d6265-f3c2-4f5a-ab73-7ad25bd39e91" />
+
+
+<img width="270" height="585" alt="White-Surah Selection" src="https://github.com/user-attachments/assets/29abec1c-9a14-45b6-a3d1-94d116fba593" />
+
+<img width="270" height="585" alt="White-Setting" src="https://github.com/user-attachments/assets/c89e8bbd-13cf-47d4-b957-85c896dca8c1" />
 
 
 ## Features
@@ -84,9 +93,14 @@ VerseRow (fingerprint-diffed UI)
 - `assets/model/tokens.txt` — CTC decoder token vocabulary
 - `assets/fonts/UthmanicHafs_V22.ttf` — Uthmanic Hafs Quran font
 
+ 
+ **هذا من فضل ربي — الحمد لله** سبحان الله عما يصفون
+## Projects Used
+ [Yazinsai Offline-Tarteel](https://github.com/yazinsai/offline-tarteel) - Onnx Model , Normalizing , Decoding and ...
+ <br>
+ [FastConformer ar CTC model-Yazinsai](https://github.com/yazinsai/offline-tarteel/releases/tag/v0.1.0)
 
-**هذا من فضل ربي — الحمد لله**
 
-سبحان الله عما يصفون
+
 
 
