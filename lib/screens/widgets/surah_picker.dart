@@ -1,3 +1,8 @@
+/// Surah selection bottom sheet.
+///
+/// Displays all 114 surahs in a searchable, scrollable list.
+/// Supports both Arabic and English names, with Arabic-Indic digits.
+/// Auto-scrolls to the currently selected surah on first open.
 import 'package:flutter/material.dart';
 import '../../core/app_state.dart';
 import '../../utils/normalizer.dart';
@@ -316,7 +321,6 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                     color: c.gold,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    fontFamily: 'ScheherazadeNew-Bold',
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -405,9 +409,8 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                             displayName,
                             textAlign: app.isArabic ? TextAlign.right : TextAlign.left,
                             style: TextStyle(
-                              color: sel ? c.gold : Colors.black87,
+                              color: sel ? c.gold : c.text,
                               fontSize: 20,
-                              fontFamily: 'ScheherazadeNew-Bold',
                               fontWeight: sel ? FontWeight.bold : FontWeight.normal,
                             ),
                           ),

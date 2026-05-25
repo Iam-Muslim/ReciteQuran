@@ -35,6 +35,10 @@ class LiveRecitationController extends ChangeNotifier {
 
   int _lastCommittedWordIdx = -1;
 
+  // Grace flag: suppresses red-marking on the very first match after an
+  // ayah transition, preventing false reds when reciting fast (murattal).
+  bool _freshAyah = false;
+
   // Cache for normalized expected words (avoids re-computing in hot loop)
   List<String>? _cachedExpectedNorm;
   int? _cachedVerseAyah;
@@ -311,10 +315,12 @@ class LiveRecitationController extends ChangeNotifier {
 
       if (foundAt == -1) break;
 
-      // Mark skipped expected words as red
-      for (int i = targetIndex; i < foundAt; i++) {
-        _redWordsByVerse[currentVerse.ayah] ??= {};
-        _redWordsByVerse[currentVerse.ayah]!.add(i);
+      // Mark skipped expected words as red (skip during grace period)
+      if (!_freshAyah) {
+        for (int i = targetIndex; i < foundAt; i++) {
+          _redWordsByVerse[currentVerse.ayah] ??= {};
+          _redWordsByVerse[currentVerse.ayah]!.add(i);
+        }
       }
 
       // Mark matched word as green
@@ -329,6 +335,7 @@ class LiveRecitationController extends ChangeNotifier {
     }
 
     if (anyProgress) {
+      _freshAyah = false; // Grace period over after first progress
       if (_lastCommittedWordIdx >= expectedWords.length - 1) {
         _advanceToNextAyah();
       }
@@ -416,6 +423,7 @@ class LiveRecitationController extends ChangeNotifier {
       // Preserving _prevSpokenWords lets the common-prefix dedup catch
       // those stale words. For lookahead == 1 this is not needed because
       // the narrow window already prevents cross-ayah bleed.
+      _freshAyah = true; // Suppress false reds on first match of new ayah
       final bool preserve = AppState.instance.lookahead > 1;
       _clearTrackingState(preservePrevWords: preserve);
       onAyahChanged?.call();

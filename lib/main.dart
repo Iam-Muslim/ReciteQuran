@@ -1,5 +1,21 @@
-/// Application entry point.
-import 'dart:io';
+/// بسم الله الرحمن الرحيم
+///
+/// ReciteQuran — Real-time Quran recitation tracking app.
+///
+/// Architecture:
+///   main.dart → _Orchestrator (manages engine + audio + controller)
+///            → TrackingScreen (UI)
+///
+/// The _Orchestrator initializes:
+///   1. Microphone permissions
+///   2. Sherpa-ONNX ASR engine (in a background Isolate)
+///   3. Quran metadata (quran.json)
+///   4. LiveRecitationController (bridges ASR → UI)
+///
+/// Recording flow:
+///   AudioProcessor captures mic → feeds chunks to Controller →
+///   Controller sends to SherpaEngine (Isolate) → gets transcription →
+///   matches words against expected Quran text → updates highlighting
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -15,6 +31,8 @@ import 'screens/tracking_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Transparent system bars for immersive experience
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -22,10 +40,12 @@ void main() async {
     ),
   );
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
   await AppState.instance.load();
   runApp(const QuranApp());
 }
 
+/// Root widget — rebuilds MaterialApp when theme/language changes.
 class QuranApp extends StatelessWidget {
   const QuranApp({super.key});
 
@@ -35,13 +55,15 @@ class QuranApp extends StatelessWidget {
       listenable: AppState.instance,
       builder: (_, __) {
         final ThemeColors c = AppState.instance.colors;
+        final isDark = AppState.instance.isDarkMode;
         return MaterialApp(
           debugShowCheckedModeBanner: false,
           theme: ThemeData(
-            brightness: Brightness.light,
+            brightness: isDark ? Brightness.dark : Brightness.light,
             scaffoldBackgroundColor: c.bg,
-            colorScheme: ColorScheme.light(primary: c.gold, surface: c.surface),
-            fontFamily: 'ScheherazadeNew-Bold',
+            colorScheme: isDark
+                ? ColorScheme.dark(primary: c.gold, surface: c.surface)
+                : ColorScheme.light(primary: c.gold, surface: c.surface),
           ),
           home: const _Orchestrator(),
         );
@@ -50,6 +72,8 @@ class QuranApp extends StatelessWidget {
   }
 }
 
+/// The conductor — owns the ASR engine, audio processor, and controller.
+/// Manages the full lifecycle of a recording session.
 class _Orchestrator extends StatefulWidget {
   const _Orchestrator();
   @override
@@ -66,7 +90,7 @@ class _OrchestratorState extends State<_Orchestrator> {
   bool _isInit = true;
   bool _isRecording = false;
   String _initStatus = 'Starting…';
-  bool _isToggling = false; // Hardware Lock Flag to prevent double tapping
+  bool _isToggling = false; // Prevents double-tap hardware crashes
   bool _isLoadingEngine = false;
 
   @override
@@ -81,6 +105,8 @@ class _OrchestratorState extends State<_Orchestrator> {
     super.dispose();
   }
 
+  /// Sequential initialization pipeline.
+  /// Each step updates the splash screen status text.
   Future<void> _init() async {
     try {
       if (mounted) setState(() => _initStatus = 'Requesting permissions…');
@@ -88,7 +114,7 @@ class _OrchestratorState extends State<_Orchestrator> {
 
       if (mounted) setState(() => _initStatus = 'Preparing ASR engine…');
       await _engine.preExtractAssets();
-      _engine.initialize(); // Fire and forget in the background
+      _engine.initialize(); // Fire-and-forget in background Isolate
 
       if (mounted) setState(() => _initStatus = 'Loading Quran database…');
       final service = QuranMetadataService();
@@ -98,9 +124,8 @@ class _OrchestratorState extends State<_Orchestrator> {
       _ctrl = LiveRecitationController(
         engine: _engine,
         repository: _repo!,
-        // Flush old audio on ayah transitions to prevent cross-ayah
-        // ghosting (old words matching new ayah's words).
-        // Reference: server.py line 572-575 trims the audio window.
+        // Flush stale audio on ayah transitions to prevent cross-ayah
+        // ghosting (old words matching new ayah's text).
         onAyahChanged: () {
           _audio.clearBuffer();
           _engine.resetBuffer();
@@ -115,18 +140,18 @@ class _OrchestratorState extends State<_Orchestrator> {
     }
   }
 
+  /// Toggles recording on/off with hardware-safe locking.
   Future<void> _toggleRecord() async {
-    if (_isToggling) return; // Prevent double-tap hardware crashes
+    if (_isToggling) return;
     _isToggling = true;
 
     try {
       if (_isRecording) {
-        // 1. Get the final leftover audio (the tail)
+        // Get any remaining audio in the pipeline
         final tail = await _audio.stopAndGetAudio();
         if (tail.isNotEmpty) {
           _ctrl?.feed(tail, isFinal: true);
-          // Give the background Isolate half a second to finish the math
-          // before we shut down the tracking state.
+          // Allow the background Isolate time to finish inference
           await Future.delayed(const Duration(milliseconds: 500));
         }
 
@@ -135,12 +160,13 @@ class _OrchestratorState extends State<_Orchestrator> {
         await WakelockPlus.disable();
         if (mounted) setState(() => _isRecording = false);
       } else {
+        // Ensure engine is ready (may still be initializing in background)
         if (!_engine.isInitialized) {
           if (mounted) setState(() => _isLoadingEngine = true);
-          await _engine.initialize(); // Wait if background init is still running
+          await _engine.initialize();
           if (mounted) setState(() => _isLoadingEngine = false);
         }
-        
+
         await WakelockPlus.enable();
         _engine.resetBuffer();
 
@@ -148,11 +174,14 @@ class _OrchestratorState extends State<_Orchestrator> {
         if (mounted) setState(() => _isRecording = true);
 
         if (_ctrl != null) {
-          _ctrl!.resumeTracking(); 
+          _ctrl!.resumeTracking();
           // Start audio stream without blocking the UI
-          _audio.start(
-            onChunk: (chunk, isFinal) => _ctrl?.feed(chunk, isFinal: isFinal),
-          ).catchError((e) {
+          _audio
+              .start(
+                onChunk: (chunk, isFinal) =>
+                    _ctrl?.feed(chunk, isFinal: isFinal),
+              )
+              .catchError((e) {
             debugPrint('❌ AUDIO ERROR: $e');
             if (mounted) setState(() => _isRecording = false);
           });
@@ -162,10 +191,11 @@ class _OrchestratorState extends State<_Orchestrator> {
       debugPrint('❌ RECORD ERROR: $e');
       if (mounted) setState(() => _isRecording = false);
     } finally {
-      _isToggling = false; // Unlock hardware
+      _isToggling = false;
     }
   }
 
+  /// Modern splash screen with Quran ayah.
   Widget _loadingScreen() {
     final ThemeColors c = AppState.instance.colors;
     return Scaffold(
@@ -174,26 +204,55 @@ class _OrchestratorState extends State<_Orchestrator> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            SizedBox(
-              width: 56,
-              height: 56,
-              child: CircularProgressIndicator(
-                strokeWidth: 1.5,
-                valueColor: AlwaysStoppedAnimation(c.gold),
-              ),
-            ),
-            const SizedBox(height: 32),
-            Text(
-              'القرآن العظيم',
-              style: TextStyle(
-                color: c.gold,
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
-                fontFamily: 'ScheherazadeNew-Bold',
+            const Spacer(flex: 3),
+
+            // Quran ayah — وَلَقَدْ يَسَّرْنَا الْقُرْآنَ لِلذِّكْرِ فَهَلْ مِن مُّدَّكِرٍ
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 48),
+              child: Text(
+                'وَلَقَدْ يَسَّرْنَا الْقُرْآنَ لِلذِّكْرِ فَهَلْ مِن مُّدَّكِرٍ',
+                style: TextStyle(
+                  fontFamily: 'QPC_Hafs',
+                  color: c.text.withValues(alpha: 0.6),
+                  fontSize: 22,
+                  height: 2.0,
+                ),
+                textAlign: TextAlign.center,
+                textDirection: TextDirection.rtl,
               ),
             ),
             const SizedBox(height: 8),
-            Text(_initStatus, style: TextStyle(color: c.muted, fontSize: 13)),
+            Text(
+              'القمر ١٧',
+              style: TextStyle(
+                color: c.muted.withValues(alpha: 0.4),
+                fontSize: 11,
+              ),
+              textDirection: TextDirection.rtl,
+            ),
+
+            const Spacer(flex: 2),
+
+            // Subtle loading indicator
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.5,
+                valueColor: AlwaysStoppedAnimation(
+                  c.gold.withValues(alpha: 0.4),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _initStatus,
+              style: TextStyle(
+                color: c.muted.withValues(alpha: 0.4),
+                fontSize: 11,
+              ),
+            ),
+            const Spacer(flex: 1),
           ],
         ),
       ),

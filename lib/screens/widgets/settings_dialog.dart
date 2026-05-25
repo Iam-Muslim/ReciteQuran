@@ -1,3 +1,14 @@
+/// Settings bottom sheet — displays all user-configurable options.
+///
+/// Content:
+/// - Language toggle (Arabic ↔ English)
+/// - Theme selector (Light / Dark)
+/// - Mistake checking level (None / Easy / Medium / Hard)
+/// - Lookahead words count (1-5)
+/// - Privacy policy link
+///
+/// Uses a fixed-height [DraggableScrollableSheet] that fits its content
+/// without stretching or leaving empty space.
 import 'package:flutter/material.dart';
 import '../../core/app_state.dart';
 
@@ -12,337 +23,345 @@ class SettingsDialog extends StatelessWidget {
       listenable: app,
       builder: (context, _) {
         final c = app.colors;
+        final isAr = app.isArabic;
 
-        return Directionality(
-          textDirection: app.isArabic ? TextDirection.rtl : TextDirection.ltr,
-          child: Dialog(
-            backgroundColor: c.bg,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    app.isArabic ? 'الإعدادات' : 'Settings',
-                    style: TextStyle(
-                      color: c.gold,
-                      fontSize: 24,
-                      fontFamily: 'ScheherazadeNew',
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  // Language Toggle
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        app.isArabic ? 'اللغة / Language' : 'Language / اللغة',
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontSize: 18,
-                          fontFamily: 'ScheherazadeNew',
-                          fontWeight: FontWeight.bold,
+        return DraggableScrollableSheet(
+          initialChildSize: 0.52,
+          maxChildSize: 0.52,
+          minChildSize: 0.3,
+          expand: false,
+          builder: (_, ctrl) {
+            return Container(
+              decoration: BoxDecoration(
+                color: c.bg,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+              ),
+              child: Directionality(
+                textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+                child: ListView(
+                  controller: ctrl,
+                  physics: const NeverScrollableScrollPhysics(),
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  children: [
+                    // ── Handle ────────────────────────────────────────────
+                    Center(
+                      child: Container(
+                        width: 32,
+                        height: 3.5,
+                        decoration: BoxDecoration(
+                          color: c.border.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
-                      Switch(
-                        value: !app.isArabic,
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Title ─────────────────────────────────────────────
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Text(
+                        isAr ? 'الإعدادات' : 'Settings',
+                        style: TextStyle(
+                          color: c.gold,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // ── Language ──────────────────────────────────────────
+                    _SettingTile(
+                      title: isAr ? 'اللغة' : 'Language',
+                      subtitle: isAr ? 'English' : 'العربية',
+                      c: c,
+                      trailing: Switch.adaptive(
+                        value: !isAr,
                         onChanged: (_) => app.toggleLanguage(),
                         activeColor: c.gold,
                       ),
-                    ],
-                  ),
-                  const Divider(height: 20),
-                  // Font Weight Chooser
-                  Text(
-                    app.isArabic ? 'سمك الخط' : 'Font Weight',
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontSize: 18,
-                      fontFamily: 'ScheherazadeNew',
-                      fontWeight: FontWeight.bold,
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildWeightButton(
-                        app,
-                        c,
-                        app.isArabic ? 'عادي' : 'Regular',
-                        FontWeight.w400,
-                      ),
-                      _buildWeightButton(
-                        app,
-                        c,
-                        app.isArabic ? 'متوسط' : 'Medium',
-                        FontWeight.w500,
-                      ),
-                      _buildWeightButton(
-                        app,
-                        c,
-                        app.isArabic ? 'شبه غامق' : 'Semi Bold',
-                        FontWeight.w600,
-                      ),
-                      _buildWeightButton(
-                        app,
-                        c,
-                        app.isArabic ? 'غامق' : 'Bold',
-                        FontWeight.w700,
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 20),
-                  // Mistake Level Chooser
-                  Text(
-                    app.isArabic ? 'مستوى التدقيق' : 'Mistake Checking',
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontSize: 18,
-                      fontFamily: 'ScheherazadeNew',
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildLevelButton(
-                        app,
-                        c,
-                        app.isArabic ? 'بدون' : 'None',
-                        MistakeLevel.none,
-                      ),
-                      _buildLevelButton(
-                        app,
-                        c,
-                        app.isArabic ? 'سهل' : 'Easy',
-                        MistakeLevel.easy,
-                      ),
-                      _buildLevelButton(
-                        app,
-                        c,
-                        app.isArabic ? 'متوسط' : 'Medium',
-                        MistakeLevel.medium,
-                      ),
-                      _buildLevelButton(
-                        app,
-                        c,
-                        app.isArabic ? 'صعب' : 'Hard',
-                        MistakeLevel.hard,
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 20),
-                  // Lookahead Chooser
-                  Text(
-                    app.isArabic ? 'الكلمات المتتبعة' : 'Lookahead Words',
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontSize: 18,
-                      fontFamily: 'ScheherazadeNew',
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildLookaheadButton(app, c, '1', 1),
-                      _buildLookaheadButton(app, c, '2', 2),
-                      _buildLookaheadButton(app, c, '3', 3),
-                      _buildLookaheadButton(app, c, '4', 4),
-                      _buildLookaheadButton(app, c, '5', 5),
-                    ],
-                  ),
-                  const Divider(height: 32),
-                  // Privacy Policy Button
-                  Center(
-                    child: TextButton.icon(
-                      onPressed: () => _showPrivacyPolicy(context, app, c),
-                      icon: Icon(Icons.privacy_tip_outlined, color: c.gold),
-                      label: Text(
-                        app.isArabic ? 'سياسة الخصوصية' : 'Privacy Policy',
-                        style: TextStyle(
-                          color: c.gold,
-                          fontFamily: 'ScheherazadeNew',
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
+                    const SizedBox(height: 10),
+
+                    // ── Theme ────────────────────────────────────────────
+                    _SectionLabel(title: isAr ? 'المظهر' : 'Theme', c: c),
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _SegmentedSelector(
+                        labels: isAr ? ['فاتح', 'داكن'] : ['Light', 'Dark'],
+                        selected: app.theme.index,
+                        c: c,
+                        onSelected: (i) => app.setTheme(AppTheme.values[i]),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'هذا من فضل ربي \n الحمدلله - Thanks to Allah the greatest \n'
-                    '\nFont: Scheherazade New',
-                    style: TextStyle(color: c.muted, fontSize: 10),
-                    textAlign: TextAlign.center,
-                    textDirection: TextDirection.ltr,
-                  ),
-                ],
+                    const SizedBox(height: 10),
+
+                    // ── Mistake Level ────────────────────────────────────
+                    _SectionLabel(
+                      title: isAr ? 'مستوى التدقيق' : 'Mistake Checking',
+                      c: c,
+                    ),
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _SegmentedSelector(
+                        labels: isAr
+                            ? ['بدون', 'سهل', 'متوسط', 'صعب']
+                            : ['None', 'Easy', 'Medium', 'Hard'],
+                        selected: app.mistakeLevel.index,
+                        c: c,
+                        onSelected: (i) =>
+                            app.setMistakeLevel(MistakeLevel.values[i]),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // ── Lookahead ────────────────────────────────────────
+                    _SectionLabel(
+                      title: isAr ? 'الكلمات المتتبعة' : 'Lookahead Words',
+                      c: c,
+                    ),
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _SegmentedSelector(
+                        labels: ['1', '2', '3', '4', '5'],
+                        selected: app.lookahead - 1,
+                        c: c,
+                        onSelected: (i) => app.setLookahead(i + 1),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // ── Footer ───────────────────────────────────────────
+                    Center(
+                      child: Column(
+                        children: [
+                          // Elegant attribution
+                          Text(
+                            ' هذا من فضل ربي ',
+                            style: TextStyle(
+                              color: c.gold.withValues(alpha: 0.5),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          // Small privacy link
+                          GestureDetector(
+                            onTap: () => _showPrivacyPolicy(context, app, c),
+                            child: Text(
+                              isAr ? 'سياسة الخصوصية' : 'Privacy Policy',
+                              style: TextStyle(
+                                color: c.muted.withValues(alpha: 0.4),
+                                fontSize: 10,
+                                decoration: TextDecoration.underline,
+                                decorationColor: c.muted.withValues(alpha: 0.3),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
   }
 
-  Widget _buildWeightButton(
-    AppState app,
-    ThemeColors c,
-    String label,
-    FontWeight weight,
-  ) {
-    final isSelected = app.fontWeight == weight;
-    return Expanded(
-      child: InkWell(
-        onTap: () => app.setFontWeight(weight),
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 2),
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: isSelected ? c.gold : Colors.transparent,
-            border: Border.all(color: c.gold),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: isSelected ? Colors.white : Colors.black,
-              fontFamily: 'ScheherazadeNew',
-              fontSize: 13,
-              fontWeight: weight,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLevelButton(
-    AppState app,
-    ThemeColors c,
-    String label,
-    MistakeLevel level,
-  ) {
-    final isSelected = app.mistakeLevel == level;
-    return Expanded(
-      child: InkWell(
-        onTap: () => app.setMistakeLevel(level),
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 2),
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: isSelected ? c.gold : Colors.transparent,
-            border: Border.all(color: c.gold),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: isSelected ? Colors.white : Colors.black,
-              fontFamily: 'ScheherazadeNew',
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLookaheadButton(
-    AppState app,
-    ThemeColors c,
-    String label,
-    int lookahead,
-  ) {
-    final isSelected = app.lookahead == lookahead;
-    return Expanded(
-      child: InkWell(
-        onTap: () => app.setLookahead(lookahead),
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 2),
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: isSelected ? c.gold : Colors.transparent,
-            border: Border.all(color: c.gold),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: isSelected ? Colors.white : Colors.black,
-              fontFamily: 'ScheherazadeNew',
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
+  /// Shows the privacy policy dialog.
   void _showPrivacyPolicy(BuildContext context, AppState app, ThemeColors c) {
+    final isAr = app.isArabic;
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
           backgroundColor: c.bg,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: Text(
-            app.isArabic ? 'سياسة الخصوصية' : 'Privacy Policy',
+            isAr ? 'سياسة الخصوصية' : 'Privacy Policy',
             style: TextStyle(
               color: c.gold,
-              fontFamily: 'ScheherazadeNew',
               fontWeight: FontWeight.bold,
+              fontSize: 16,
             ),
             textAlign: TextAlign.center,
           ),
           content: SingleChildScrollView(
             child: Text(
-              app.isArabic
-                  ? "يطلب هذا التطبيق إذن الوصول إلى الميكروفون (RECORD_AUDIO) للاستماع إلى تلاوتك وتتبعها.\n\n"
-                        "تتم جميع عمليات معالجة الصوت محلياً (100% Offline) على جهازك بالكامل.\n"
-                        "نحن لا نقوم بجمع، أو نقل، أو تخزين، أو مشاركة بياناتك الصوتية أو أي معلومات شخصية مع أي خوادم أو جهات خارجية.\n\n"
-                        "لا يتصل هذا التطبيق بالإنترنت على الإطلاق، مما يضمن خصوصيتك التامة."
-                  : "This app requires Microphone access (RECORD_AUDIO) to listen to and track your recitation.\n\n"
-                        "All audio processing is done 100% OFFLINE locally on your device.\n"
-                        "We DO NOT collect, transmit, store, or share your voice data or any personal information with any third-party servers.\n\n"
-                        "This app does not connect to the internet, guaranteeing your complete privacy.",
-              style: TextStyle(
-                color: Colors.black,
-                fontFamily: 'ScheherazadeNew',
-                fontSize: 16,
-              ),
-              textAlign: TextAlign.right,
-              textDirection: TextDirection.rtl,
+              isAr
+                  ? "يطلب هذا التطبيق إذن الوصول إلى الميكروفون (RECORD_AUDIO) "
+                        "للاستماع إلى تلاوتك وتتبعها.\n\n"
+                        "تتم جميع عمليات معالجة الصوت محلياً (100% Offline) "
+                        "على جهازك بالكامل.\n"
+                        "نحن لا نقوم بجمع، أو نقل، أو تخزين، أو مشاركة "
+                        "بياناتك الصوتية أو أي معلومات شخصية.\n\n"
+                        "لا يتصل هذا التطبيق بالإنترنت على الإطلاق."
+                  : "This app requires Microphone access (RECORD_AUDIO) "
+                        "to listen to and track your recitation.\n\n"
+                        "All audio processing is done 100% OFFLINE locally "
+                        "on your device.\n"
+                        "We DO NOT collect, transmit, store, or share your "
+                        "voice data or any personal information.\n\n"
+                        "This app does not connect to the internet.",
+              style: TextStyle(fontSize: 13, height: 1.5, color: c.text),
+              textAlign: isAr ? TextAlign.right : TextAlign.left,
+              textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: Text(
-                app.isArabic ? 'حسناً' : 'OK',
-                style: TextStyle(color: c.gold, fontFamily: 'ScheherazadeNew'),
+                isAr ? 'حسناً' : 'OK',
+                style: TextStyle(color: c.gold, fontWeight: FontWeight.bold),
               ),
             ),
           ],
         );
       },
+    );
+  }
+}
+
+/// A compact section label.
+class _SectionLabel extends StatelessWidget {
+  final String title;
+  final ThemeColors c;
+
+  const _SectionLabel({required this.title, required this.c});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Text(
+        title,
+        style: TextStyle(
+          color: c.muted,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+/// A clean settings tile with title, subtitle, and trailing widget.
+class _SettingTile extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final ThemeColors c;
+  final Widget trailing;
+
+  const _SettingTile({
+    required this.title,
+    required this.subtitle,
+    required this.c,
+    required this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: c.border.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: c.text,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(color: c.muted, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            trailing,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A horizontal segmented selector — modern alternative to ChoiceChips.
+class _SegmentedSelector extends StatelessWidget {
+  final List<String> labels;
+  final int selected;
+  final ThemeColors c;
+  final ValueChanged<int> onSelected;
+
+  const _SegmentedSelector({
+    required this.labels,
+    required this.selected,
+    required this.c,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: c.border.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: List.generate(labels.length, (i) {
+          final isSel = i == selected;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => onSelected(i),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: isSel
+                      ? c.gold.withValues(alpha: 0.12)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Text(
+                  labels[i],
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: isSel ? c.gold : c.muted,
+                    fontSize: 12,
+                    fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
     );
   }
 }

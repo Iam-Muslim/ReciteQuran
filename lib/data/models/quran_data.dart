@@ -31,6 +31,9 @@ class QuranVerse {
   /// [textUthmani] (split on whitespace).
   final List<String> cleanWords;
 
+  /// Per-word Uthmani strings. Index [i] corresponds to the i-th word.
+  final List<String> uthmaniWords;
+
   const QuranVerse({
     required this.surah,
     required this.ayah,
@@ -39,6 +42,7 @@ class QuranVerse {
     required this.surahNameEn,
     required this.textClean,
     required this.cleanWords,
+    required this.uthmaniWords,
   });
 
   factory QuranVerse.fromJson(Map<String, dynamic> json) {
@@ -50,6 +54,7 @@ class QuranVerse {
       surahNameEn: json['surah_name_en'] as String? ?? '',
       textClean: json['text_clean'] as String? ?? '',
       cleanWords: (json['text_clean'] as String? ?? '').split(' '),
+      uthmaniWords: (json['text_uthmani'] as String? ?? '').split(' '),
     );
   }
 }

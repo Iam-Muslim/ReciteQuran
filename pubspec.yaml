@@ -33,16 +33,9 @@ flutter:
     - assets/icon/app_icon.png
 
   fonts:
-    - family: ScheherazadeNew
+    - family: QPC_Hafs
       fonts:
-        - asset: assets/fonts/ScheherazadeNew-Regular.ttf
-          weight: 400
-        - asset: assets/fonts/ScheherazadeNew-Meduim.ttf
-          weight: 500
-        - asset: assets/fonts/ScheherazadeNew-SemiBold.ttf
-          weight: 600
-        - asset: assets/fonts/ScheherazadeNew-Bold.ttf
-          weight: 700
+        - asset: assets/fonts/UthmanicHafs_V22.ttf
 
 flutter_launcher_icons:
   android: true

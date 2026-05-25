@@ -13,8 +13,9 @@ import 'models/quran_data.dart';
 // Top-level function required by [compute].
 // Must NOT be a method or a closure — the Flutter isolate runner
 // cannot serialise those across isolate boundaries.
-List<QuranVerse> _parseDatabaseInBackground(String data) {
-  final List<dynamic> jsonList = jsonDecode(data);
+List<QuranVerse> _parseDatabaseInBackground(String jsonString) {
+  final List<dynamic> jsonList = jsonDecode(jsonString);
+
   return jsonList.map((json) {
     String uthmani = json['text_uthmani'] as String? ?? '';
     uthmani = uthmani.replaceAll(RegExp(r'[۩۞ۖۗۚۛۙۘۜ]'), '');
@@ -28,8 +29,8 @@ class QuranMetadataService {
 
   Future<List<QuranVerse>> loadAll() async {
     if (_allVerses != null) return _allVerses!;
-    final String data = await rootBundle.loadString('assets/model/quran.json');
-    _allVerses = await compute(_parseDatabaseInBackground, data);
+    final String quranData = await rootBundle.loadString('assets/model/quran.json');
+    _allVerses = await compute(_parseDatabaseInBackground, quranData);
     return _allVerses!;
   }
 }

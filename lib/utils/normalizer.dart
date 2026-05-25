@@ -1,54 +1,49 @@
+/// Arabic text normalization utilities for ASR matching.
+///
+/// The ASR engine outputs raw Arabic text that may differ from the Quran's
+/// written form due to:
+/// - Diacritical marks (tashkeel) present in Quran but absent in ASR output
+/// - Alef variants (أ إ آ ٱ) that ASR may normalize differently
+/// - Ta marbuta (ة) vs Ha (ه) ambiguity
+/// - SentencePiece tokenizer artifacts (▁ characters)
+///
+/// This normalizer strips these differences so that "بِسْمِ" and "بسم"
+/// compare as equal.
 class Normalizer {
+  /// Regex matching all Arabic diacritical marks and the tatweel character.
   static final RegExp _diacritics = RegExp(
     '[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC'
     '\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED\u0640]',
   );
 
+  /// Character normalization map — maps variant forms to canonical forms.
   static final Map<String, String> _normMap = {
-    '\u0623': '\u0627', // أ -> ا
-    '\u0625': '\u0627', // إ -> ا
-    '\u0622': '\u0627', // آ -> ا
-    '\u0671': '\u0627', // ٱ -> ا
-    '\u0629': '\u0647', // ة -> ه
-    '\u0649': '\u064A', // ى -> ي
+    '\u0623': '\u0627', // أ → ا
+    '\u0625': '\u0627', // إ → ا
+    '\u0622': '\u0627', // آ → ا
+    '\u0671': '\u0627', // ٱ → ا
+    '\u0629': '\u0647', // ة → ه
+    '\u0649': '\u064A', // ى → ي
   };
 
-  // NEW: Pre-compiled regex for Huroof Muqatta'ah
-  static final RegExp _muqattaatRegex = RegExp(
-    r'(?<=^|\s)(صاد|قاف|نون)(?=\s|$)',
-  );
-  // NEW: Method to process Huroof Muqatta'ah efficiently
+  /// Processes Huroof Muqatta'ah (الحروف المقطعة).
+  /// Currently a no-op — muqattaat handling is commented out because
+  /// the ASR model already handles them correctly for most cases.
   static String processMuqattaat(String text) {
     if (text.isEmpty) return text;
     return text;
-    // .replaceAll("الف لام ميم صاد", "المص")
-    // .replaceAll("الف لام ميم را", "المر")
-    // .replaceAll("الف لام ميم", "الم")
-    // .replaceAll("الف لام را", "الر")
-    // .replaceAll("الف م", "الم")
-    // .replaceAll("كاف ها يا عين صاد", "كهيعص")
-    // .replaceAll("طا سين ميم", "طسم")
-    // .replaceAll("طا سين", "طس")
-    // .replaceAll("طا ها", "طه")
-    // .replaceAll("يا سين", "يس")
-    // .replaceAll("حا ميم عين سين قاف", "حم عسق")
-    // .replaceAll("حا ميم", "حم")
-    // .replaceAllMapped(
-    //   // <--- CHANGED TO replaceAllMapped
-    //   _muqattaatRegex,
-    //   (Match match) {
-    //     if (match.group(0) == "صاد") return "ص";
-    //     if (match.group(0) == "قاف") return "ق";
-    //     if (match.group(0) == "نون") return "ن";
-    //     return match.group(0)!;
-    //   }, // <--- REMOVED "as String"
-    // );
   }
 
+  /// Normalizes Arabic text for comparison:
+  /// 1. Strips BOM if present
+  /// 2. Removes all diacritical marks (tashkeel)
+  /// 3. Normalizes alef/ta-marbuta/alef-maqsura variants
+  /// 4. Replaces SentencePiece block characters with spaces
+  /// 5. Collapses multiple spaces and trims
   static String normalizeArabic(String text) {
     if (text.isEmpty) return text;
 
-    // Strip BOM
+    // Strip BOM (Byte Order Mark)
     if (text.startsWith('\ufeff')) {
       text = text.substring(1);
     }
@@ -67,7 +62,7 @@ class Normalizer {
     // Replace SentencePiece lower-one-eighth block with standard space
     text = text.replaceAll('\u2581', ' ');
 
-    // Replace multiple spaces with a single space and trim
+    // Collapse multiple spaces and trim
     text = text.replaceAll(RegExp(r'\s+'), ' ').trim();
 
     return text;

@@ -1,3 +1,14 @@
+/// Main recitation screen — displays the verse list, top header, and bottom toolbar.
+///
+/// Responsibilities:
+/// - Renders the scrollable verse list via [VerseRow] widgets
+/// - Handles auto-scrolling (reading mode) with a [Ticker]-based smooth scroll
+/// - Manages record → scroll navigation (two-phase: estimate → fine-tune)
+/// - Coordinates the surah picker and settings bottom sheets
+///
+/// Performance: The verse list uses [ListView.builder] with [GlobalKey]s
+/// for scroll targeting. The header and toolbar use [AnimatedSwitcher]
+/// for smooth transitions.
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -36,8 +47,10 @@ class _TrackingScreenState extends State<TrackingScreen>
   final ScrollController _scroll = ScrollController();
   final Map<int, GlobalKey> _keys = {};
 
+  /// Tracks the last scrolled-to ayah to avoid duplicate scrolls.
   int? _lastAyah;
 
+  /// Reading mode state.
   bool _isAutoScrolling = false;
   Timer? _autoScrollTimer;
   Ticker? _scrollTicker;
@@ -55,20 +68,32 @@ class _TrackingScreenState extends State<TrackingScreen>
     _scroll.dispose();
     _scrollTicker?.dispose();
 
-    // SAFETY CATCH: Force release the wakelock if screen is destroyed mid-session
+    // Safety: release wakelock if screen is destroyed mid-session
     if (_isAutoScrolling || widget.isRecording) {
       WakelockPlus.disable();
     }
-
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(TrackingScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // When recording starts → force-scroll to the active ayah
+    if (widget.isRecording && !oldWidget.isRecording) {
+      _lastAyah = null;
+      final match = widget.controller.currentMatchedVerse;
+      if (match != null) {
+        _forceScrollToAyah(match.verse.ayah);
+      }
+    }
+  }
+
+  /// Called on every controller notification — scrolls to the active ayah
+  /// when it changes.
   void _onControllerUpdate() {
     final match = widget.controller.currentMatchedVerse;
-
     if (match != null) {
       final ayah = match.verse.ayah;
-
       if (ayah != _lastAyah) {
         _lastAyah = ayah;
         _scrollToAyah(ayah);
@@ -76,8 +101,9 @@ class _TrackingScreenState extends State<TrackingScreen>
     }
   }
 
+  /// Smooth scroll to a verse. Skips if in auto-scroll (reading) mode.
   void _scrollToAyah(int ayah) {
-    if (_isAutoScrolling) return; // Don't interrupt auto scroll
+    if (_isAutoScrolling) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ctx = _keys[ayah]?.currentContext;
       if (ctx != null) {
@@ -85,24 +111,75 @@ class _TrackingScreenState extends State<TrackingScreen>
           ctx,
           duration: const Duration(milliseconds: 450),
           curve: Curves.easeOutCubic,
-          alignment: 0.4,
+          alignment: 0.35,
         );
       }
     });
   }
 
+  /// Two-phase scroll: first estimate pixel offset (for off-screen items
+  /// whose GlobalKey context is null due to ListView recycling), then
+  /// fine-tune with ensureVisible after the item is built.
+  void _forceScrollToAyah(int ayah) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _keys[ayah]?.currentContext;
+      if (ctx != null) {
+        // Item is on-screen — direct scroll
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 450),
+          curve: Curves.easeOutCubic,
+          alignment: 0.35,
+        );
+      } else {
+        // Item is off-screen — estimate position, scroll there,
+        // then fine-tune once the item is built
+        final displayVerses = widget.controller.repository
+            .getSurah(widget.controller.targetSurah);
+        final idx = displayVerses.indexWhere((v) => v.ayah == ayah);
+        if (idx >= 0 && _scroll.hasClients) {
+          // Rough estimate: ~100px per verse row (varies with word count)
+          final estimated = idx * 100.0;
+          _scroll.animateTo(
+            estimated.clamp(0.0, _scroll.position.maxScrollExtent),
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeOutCubic,
+          );
+          // After scroll completes, the item should be built — fine-tune
+          Future.delayed(const Duration(milliseconds: 500), () {
+            final ctx2 = _keys[ayah]?.currentContext;
+            if (ctx2 != null && mounted) {
+              Scrollable.ensureVisible(
+                ctx2,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+                alignment: 0.35,
+              );
+            }
+          });
+        }
+      }
+    });
+  }
+
+  /// Toggles reading mode (auto-scroll).
+  /// Entering reading mode clears all highlights and stops tracking.
   void _toggleAutoScroll() {
     if (_isAutoScrolling) {
       setState(() => _isAutoScrolling = false);
       _autoScrollTimer?.cancel();
       WakelockPlus.disable();
     } else {
+      widget.controller.clearHighlights();
+      widget.controller.finalize();
       setState(() => _isAutoScrolling = true);
       _startAutoScrollLoop();
       WakelockPlus.enable();
     }
   }
 
+  /// Starts the ticker-based smooth auto-scroll.
+  /// Speed scales with font size for consistent reading pace.
   void _startAutoScrollLoop() {
     _scrollTicker?.stop();
     _scrollTicker ??= createTicker((elapsed) {
@@ -112,7 +189,6 @@ class _TrackingScreenState extends State<TrackingScreen>
       }
       final position = _scroll.position;
       if (position.pixels < position.maxScrollExtent) {
-        // Smooth hardware-synced scrolling (scale speed to frame time)
         double speed =
             ((AppState.instance.fontSize / 24.0) * 1.5) * (16.0 / 50.0);
         _scroll.jumpTo(position.pixels + speed);
@@ -125,6 +201,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     _scrollTicker?.start();
   }
 
+  /// Opens the surah selection bottom sheet.
   void _showSurahPicker() {
     showModalBottomSheet(
       context: context,
@@ -141,17 +218,21 @@ class _TrackingScreenState extends State<TrackingScreen>
             _lastAyah = null;
           });
           Future.delayed(const Duration(milliseconds: 100), () {
-            if (_scroll.hasClients) {
-              _scroll.jumpTo(0);
-            }
+            if (_scroll.hasClients) _scroll.jumpTo(0);
           });
         },
       ),
     );
   }
 
+  /// Opens the settings bottom sheet.
   void _showSettingsDialog() {
-    showDialog(context: context, builder: (_) => const SettingsDialog());
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const SettingsDialog(),
+    );
   }
 
   @override
@@ -170,61 +251,64 @@ class _TrackingScreenState extends State<TrackingScreen>
             backgroundColor: c.bg,
             body: Column(
               children: [
-                // ── Top Header Card ───────────────────────────────────────────────
+                // ── Top Header (compact pill) ────────────────────────────
                 AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
+                  duration: const Duration(milliseconds: 250),
                   transitionBuilder: (child, animation) {
-                    return SizeTransition(
-                      sizeFactor: animation,
-                      axisAlignment: -1.0,
-                      child: FadeTransition(
-                        opacity: animation,
-                        child: SlideTransition(
-                          position: Tween<Offset>(
-                            begin: const Offset(0, -0.5),
-                            end: Offset.zero,
-                          ).animate(animation),
-                          child: child,
-                        ),
+                    return FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, -0.3),
+                          end: Offset.zero,
+                        ).animate(CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOutCubic,
+                        )),
+                        child: child,
                       ),
                     );
                   },
                   child: (!widget.isRecording && !_isAutoScrolling)
-                      ? Align(
-                          alignment: Alignment.topCenter,
-                          child: Container(
-                            key: const ValueKey('header'),
-                            margin: EdgeInsets.only(
-                              top: top + 8,
-                              left: 24,
-                              right: 24,
-                              bottom: 4,
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 8,
-                              horizontal: 16,
-                            ),
-                            decoration: BoxDecoration(
-                              color: c.surface.withValues(alpha: 0.8),
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.1),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                              border: Border.all(
-                                color: c.border.withValues(alpha: 0.3),
+                      ? Container(
+                          key: const ValueKey('header'),
+                          margin: EdgeInsets.only(
+                            top: top + 4,
+                            left: 24,
+                            right: 24,
+                            bottom: 2,
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 6,
+                            horizontal: 16,
+                          ),
+                          decoration: BoxDecoration(
+                            color: c.surface,
+                            borderRadius: BorderRadius.circular(28),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.05),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
                               ),
+                            ],
+                            border: Border.all(
+                              color: c.border.withValues(alpha: 0.15),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                GestureDetector(
-                                  onTap: _showSurahPicker,
-                                  behavior: HitTestBehavior.opaque,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              // Surah name tap area
+                              GestureDetector(
+                                onTap: _showSurahPicker,
+                                behavior: HitTestBehavior.opaque,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 4,
+                                    horizontal: 4,
+                                  ),
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
@@ -234,54 +318,54 @@ class _TrackingScreenState extends State<TrackingScreen>
                                           final displayVerses = widget
                                               .controller
                                               .repository
-                                              .getSurah(
-                                                widget.controller.targetSurah,
-                                              );
+                                              .getSurah(widget
+                                                  .controller.targetSurah);
                                           return Text(
                                             app.isArabic
-                                                ? "${displayVerses.first.surahName} - ${displayVerses.first.surahNameEn}"
-                                                : "${displayVerses.first.surahNameEn} - ${displayVerses.first.surahName}",
+                                                ? displayVerses
+                                                    .first.surahName
+                                                : displayVerses
+                                                    .first.surahNameEn,
                                             style: TextStyle(
                                               color: c.gold,
-                                              fontFamily:
-                                                  'ScheherazadeNew-Bold',
                                               fontSize: 15,
-                                              fontWeight: FontWeight.bold,
+                                              fontWeight: FontWeight.w700,
                                             ),
                                           );
                                         },
                                       ),
-                                      const SizedBox(width: 4),
+                                      const SizedBox(width: 2),
                                       Icon(
                                         Icons.keyboard_arrow_down_rounded,
-                                        color: c.muted,
+                                        color: c.muted.withValues(alpha: 0.4),
                                         size: 16,
                                       ),
                                     ],
                                   ),
                                 ),
+                              ),
 
-                                // Settings Button
-                                const SizedBox(width: 16),
-                                GestureDetector(
-                                  onTap: _showSettingsDialog,
-                                  behavior: HitTestBehavior.opaque,
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(4.0),
-                                    child: Icon(
-                                      Icons.settings_rounded,
-                                      color: c.gold.withValues(alpha: 0.8),
-                                      size: 18,
-                                    ),
+                              // Settings button — generous tap target
+                              const SizedBox(width: 8),
+                              GestureDetector(
+                                onTap: _showSettingsDialog,
+                                behavior: HitTestBehavior.opaque,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: Icon(
+                                    Icons.tune_rounded,
+                                    color: c.gold.withValues(alpha: 0.6),
+                                    size: 18,
                                   ),
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         )
                       : const SizedBox.shrink(key: ValueKey('empty_header')),
                 ),
-                // ── Main Recitation List ──────────────────────────────────────────
+
+                // ── Verse List ───────────────────────────────────────────
                 Expanded(
                   child: Builder(
                     builder: (context) {
@@ -290,7 +374,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                       return ListView.builder(
                         controller: _scroll,
                         physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(0, 0, 0, 140),
+                        padding: const EdgeInsets.fromLTRB(0, 6, 0, 140),
                         itemCount: displayVerses.length,
                         itemBuilder: (_, i) {
                           final v = displayVerses[i];
@@ -302,7 +386,8 @@ class _TrackingScreenState extends State<TrackingScreen>
                             controller: widget.controller,
                             isAutoScrolling: _isAutoScrolling,
                             onTap: () {
-                              widget.controller.setManualAyah(v.surah, v.ayah);
+                              widget.controller
+                                  .setManualAyah(v.surah, v.ayah);
                             },
                           );
                         },
@@ -310,23 +395,18 @@ class _TrackingScreenState extends State<TrackingScreen>
                     },
                   ),
                 ),
-                // ── Bottom Action Bar ──────────────────────────────────────────────
+
+                // ── Bottom Action Bar ────────────────────────────────────
                 SafeArea(
                   top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: BottomActionBar(
-                      isRecording: widget.isRecording,
-                      isLoadingEngine: widget.isLoadingEngine,
-                      isAutoScrolling: _isAutoScrolling,
-                      c: c,
-                      onMic: widget.onToggleRecord,
-                      onToggleAutoScroll: _toggleAutoScroll,
-                      onSettingsTap: _showSettingsDialog,
-                    ),
+                  child: BottomActionBar(
+                    isRecording: widget.isRecording,
+                    isLoadingEngine: widget.isLoadingEngine,
+                    isAutoScrolling: _isAutoScrolling,
+                    c: c,
+                    onMic: widget.onToggleRecord,
+                    onToggleAutoScroll: _toggleAutoScroll,
+                    onSettingsTap: _showSettingsDialog,
                   ),
                 ),
               ],
