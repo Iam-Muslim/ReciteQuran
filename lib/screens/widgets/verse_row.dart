@@ -102,7 +102,6 @@ class _VerseRowState extends State<VerseRow> {
 
     // Jenkins-style hash combining
     int hash = isActive ? 1 : 0;
-    hash = hash * 31 + (isActive ? ctrl.currentWordIndex : 0);
     hash = hash * 31 + (isCompleted ? 1 : 0);
 
     // Hash green/red word sets for this ayah.
@@ -113,8 +112,11 @@ class _VerseRowState extends State<VerseRow> {
     } else {
       final wordCount = widget.verse.uthmaniWords.length;
       for (int i = 0; i < wordCount; i++) {
-        if (ctrl.isWordGreen(ayah, i)) hash = hash * 31 + (i + 1) * 7;
-        if (ctrl.isWordRed(ayah, i)) hash = hash * 31 + (i + 1) * 13;
+        final cIdx = widget.verse.uthmaniToCleanMap[i];
+        if (cIdx >= 0) {
+          if (ctrl.isWordGreen(ayah, cIdx)) hash = hash * 31 + (i + 1) * 7;
+          if (ctrl.isWordRed(ayah, cIdx)) hash = hash * 31 + (i + 1) * 13;
+        }
       }
     }
 
@@ -128,15 +130,18 @@ class _VerseRowState extends State<VerseRow> {
     return hash;
   }
 
-  /// Determines the color for word at index [i].
+  /// Determines the color for word at UI index [i].
   Color _getColor(int i, ThemeColors c, AppState app) {
+    final cIdx = widget.verse.uthmaniToCleanMap[i];
+    if (cIdx < 0) return c.text;
+
     if (app.mistakeLevel == MistakeLevel.none) {
-      if (widget.controller.isWordGreen(widget.verse.ayah, i)) return c.gold;
+      if (widget.controller.isWordGreen(widget.verse.ayah, cIdx)) return c.gold;
       return c.text;
     }
 
-    if (widget.controller.isWordGreen(widget.verse.ayah, i)) return c.green;
-    if (widget.controller.isWordRed(widget.verse.ayah, i)) return c.red;
+    if (widget.controller.isWordGreen(widget.verse.ayah, cIdx)) return c.green;
+    if (widget.controller.isWordRed(widget.verse.ayah, cIdx)) return c.red;
 
     return c.text;
   }
@@ -160,22 +165,18 @@ class _VerseRowState extends State<VerseRow> {
     final ayah = widget.verse.ayah;
 
     for (int i = 0; i < words.length; i++) {
-      final isCurrent = isActive && i == ctrl.currentWordIndex;
-      final isRead = ctrl.isWordGreen(ayah, i) ||
-          ctrl.isWordRed(ayah, i) ||
-          (isActive && i < ctrl.currentWordIndex);
+      final cIdx = widget.verse.uthmaniToCleanMap[i];
+      final isRead = cIdx >= 0 && (ctrl.isWordGreen(ayah, cIdx) || ctrl.isWordRed(ayah, cIdx));
 
       // Zero-GPU blur: unrecited words match background color (invisible).
-      // Words "materialize" instantly when highlighted green/red/amber.
+      // Words "materialize" instantly when highlighted green/red.
       final isHidden =
-          app.isBlurMode && !isRead && !isCurrent && !widget.isAutoScrolling;
+          app.isBlurMode && !isRead && !widget.isAutoScrolling;
 
-      // Current word uses distinct amber color (no underline = no diacritic collision)
+      // Unmatched words use text color, matched use green/red
       final Color color;
       if (isHidden) {
         color = c.bg;
-      } else if (isCurrent) {
-        color = c.currentWord;
       } else {
         color = _getColor(i, c, app);
       }

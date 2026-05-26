@@ -34,6 +34,11 @@ class QuranVerse {
   /// Per-word Uthmani strings. Index [i] corresponds to the i-th word.
   final List<String> uthmaniWords;
 
+  /// Maps an index from [uthmaniWords] (UI) to its corresponding index in [cleanWords] (Matcher).
+  /// Required because [uthmaniWords] contains stop marks (e.g. ۖ) as separate
+  /// words which do not exist in [cleanWords]. Stop marks map to the previous word's index.
+  final List<int> uthmaniToCleanMap;
+
   const QuranVerse({
     required this.surah,
     required this.ayah,
@@ -43,9 +48,39 @@ class QuranVerse {
     required this.textClean,
     required this.cleanWords,
     required this.uthmaniWords,
+    required this.uthmaniToCleanMap,
   });
 
   factory QuranVerse.fromJson(Map<String, dynamic> json) {
+    final cleanWords = (json['text_clean'] as String? ?? '').split(' ');
+    final uthmaniWords = (json['text_uthmani'] as String? ?? '').split(' ');
+
+    final List<int> map = [];
+    int cleanIdx = 0;
+    for (int uIdx = 0; uIdx < uthmaniWords.length; uIdx++) {
+      final cleanAttempt = uthmaniWords[uIdx]
+          .replaceAll(
+              RegExp(
+                  r'[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED\u0640]'),
+              '')
+          .trim();
+      if (cleanAttempt.isNotEmpty) {
+        map.add(cleanIdx);
+        cleanIdx++;
+      } else {
+        // Stop mark — attach its visual state to the preceding word
+        map.add(cleanIdx > 0 ? cleanIdx - 1 : -1);
+      }
+    }
+
+    // Safety fallback
+    if (cleanIdx != cleanWords.length) {
+      map.clear();
+      for (int i = 0; i < uthmaniWords.length; i++) {
+        map.add(i < cleanWords.length ? i : cleanWords.length - 1);
+      }
+    }
+
     return QuranVerse(
       surah: json['surah'] as int,
       ayah: json['ayah'] as int,
@@ -53,8 +88,9 @@ class QuranVerse {
       surahName: json['surah_name'] as String? ?? '',
       surahNameEn: json['surah_name_en'] as String? ?? '',
       textClean: json['text_clean'] as String? ?? '',
-      cleanWords: (json['text_clean'] as String? ?? '').split(' '),
-      uthmaniWords: (json['text_uthmani'] as String? ?? '').split(' '),
+      cleanWords: cleanWords,
+      uthmaniWords: uthmaniWords,
+      uthmaniToCleanMap: map,
     );
   }
 }

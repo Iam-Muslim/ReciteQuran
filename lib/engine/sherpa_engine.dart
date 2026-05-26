@@ -160,13 +160,12 @@ class SherpaEngine {
     });
 
     if (_isBusy) {
-      // Queue the LATEST chunk (replaces any previous pending).
-      // When inference finishes, the engine processes this queued chunk
-      // immediately, ensuring it always works on the freshest audio.
-      // Only one chunk is ever queued, so at most 2 consecutive inferences
-      // run before the engine waits for the next emission — the CPU still
-      // gets breathing room between cycles.
-      _pendingMessage = msg;
+      if (isFinal) {
+        _pendingMessage = msg; // Queue the final chunk so it isn't lost
+      }
+      // Drop intermediate chunks — the next non-dropped chunk will contain
+      // fresh audio via the sliding window. Dropping provides CPU idle time
+      // that prevents thermal throttling death spirals.
       return;
     }
 
@@ -242,20 +241,25 @@ class SherpaEngine {
           final Uint8List rawBytes = transferable.materialize().asUint8List();
           final bool isFinal = payload['isFinal'] as bool;
 
-          final ByteData byteData = rawBytes.buffer.asByteData();
-          final Float32List audio = Float32List(rawBytes.length ~/ 2);
+          final Int16List int16View = rawBytes.buffer.asInt16List(rawBytes.offsetInBytes, rawBytes.lengthInBytes ~/ 2);
+          final Float32List audio = Float32List(int16View.length);
 
           const double softwareGain = 1.5; // Boost volume by 50%
 
           for (int i = 0; i < audio.length; i++) {
-            double sample = byteData.getInt16(i * 2, Endian.little) / 32768.0;
+            double sample = int16View[i] / 32768.0;
             audio[i] = (sample * softwareGain).clamp(-1.0, 1.0);
           }
 
           // INCREASED to  quarter second to prevent dropping trailing words
           final int padding = isFinal ? 4000 : 0;
-          final Float32List padded = Float32List(audio.length + padding);
-          padded.setAll(0, audio);
+          final Float32List padded;
+          if (padding > 0) {
+            padded = Float32List(audio.length + padding);
+            padded.setAll(0, audio);
+          } else {
+            padded = audio;
+          }
 
           final stream = recognizer!.createStream();
 

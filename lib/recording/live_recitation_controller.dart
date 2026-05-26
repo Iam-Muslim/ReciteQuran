@@ -74,17 +74,7 @@ class LiveRecitationController extends ChangeNotifier {
   bool isWordRed(int ayah, int wordIndex) =>
       _redWordsByVerse[ayah]?.contains(wordIndex) ?? false;
 
-  /// Index of the word the user should recite next (the orange-highlighted one).
-  /// Clamped to the valid range so the orange never goes out-of-bounds,
-  /// which would cause it to vanish between matching the last word and
-  /// advancing to the next ayah.
-  int get currentWordIndex {
-    final idx = _lastCommittedWordIdx + 1;
-    final match = _currentMatch;
-    if (match == null) return 0;
-    final maxIdx = match.verse.cleanWords.length - 1;
-    return idx.clamp(0, maxIdx);
-  }
+  // currentWordIndex tracker removed to save CPU and simplify UI
 
   // ── Session Management API ─────────────────────────────────────────────────
 
@@ -294,8 +284,16 @@ class LiveRecitationController extends ChangeNotifier {
             // and must not trigger a lookahead jump.
             if (staleWordsSet!.contains(spoken)) continue;
             for (int j = targetIndex + 1; j < limit; j++) {
-              if (_calculateMatchScore(spoken, _cachedExpectedNorm![j]) >=
-                  0.85) {
+              final expectedNorm = _cachedExpectedNorm![j];
+              
+              // ── Common Word / Stop Word Lookahead Penalty ──
+              // Short words (1-2 letters like و, من, في, لا) are extremely common.
+              // If we aggressively jump lookahead based on these, we cause false
+              // reds when the user stutters or ASR hallucinates.
+              // We only allow lookahead jumping on "substantial" words (>= 3 letters).
+              if (expectedNorm.length <= 2) continue;
+
+              if (_calculateMatchScore(spoken, expectedNorm) >= 0.85) {
                 foundAt = j;
                 foundSpokenAt = i;
                 break;
