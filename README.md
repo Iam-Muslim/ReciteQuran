@@ -29,15 +29,18 @@ An offline Android app that listens to your Quran recitation and tracks your pro
 <img width="270" height="585" alt="White-Surah Selection" src="https://github.com/user-attachments/assets/29abec1c-9a14-45b6-a3d1-94d116fba593" />
 
 <img width="270" height="585" alt="White-Setting" src="https://github.com/user-attachments/assets/c89e8bbd-13cf-47d4-b957-85c896dca8c1" />
+<br>
 
-
+<img width="270" height="585" alt="Image" src="https://github.com/user-attachments/assets/8578d6d9-284e-40db-b186-47d8cb700591" />
+<img width="270" height="585" alt="Image" src="https://github.com/user-attachments/assets/2323b20e-c6bd-4368-8481-a04c1399fd07" />
 ## Features
-- **Real-time word tracking** — highlights each word as you recite it
+- **Real-time word tracking** — highlights each word as you recite it [Yazinsai Offline-Tarteel](https://github.com/yazinsai/offline-tarteel)
 - **100% Offline** — all audio processing happens on-device, zero internet required
 - **Mistake detection** — skipped or mispronounced words are highlighted differently
 - **Adjustable settings** — mistake sensitivity, lookahead words, font size
 - **Hide/Reveal mode** — hides unrecited words for memorization (Hifz) practice
 - **Reading mode** — auto-scroll for reading without recording
+- **Tajweed mode** - needs internet using [Muaalem API](https://github.com/obadx/quran-muaalem)
 
 # Developing 
 ##  Architecture
@@ -114,7 +117,9 @@ VerseRow (fingerprint-diffed UI)
  <br>
  [FastConformer ar CTC model-Yazinsai](https://github.com/yazinsai/offline-tarteel/releases/tag/v0.1.0)
  <br>
- [Abdullah (obadx)](https://github.com/obadx) for the original Quran Muaalem model and research
+ [Abdullah (obadx)](https://github.com/obadx) for the original Quran Muaalem model and researc
+  <br>
+ [Muaalem Model](https://huggingface.co/obadx/muaalem-model-v3_2)
  <br>
  [Quran Muaalem IOS App - itarek](https://github.com/iTarek/Quran-Muaalem-iOS)
 
