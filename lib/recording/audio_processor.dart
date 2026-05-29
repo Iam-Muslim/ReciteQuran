@@ -1,21 +1,56 @@
-/// Real-time audio capture and Voice Activity Detection (VAD).
-///
-/// Captures 16kHz mono 16-bit PCM audio from the microphone, detects
-/// speech vs silence using RMS-based VAD, and emits audio chunks for
-/// ASR inference.
-///
-/// Audio pipeline flow:
-///   Microphone → Raw PCM bytes → 30ms frame slicing → VAD check →
-///   Speech buffer accumulation → Sliding window emission → ASR engine
-///
-/// Key parameters (tuned for Arabic recitation):
-/// - [expandStepBytes]: 400ms — how often audio is sent to ASR (latency knob)
-/// - [maxBufferBytes]: 3.5s — maximum speech buffer before trimming
-/// - [maxSilenceMs]: 800ms — silence duration to finalize a phrase
+// Real-time audio capture and Voice Activity Detection (VAD).
+//
+// Captures 16kHz mono 16-bit PCM audio from the microphone, detects
+// speech vs silence using RMS-based VAD, and emits audio chunks for
+// ASR inference.
+//
+// Audio pipeline flow:
+//   Microphone → Raw PCM bytes → 30ms frame slicing → VAD check →
+//   Speech buffer accumulation → Sliding window emission → ASR engine
+//
+// Key parameters (tuned for Arabic recitation):
+// - [expandStepBytes]: 400ms — how often audio is sent to ASR (latency knob)
+// - [maxBufferBytes]: 3.5s — maximum speech buffer before trimming
+// - [maxSilenceMs]: 800ms — silence duration to finalize a phrase
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:math' as math;
 import 'package:record/record.dart';
+import '../utils/file_logger.dart';
+import '../core/types.dart';
+
+// Configuration for the sliding audio window.
+class AudioWindowConfig {
+  final int expandStepBytes;
+  final int maxBufferBytes;
+
+  const AudioWindowConfig({
+    required this.expandStepBytes,
+    required this.maxBufferBytes,
+  });
+
+  /// Configures the audio sliding window based on the device's hardware tier.
+  factory AudioWindowConfig.fromTier(HardwareTier tier) {
+    const int bytesPerSec = AudioProcessor.bytesPerSec;
+    switch (tier) {
+      case HardwareTier.flagship:
+        return const AudioWindowConfig(
+          expandStepBytes: (bytesPerSec * 300) ~/ 1000,
+          maxBufferBytes: (bytesPerSec * 3500) ~/ 1000,
+        );
+      case HardwareTier.standard:
+        return const AudioWindowConfig(
+          expandStepBytes: (bytesPerSec * 600) ~/ 1000,
+          maxBufferBytes: (bytesPerSec * 3000) ~/ 1000,
+        );
+      case HardwareTier.budget:
+        return const AudioWindowConfig(
+          expandStepBytes: (bytesPerSec * 1000) ~/ 1000,
+          maxBufferBytes: (bytesPerSec * 2500) ~/ 1000,
+        );
+    }
+  }
+}
 
 class AudioProcessor {
   // ── Audio format constants ─────────────────────────────────────────────────
@@ -41,19 +76,23 @@ class AudioProcessor {
   int _calibrationFramesCount = 0;
   double _calibrationSumRms = 0.0;
 
-  /// Maximum silence before finalizing a speech segment (800ms).
-  static const int maxSilenceMs = 800;
+  /// Maximum silence before finalizing a speech segment.
+  /// Increased to 1500ms to better support slow Murattal recitation.
+  /// This prevents the VAD from aggressively chopping phrases into single words.
+  static const int maxSilenceMs = 1500;
   static const int maxSilenceFrames = maxSilenceMs ~/ frameMs;
 
-  // ── Emission control ──────────────────────────────────────────────────────
-  /// Send audio to ASR every 600ms of new speech data.
-  /// 600ms drastically reduces CPU overhead (33% load reduction vs 400ms),
-  /// completely preventing Android thermal throttling death spirals on long ayahs.
-  static const int expandStepBytes = (bytesPerSec * 600) ~/ 1000;
+  // ── Dynamic Window Configuration ──────────────────────────────────────────
+  late AudioWindowConfig _config = AudioWindowConfig.fromTier(
+    HardwareTier.flagship,
+  );
 
-  /// Maximum total speech buffer before oldest audio is discarded.
-  /// 3.5 seconds provides enough context for Arabic phrase matching.
-  static final int maxBufferBytes = (bytesPerSec * 3.5).toInt();
+  void setConfig(AudioWindowConfig config) {
+    _config = config;
+    FileLogger.instance.log(
+      '[AUDIO] Configuration updated: expandStep=${config.expandStepBytes}, maxBuffer=${config.maxBufferBytes}',
+    );
+  }
 
   // ── Internal state ────────────────────────────────────────────────────────
   Uint8List _frameBuffer = Uint8List(0);
@@ -133,6 +172,9 @@ class AudioProcessor {
         bool isSpeechFrame = rms > _vadThresholdRms;
 
         if (isSpeechFrame) {
+          if (!_isSpeaking) {
+            FileLogger.instance.log('[AUDIO] 🎤 VAD ON');
+          }
           _isSpeaking = true;
           _silenceFramesCount = 0;
         } else {
@@ -144,7 +186,8 @@ class AudioProcessor {
           _speechLength += frame.length;
 
           // Trim oldest audio if buffer exceeds max size
-          while (_speechLength > maxBufferBytes) {
+          while (_speechLength > _config.maxBufferBytes) {
+            //  FileLogger.instance.log('[AUDIO] ⚠️ BUFFER OVERFLOW - Dropping ${(_speechChunks.first.length / bytesPerSec * 1000).toInt()}ms audio');
             final firstChunk = _speechChunks.first;
             _speechChunks.removeAt(0);
             _speechLength -= firstChunk.length;
@@ -152,10 +195,10 @@ class AudioProcessor {
           }
 
           // Emit full accumulated buffer when enough new data has accumulated.
-          // By passing the entire buffer (up to maxBufferBytes), we ensure
+          // By passing the entire buffer (up to _config.maxBufferBytes), we ensure
           // no audio is skipped even if the engine drops intermediate chunks
           // due to being busy (e.g. thermal throttling).
-          if (_speechLength - _lastEmitBytes >= expandStepBytes) {
+          if (_speechLength - _lastEmitBytes >= _config.expandStepBytes) {
             if (_speechLength > 0) {
               Uint8List window = Uint8List(_speechLength);
               int innerOffset = 0;
@@ -172,6 +215,7 @@ class AudioProcessor {
           bool silenceTimeout = _silenceFramesCount >= maxSilenceFrames;
 
           if (silenceTimeout) {
+            FileLogger.instance.log('[AUDIO] 🔇 VAD OFF');
             if (_speechLength > 0) {
               Uint8List all = Uint8List(_speechLength);
               int innerOffset = 0;

@@ -16,6 +16,8 @@
 ///   AudioProcessor captures mic → feeds chunks to Controller →
 ///   Controller sends to SherpaEngine (Isolate) → gets transcription →
 ///   matches words against expected Quran text → updates highlighting
+library;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -29,6 +31,10 @@ import 'data/models/quran_repository.dart';
 import 'data/quran_metadata_service.dart';
 import 'screens/tracking_screen.dart';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'tajweed/providers/muaalem_provider.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -41,8 +47,14 @@ void main() async {
   );
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
+  final prefs = await SharedPreferences.getInstance();
   await AppState.instance.load();
-  runApp(const QuranApp());
+  runApp(
+    ProviderScope(
+      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+      child: const QuranApp(),
+    ),
+  );
 }
 
 /// Root widget — rebuilds MaterialApp when theme/language changes.
@@ -182,9 +194,9 @@ class _OrchestratorState extends State<_Orchestrator> {
                     _ctrl?.feed(chunk, isFinal: isFinal),
               )
               .catchError((e) {
-            debugPrint('❌ AUDIO ERROR: $e');
-            if (mounted) setState(() => _isRecording = false);
-          });
+                debugPrint('❌ AUDIO ERROR: $e');
+                if (mounted) setState(() => _isRecording = false);
+              });
         }
       }
     } catch (e) {

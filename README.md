@@ -64,9 +64,23 @@ lib/
 │       ├── mic_bar.dart          # Bottom action toolbar
 │       ├── surah_picker.dart     # Surah selection sheet
 │       └── settings_dialog.dart  # Settings bottom sheet
+│       └── tagweed_screen.dart
+    tajweed/
+    ├── rules/
+    │   ├── noun_rules.dart       # Nun/Mim Sakina and Tanwin rules
+    │   ├── lam_rules.dart        # Lam rules (Shamsi/Qamari)
+    │   ├── madd_rules.dart       # Madd/Gunnah rules
+    │   ├── raa_rules.dart        # Raa rules (tafkhim/tarqiq)
+    │   ├── hamza_rules.dart      # Hamza rules
+    │   └── stop_rules.dart       # Waqf rules
+    └── utils/
+        ├── tajweed_analyzer.dart # Analyzes recitation for tajweed violations
+         └── tajweed_rules.dart    # Common tajweed rules for reference
+         
 ├── utils/
 │   └── normalizer.dart           # Arabic text normalization
 └── main.dart                     # Entry point + Orchestrator
+
 ```
 
 ### Audio Pipeline
@@ -99,6 +113,10 @@ VerseRow (fingerprint-diffed UI)
  [Yazinsai Offline-Tarteel](https://github.com/yazinsai/offline-tarteel) - Onnx Model , Normalizing , Decoding and ...
  <br>
  [FastConformer ar CTC model-Yazinsai](https://github.com/yazinsai/offline-tarteel/releases/tag/v0.1.0)
+ <br>
+ [Abdullah (obadx)](https://github.com/obadx) for the original Quran Muaalem model and research
+ <br>
+ [Quran Muaalem IOS App - itarek](https://github.com/iTarek/Quran-Muaalem-iOS)
 
 
 

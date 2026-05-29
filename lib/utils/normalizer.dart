@@ -1,14 +1,14 @@
-/// Arabic text normalization utilities for ASR matching.
-///
-/// The ASR engine outputs raw Arabic text that may differ from the Quran's
-/// written form due to:
-/// - Diacritical marks (tashkeel) present in Quran but absent in ASR output
-/// - Alef variants (أ إ آ ٱ) that ASR may normalize differently
-/// - Ta marbuta (ة) vs Ha (ه) ambiguity
-/// - SentencePiece tokenizer artifacts (▁ characters)
-///
-/// This normalizer strips these differences so that "بِسْمِ" and "بسم"
-/// compare as equal.
+// Arabic text normalization utilities for ASR matching.
+//
+// The ASR engine outputs raw Arabic text that may differ from the Quran's
+// written form due to:
+// - Diacritical marks (tashkeel) present in Quran but absent in ASR output
+// - Alef variants (أ إ آ ٱ) that ASR may normalize differently
+// - Ta marbuta (ة) vs Ha (ه) ambiguity
+// - SentencePiece tokenizer artifacts (▁ characters)
+//
+// This normalizer strips these differences so that "بِسْمِ" and "بسم"
+// compare as equal.
 class Normalizer {
   /// Regex matching all Arabic diacritical marks and the tatweel character.
   static final RegExp _diacritics = RegExp(
@@ -62,9 +62,17 @@ class Normalizer {
     // Replace SentencePiece lower-one-eighth block with standard space
     text = text.replaceAll('\u2581', ' ');
 
-    // Collapse multiple spaces and trim
     text = text.replaceAll(RegExp(r'\s+'), ' ').trim();
 
     return text;
+  }
+
+  /// Maps specific small Uthmani Madd characters to standard letters
+  /// to align character count indexing with the JSON response arrays.
+  static String maddLetterMapping(String text) {
+    if (text.isEmpty) return text;
+    // Small Yaa (ۦ) -> Standard Yaa (ي)
+    // Small Waw (ۥ) -> Standard Waw (و)
+    return text.replaceAll('\u06E6', '\u064A').replaceAll('\u06E5', '\u0648');
   }
 }

@@ -1,16 +1,16 @@
-/// Displays a single Quranic verse (ayah) with word-by-word highlighting.
-///
-/// Uses fingerprint-based diffing for near-zero CPU usage:
-/// - Listens to BOTH [LiveRecitationController] AND [AppState]
-/// - Computes a compact hash of this verse's visual state
-/// - Only rebuilds when THIS verse's fingerprint actually changes
-/// - Caches the [TextSpan] list between rebuilds
-///
-/// Highlighting modes:
-/// - Green/emerald: correctly recited word
-/// - Red/rose: skipped or incorrect word
-/// - Amber: the word currently being tracked
-/// - Hidden (blur mode): unrecited words match background color
+// Displays a single Quranic verse (ayah) with word-by-word highlighting.
+//
+// Uses fingerprint-based diffing for near-zero CPU usage:
+// - Listens to BOTH [LiveRecitationController] AND [AppState]
+// - Computes a compact hash of this verse's visual state
+// - Only rebuilds when THIS verse's fingerprint actually changes
+// - Caches the [TextSpan] list between rebuilds
+//
+// Highlighting modes:
+// - Green/emerald: correctly recited word
+// - Red/rose: skipped or incorrect word
+// - Amber: the word currently being tracked
+// - Hidden (blur mode): unrecited words match background color
 import 'package:flutter/material.dart';
 import '../../core/app_state.dart';
 import '../../data/models/quran_data.dart';
@@ -95,7 +95,8 @@ class _VerseRowState extends State<VerseRow> {
     final surah = widget.verse.surah;
 
     final activeMatch = ctrl.currentMatchedVerse;
-    final bool isActive = activeMatch != null &&
+    final bool isActive =
+        activeMatch != null &&
         activeMatch.verse.surah == surah &&
         activeMatch.verse.ayah == ayah;
     final bool isCompleted = ctrl.completedAyahs.contains(ayah);
@@ -149,7 +150,11 @@ class _VerseRowState extends State<VerseRow> {
   /// Converts an integer to Arabic-Indic digits (٠١٢٣٤٥٦٧٨٩).
   String _toArabicDigits(int number) {
     const digits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-    return number.toString().split('').map((e) => digits[int.parse(e)]).join('');
+    return number
+        .toString()
+        .split('')
+        .map((e) => digits[int.parse(e)])
+        .join('');
   }
 
   /// Builds the list of [TextSpan]s for this verse's words.
@@ -166,12 +171,13 @@ class _VerseRowState extends State<VerseRow> {
 
     for (int i = 0; i < words.length; i++) {
       final cIdx = widget.verse.uthmaniToCleanMap[i];
-      final isRead = cIdx >= 0 && (ctrl.isWordGreen(ayah, cIdx) || ctrl.isWordRed(ayah, cIdx));
+      final isRead =
+          cIdx >= 0 &&
+          (ctrl.isWordGreen(ayah, cIdx) || ctrl.isWordRed(ayah, cIdx));
 
       // Zero-GPU blur: unrecited words match background color (invisible).
       // Words "materialize" instantly when highlighted green/red.
-      final isHidden =
-          app.isBlurMode && !isRead && !widget.isAutoScrolling;
+      final isHidden = app.isBlurMode && !isRead && !widget.isAutoScrolling;
 
       // Unmatched words use text color, matched use green/red
       final Color color;
@@ -181,40 +187,46 @@ class _VerseRowState extends State<VerseRow> {
         color = _getColor(i, c, app);
       }
 
-      spans.add(TextSpan(
-        text: words[i],
-        style: TextStyle(
-          fontFamily: 'QPC_Hafs',
-          fontSize: app.fontSize,
-          height: 2.4,
-          wordSpacing: 6.0,
-          color: color,
+      spans.add(
+        TextSpan(
+          text: words[i],
+          style: TextStyle(
+            fontFamily: 'HafsSmart',
+            fontSize: app.fontSize,
+            height: 2.4,
+            wordSpacing: 6.0,
+            color: color,
+          ),
         ),
-      ));
+      );
 
       // Word separator
       if (i < words.length - 1) {
-        spans.add(TextSpan(
-          text: ' ',
-          style: TextStyle(
-            fontFamily: 'QPC_Hafs',
-            fontSize: app.fontSize,
-            height: 1.8,
+        spans.add(
+          TextSpan(
+            text: ' ',
+            style: TextStyle(
+              fontFamily: 'HafsSmart',
+              fontSize: app.fontSize,
+              height: 1.8,
+            ),
           ),
-        ));
+        );
       }
     }
 
     // Inline ayah number — plain Arabic digits with generous spacing
-    spans.add(TextSpan(
-      text: '       ${_toArabicDigits(widget.verse.ayah)}',
-      style: TextStyle(
-        fontFamily: '',
-        fontSize: app.fontSize * 0.38,
-        color: c.muted.withValues(alpha: 0.35),
-        height: 2.4,
+    spans.add(
+      TextSpan(
+        text: '       ${_toArabicDigits(widget.verse.ayah)}',
+        style: TextStyle(
+          fontFamily: '',
+          fontSize: app.fontSize * 0.38,
+          color: c.muted.withValues(alpha: 0.35),
+          height: 2.4,
+        ),
       ),
-    ));
+    );
 
     return spans;
   }
@@ -226,7 +238,8 @@ class _VerseRowState extends State<VerseRow> {
     final words = widget.verse.uthmaniWords;
 
     final activeMatch = widget.controller.currentMatchedVerse;
-    final bool isActive = activeMatch != null &&
+    final bool isActive =
+        activeMatch != null &&
         activeMatch.verse.surah == widget.verse.surah &&
         activeMatch.verse.ayah == widget.verse.ayah;
 
@@ -235,19 +248,30 @@ class _VerseRowState extends State<VerseRow> {
 
     return GestureDetector(
       onTap: widget.onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+        margin: EdgeInsets.symmetric(
+          horizontal: isActive ? 8 : 12,
+          vertical: isActive ? 6 : 3,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
-          color: isActive ? c.gold.withValues(alpha: 0.03) : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-          // Always apply border (transparent when inactive) to prevent layout shift
-          border: Border(
-            right: BorderSide(
-              color: isActive ? c.gold.withValues(alpha: 0.5) : Colors.transparent,
-              width: 3,
-            ),
+          color: isActive ? c.surfaceHigh.withAlpha(150) : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isActive ? c.goldFade : Colors.transparent,
+            width: 1,
           ),
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: c.goldFade.withAlpha(20),
+                    blurRadius: 12,
+                    spreadRadius: 2,
+                  ),
+                ]
+              : [],
         ),
         child: RichText(
           textAlign: TextAlign.justify,

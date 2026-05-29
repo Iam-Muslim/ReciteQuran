@@ -1,23 +1,26 @@
-/// Global application state singleton.
-///
-/// Manages all user-configurable settings (language, theme, font size,
-/// mistake level, lookahead, blur mode) and exposes the active [ThemeColors]
-/// palette. All UI widgets listen to this via [ChangeNotifier].
-///
-/// Design: Zero-persistence — settings reset on app restart.
-/// This keeps the codebase dependency-free and startup instant.
-library core.app_state;
+// Global application state singleton.
+//
+// Manages all user-configurable settings (language, theme, font size,
+// mistake level, lookahead, blur mode) and exposes the active [ThemeColors]
+// palette. All UI widgets listen to this via [ChangeNotifier].
+//
+// Design: Zero-persistence — settings reset on app restart.
+// This keeps the codebase dependency-free and startup instant.
+
 
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 
-/// Supported UI languages.
+// Supported UI languages.
 enum AppLanguage { ar, en }
 
-/// How strictly the matching engine penalizes mistakes.
+// Application Mode: Word Checker (Sherpa) vs Tajweed (Muaalem)
+enum AppMode { wordChecker, tajweed }
+
+// How strictly the matching engine penalizes mistakes.
 enum MistakeLevel { none, easy, medium, hard }
 
-/// Available color themes.
+// Available color themes.
 enum AppTheme { light, dark }
 
 class AppState extends ChangeNotifier {
@@ -39,6 +42,17 @@ class AppState extends ChangeNotifier {
   void toggleLanguage() {
     _lang = _lang == AppLanguage.ar ? AppLanguage.en : AppLanguage.ar;
     notifyListeners();
+  }
+
+  // ── Mode ───────────────────────────────────────────────────────────────────
+
+  AppMode currentMode = AppMode.wordChecker;
+
+  void setMode(AppMode mode) {
+    if (currentMode != mode) {
+      currentMode = mode;
+      notifyListeners();
+    }
   }
 
   // ── Theme ──────────────────────────────────────────────────────────────────
@@ -81,10 +95,43 @@ class AppState extends ChangeNotifier {
 
   // ── Lookahead ──────────────────────────────────────────────────────────────
 
-  int lookahead = 1;
+  int lookahead = 3;
 
   void setLookahead(int val) {
     lookahead = val;
+    notifyListeners();
+  }
+
+  // ── Tajweed Settings ───────────────────────────────────────────────────────
+
+  String rewaya = "hafs";
+  int maddMonfaselLen = 2;
+  int maddMottaselLen = 4;
+  int maddMottaselWaqf = 4;
+  int maddAaredLen = 2;
+
+  void setRewaya(String val) {
+    rewaya = val;
+    notifyListeners();
+  }
+
+  void setMaddMonfaselLen(int val) {
+    maddMonfaselLen = val;
+    notifyListeners();
+  }
+
+  void setMaddMottaselLen(int val) {
+    maddMottaselLen = val;
+    notifyListeners();
+  }
+
+  void setMaddMottaselWaqf(int val) {
+    maddMottaselWaqf = val;
+    notifyListeners();
+  }
+
+  void setMaddAaredLen(int val) {
+    maddAaredLen = val;
     notifyListeners();
   }
 
@@ -119,10 +166,10 @@ class AppState extends ChangeNotifier {
   Future<void> load() async {}
 }
 
-/// Immutable color palette used by all UI widgets.
-///
-/// Each theme (light/dark) provides its own [ThemeColors] instance.
-/// Widgets read colors via `AppState.instance.colors`.
+// Immutable color palette used by all UI widgets.
+//
+// Each theme (light/dark) provides its own [ThemeColors] instance.
+// Widgets read colors via `AppState.instance.colors`.
 class ThemeColors {
   final Color bg;
   final Color surface;

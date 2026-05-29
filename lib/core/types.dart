@@ -1,26 +1,33 @@
-/// Shared primitive types used across all features.
-///
-/// Kept dependency-free so any feature package can import this
-/// without pulling in Flutter widgets or heavy dependencies.
-library core.types;
+// Shared primitive types used across all features.
+//
+// Kept dependency-free so any feature package can import this
+// without pulling in Flutter widgets or heavy dependencies.
+
 
 import '../data/models/quran_data.dart';
+
+// ---------------------------------------------------------------------------
+// Hardware Tiering
+// ---------------------------------------------------------------------------
+
+// Device capabilities mapped to ASR processing thresholds.
+enum HardwareTier { flagship, standard, budget }
 
 // ---------------------------------------------------------------------------
 // Tracker state machine
 // ---------------------------------------------------------------------------
 
-/// The two states the live recitation tracker can be in.
-///
-/// [discovery] — engine is scanning audio looking for a matching verse.
-/// [tracking]  — a verse has been identified; engine is now aligning words.
+// The two states the live recitation tracker can be in.
+//
+// [discovery] — engine is scanning audio looking for a matching verse.
+// [tracking]  — a verse has been identified; engine is now aligning words.
 enum TrackerState { discovery, tracking }
 
 // ---------------------------------------------------------------------------
 // Verse match result
 // ---------------------------------------------------------------------------
 
-/// A matched verse together with its confidence score (0.0 – 1.0).
+// A matched verse together with its confidence score (0.0 – 1.0).
 class VerseMatch {
   /// The matched [QuranVerse].
   final QuranVerse verse;
@@ -45,7 +52,7 @@ class VerseMatch {
 // Shared constants
 // ---------------------------------------------------------------------------
 
-/// Engine-wide tuning constants.
+// Engine-wide tuning constants.
 class TrackerConstants {
   /// Minimum Levenshtein ratio for a verse to be considered a match.
   static const double verseMatchThreshold = 0.70;

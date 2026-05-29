@@ -1,13 +1,13 @@
-/// Splits ASR transcription output into individual normalized words.
-///
-/// The Sherpa engine outputs a continuous text string with timestamps.
-/// This service segments it into [PhonemeWord] objects, each with:
-/// - Normalized Arabic text (via [Normalizer])
-/// - Start/end timestamps from the CTC decoder
-///
-/// Used by [LiveRecitationController] to match spoken words against
-/// the expected Quran text word-by-word.
-library engine.segmentation_service;
+// Splits ASR transcription output into individual normalized words.
+//
+// The Sherpa engine outputs a continuous text string with timestamps.
+// This service segments it into [PhonemeWord] objects, each with:
+// - Normalized Arabic text (via [Normalizer])
+// - Start/end timestamps from the CTC decoder
+//
+// Used by [LiveRecitationController] to match spoken words against
+// the expected Quran text word-by-word.
+
 
 import 'sherpa_engine.dart';
 import '../utils/normalizer.dart';
@@ -32,7 +32,6 @@ class SegmentationService {
   List<PhonemeWord> groupPhonemesToWords(TranscriptionResult result) {
     if (result.text.isEmpty) return [];
 
-    final String text = Normalizer.normalizeArabic(result.text);
     // Since we normalized the text (e.g., collapsed multiple spaces), the original
     // sherpa timestamps may be slightly misaligned if spaces were removed.
     // However, since we just need the start/end time of each word, we can approximate

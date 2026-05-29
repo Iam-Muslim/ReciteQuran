@@ -1,14 +1,14 @@
-/// Settings bottom sheet — displays all user-configurable options.
-///
-/// Content:
-/// - Language toggle (Arabic ↔ English)
-/// - Theme selector (Light / Dark)
-/// - Mistake checking level (None / Easy / Medium / Hard)
-/// - Lookahead words count (1-5)
-/// - Privacy policy link
-///
-/// Uses a fixed-height [DraggableScrollableSheet] that fits its content
-/// without stretching or leaving empty space.
+// Settings bottom sheet — displays all user-configurable options.
+//
+// Content:
+// - Language toggle (Arabic ↔ English)
+// - Theme selector (Light / Dark)
+// - Mistake checking level (None / Easy / Medium / Hard)
+// - Lookahead words count (1-5)
+// - Privacy policy link
+//
+// Uses a fixed-height [DraggableScrollableSheet] that fits its content
+// without stretching or leaving empty space.
 import 'package:flutter/material.dart';
 import '../../core/app_state.dart';
 
@@ -81,7 +81,7 @@ class SettingsDialog extends StatelessWidget {
                       trailing: Switch.adaptive(
                         value: !isAr,
                         onChanged: (_) => app.toggleLanguage(),
-                        activeColor: c.gold,
+                        activeTrackColor: c.gold,
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -235,7 +235,7 @@ class SettingsDialog extends StatelessWidget {
   }
 }
 
-/// A compact section label.
+// A compact section label.
 class _SectionLabel extends StatelessWidget {
   final String title;
   final ThemeColors c;
@@ -258,7 +258,7 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-/// A clean settings tile with title, subtitle, and trailing widget.
+// A clean settings tile with title, subtitle, and trailing widget.
 class _SettingTile extends StatelessWidget {
   final String title;
   final String subtitle;
@@ -312,7 +312,7 @@ class _SettingTile extends StatelessWidget {
   }
 }
 
-/// A horizontal segmented selector — modern alternative to ChoiceChips.
+// A horizontal segmented selector — modern alternative to ChoiceChips.
 class _SegmentedSelector extends StatelessWidget {
   final List<String> labels;
   final int selected;

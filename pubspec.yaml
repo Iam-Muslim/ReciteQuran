@@ -7,12 +7,19 @@ environment:
   sdk: ^3.11.5
 
 dependencies:
+  audio_session: ^0.2.3
+  audioplayers: ^6.6.0
+  device_info_plus: ^13.1.0
+  dio: ^5.9.2
   flutter:
     sdk: flutter
+  flutter_riverpod: ^3.3.1
+  http_parser: ^4.1.2
   package_info_plus: ^10.1.0
   path_provider: ^2.1.5
   permission_handler: ^12.0.1
   record: ^6.2.0
+  share_plus: ^13.1.0
   shared_preferences: ^2.2.0
   sherpa_onnx: ^1.13.1
   wakelock_plus: ^1.6.1
@@ -28,14 +35,14 @@ flutter:
 
   assets:
     - assets/model/fastconformer_ar_ctc_q8.onnx
-    - assets/model/quran.json
     - assets/model/tokens.txt
+    - assets/hafs_smart_v8.json
     - assets/icon/app_icon.png
 
   fonts:
-    - family: QPC_Hafs
+    - family: HafsSmart
       fonts:
-        - asset: assets/fonts/UthmanicHafs_V22.ttf
+        - asset: assets/fonts/HafsSmart_08.ttf
 
 flutter_launcher_icons:
   android: true

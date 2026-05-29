@@ -1,8 +1,8 @@
-/// Surah selection bottom sheet.
-///
-/// Displays all 114 surahs in a searchable, scrollable list.
-/// Supports both Arabic and English names, with Arabic-Indic digits.
-/// Auto-scrolls to the currently selected surah on first open.
+// Surah selection bottom sheet.
+//
+// Displays all 114 surahs in a searchable, scrollable list.
+// Supports both Arabic and English names, with Arabic-Indic digits.
+// Auto-scrolls to the currently selected surah on first open.
 import 'package:flutter/material.dart';
 import '../../core/app_state.dart';
 import '../../utils/normalizer.dart';
@@ -261,7 +261,11 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
 
   String _toArabicDigits(int number) {
     const digits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-    return number.toString().split('').map((e) => digits[int.parse(e)]).join('');
+    return number
+        .toString()
+        .split('')
+        .map((e) => digits[int.parse(e)])
+        .join('');
   }
 
   @override
@@ -387,7 +391,13 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                             vertical: 4,
                           ),
                           leading: app.isArabic
-                              ? (sel ? Icon(Icons.check_circle_rounded, color: c.gold, size: 24) : const SizedBox(width: 24))
+                              ? (sel
+                                    ? Icon(
+                                        Icons.check_circle_rounded,
+                                        color: c.gold,
+                                        size: 24,
+                                      )
+                                    : const SizedBox(width: 24))
                               : Container(
                                   width: 36,
                                   height: 36,
@@ -397,7 +407,9 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                                   ),
                                   alignment: Alignment.center,
                                   child: Text(
-                                    app.isArabic ? _toArabicDigits(sNum) : '$sNum',
+                                    app.isArabic
+                                        ? _toArabicDigits(sNum)
+                                        : '$sNum',
                                     style: TextStyle(
                                       color: sel ? Colors.white : c.muted,
                                       fontSize: 13,
@@ -407,11 +419,15 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                                 ),
                           title: Text(
                             displayName,
-                            textAlign: app.isArabic ? TextAlign.right : TextAlign.left,
+                            textAlign: app.isArabic
+                                ? TextAlign.right
+                                : TextAlign.left,
                             style: TextStyle(
                               color: sel ? c.gold : c.text,
                               fontSize: 20,
-                              fontWeight: sel ? FontWeight.bold : FontWeight.normal,
+                              fontWeight: sel
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                             ),
                           ),
                           trailing: app.isArabic
@@ -424,7 +440,9 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                                   ),
                                   alignment: Alignment.center,
                                   child: Text(
-                                    app.isArabic ? _toArabicDigits(sNum) : '$sNum',
+                                    app.isArabic
+                                        ? _toArabicDigits(sNum)
+                                        : '$sNum',
                                     style: TextStyle(
                                       color: sel ? Colors.white : c.muted,
                                       fontSize: 13,
@@ -432,7 +450,13 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                                     ),
                                   ),
                                 )
-                              : (sel ? Icon(Icons.check_circle_rounded, color: c.gold, size: 24) : const SizedBox(width: 24)),
+                              : (sel
+                                    ? Icon(
+                                        Icons.check_circle_rounded,
+                                        color: c.gold,
+                                        size: 24,
+                                      )
+                                    : const SizedBox(width: 24)),
                           onTap: () => widget.onPick(sNum),
                         ),
                       );

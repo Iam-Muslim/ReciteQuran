@@ -1,12 +1,10 @@
-/// Sherpa-ONNX ASR engine running in a dedicated Isolate.
-library engine.sherpa_engine;
+// Sherpa-ONNX ASR engine running in a dedicated Isolate.
 
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart';
 
@@ -241,7 +239,10 @@ class SherpaEngine {
           final Uint8List rawBytes = transferable.materialize().asUint8List();
           final bool isFinal = payload['isFinal'] as bool;
 
-          final Int16List int16View = rawBytes.buffer.asInt16List(rawBytes.offsetInBytes, rawBytes.lengthInBytes ~/ 2);
+          final Int16List int16View = rawBytes.buffer.asInt16List(
+            rawBytes.offsetInBytes,
+            rawBytes.lengthInBytes ~/ 2,
+          );
           final Float32List audio = Float32List(int16View.length);
 
           const double softwareGain = 1.5; // Boost volume by 50%

@@ -1,13 +1,13 @@
-/// Core Quran domain model.
-///
-/// Each [QuranVerse] stores the Uthmani Arabic text alongside a pre-computed
-/// phoneme representation used by the matching engine.
-library data.models.quran_data;
+// Core Quran domain model.
+//
+// Each [QuranVerse] stores the Uthmani Arabic text alongside a pre-computed
+// phoneme representation used by the matching engine.
 
-/// A single Quranic verse (ayah) with its Arabic text and phoneme data.
-///
-/// The [cleanWords] list is computed dynamically from the clean text
-/// to support Arabic word-by-word evaluation.
+
+// A single Quranic verse (ayah) with its Arabic text and phoneme data.
+//
+// The [cleanWords] list is computed dynamically from the clean text
+// to support Arabic word-by-word evaluation.
 class QuranVerse {
   /// The surah (chapter) number, 1-indexed.
   final int surah;
@@ -52,17 +52,29 @@ class QuranVerse {
   });
 
   factory QuranVerse.fromJson(Map<String, dynamic> json) {
-    final cleanWords = (json['text_clean'] as String? ?? '').split(' ');
-    final uthmaniWords = (json['text_uthmani'] as String? ?? '').split(' ');
+    final cleanWords =
+        (json['aya_text_emlaey'] as String? ??
+                json['text_clean'] as String? ??
+                '')
+            .split(' ')
+            .where((s) => s.isNotEmpty)
+            .toList();
+    final uthmaniWords =
+        (json['aya_text'] as String? ?? json['text_uthmani'] as String? ?? '')
+            .split(' ')
+            .where((s) => s.isNotEmpty)
+            .toList();
 
     final List<int> map = [];
     int cleanIdx = 0;
     for (int uIdx = 0; uIdx < uthmaniWords.length; uIdx++) {
       final cleanAttempt = uthmaniWords[uIdx]
           .replaceAll(
-              RegExp(
-                  r'[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED\u0640]'),
-              '')
+            RegExp(
+              r'[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED\u0640]',
+            ),
+            '',
+          )
           .trim();
       if (cleanAttempt.isNotEmpty) {
         map.add(cleanIdx);
@@ -84,10 +96,14 @@ class QuranVerse {
     return QuranVerse(
       surah: json['surah'] as int,
       ayah: json['ayah'] as int,
-      textUthmani: json['text_uthmani'] as String? ?? '',
+      textUthmani:
+          json['aya_text'] as String? ?? json['text_uthmani'] as String? ?? '',
       surahName: json['surah_name'] as String? ?? '',
       surahNameEn: json['surah_name_en'] as String? ?? '',
-      textClean: json['text_clean'] as String? ?? '',
+      textClean:
+          json['aya_text_emlaey'] as String? ??
+          json['text_clean'] as String? ??
+          '',
       cleanWords: cleanWords,
       uthmaniWords: uthmaniWords,
       uthmaniToCleanMap: map,

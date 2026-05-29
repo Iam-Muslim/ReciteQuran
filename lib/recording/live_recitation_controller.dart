@@ -1,6 +1,6 @@
-library recording.live_recitation_controller;
-
 import 'dart:math' as math;
+import 'dart:collection';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../core/types.dart';
@@ -10,16 +10,24 @@ import '../engine/segmentation_service.dart';
 import '../data/models/quran_data.dart';
 import '../data/models/quran_repository.dart';
 import '../utils/normalizer.dart';
+import '../utils/file_logger.dart';
 
-/// The `LiveRecitationController` handles real-time audio recitation matching.
-/// It acts as the bridge between the Sherpa ASR engine and the Quran UI,
-/// processing incoming audio chunks, tracking word-by-word progress,
-/// and emitting state changes to update the interface.
+// The `LiveRecitationController` handles real-time audio recitation matching.
+// It acts as the bridge between the Sherpa ASR engine and the Quran UI,
+// processing incoming audio chunks, tracking word-by-word progress,
+// and emitting state changes to update the interface.
 class LiveRecitationController extends ChangeNotifier {
   final SherpaEngine _engine;
   final QuranRepository repository;
   final SegmentationService _segmenter = SegmentationService();
   final VoidCallback? onAyahChanged;
+  final void Function(HardwareTier newTier)? onDowngradeRequired;
+
+  HardwareTier currentTier = HardwareTier.flagship;
+  HardwareTier _baselineHardwareTier = HardwareTier.flagship;
+  DateTime? _chunkStartTime;
+  final List<int> _recentLatencies = [];
+  static const int _maxLatenciesToTrack = 4;
 
   TrackerState _state = TrackerState.discovery;
   VerseMatch? _currentMatch;
@@ -30,6 +38,9 @@ class LiveRecitationController extends ChangeNotifier {
   final Map<int, Set<int>> _greenWordsByVerse = {};
   final Map<int, Set<int>> _redWordsByVerse = {};
   final Set<int> _completedAyahs = {};
+
+  final Queue<_PendingHighlight> _highlightQueue = Queue();
+  Timer? _highlightTimer;
 
   final ValueNotifier<String> debugRecognizedText = ValueNotifier("");
 
@@ -52,9 +63,46 @@ class LiveRecitationController extends ChangeNotifier {
     required this.repository,
     required SherpaEngine engine,
     this.onAyahChanged,
+    this.onDowngradeRequired,
   }) : _engine = engine {
     _engine.transcriptionStream.listen(_onResult);
     reset();
+  }
+
+  void _startHighlightTimer() {
+    if (_highlightTimer?.isActive ?? false) return;
+
+    _highlightTimer = Timer.periodic(const Duration(milliseconds: 60), (timer) {
+      if (_highlightQueue.isEmpty) {
+        timer.cancel();
+        return;
+      }
+
+      int processCount = _highlightQueue.length > 5 ? 2 : 1;
+
+      for (int i = 0; i < processCount; i++) {
+        if (_highlightQueue.isEmpty) break;
+        final event = _highlightQueue.removeFirst();
+
+        if (event.isAyahCompletion) {
+          _completedAyahs.add(event.ayah!);
+          _greenWordsByVerse.remove(event.ayah!);
+        } else if (event.isRed) {
+          _redWordsByVerse[event.ayah!] ??= {};
+          _redWordsByVerse[event.ayah!]!.add(event.wordIndex!);
+        } else {
+          _greenWordsByVerse[event.ayah!] ??= {};
+          _greenWordsByVerse[event.ayah!]!.add(event.wordIndex!);
+          _redWordsByVerse[event.ayah!]?.remove(event.wordIndex!);
+        }
+      }
+      notifyListeners();
+    });
+  }
+
+  void setBaselineTier(HardwareTier tier) {
+    _baselineHardwareTier = tier;
+    currentTier = tier;
   }
 
   // ── Public API Getters ─────────────────────────────────────────────────────
@@ -87,6 +135,8 @@ class LiveRecitationController extends ChangeNotifier {
   }
 
   void clearHighlights() {
+    _highlightQueue.clear();
+    _highlightTimer?.cancel();
     _completedAyahs.clear();
     _greenWordsByVerse.clear();
     _redWordsByVerse.clear();
@@ -94,6 +144,8 @@ class LiveRecitationController extends ChangeNotifier {
   }
 
   void clearHighlightsFromAyah(int startAyah) {
+    _highlightQueue.removeWhere((e) => e.ayah != null && e.ayah! >= startAyah);
+    if (_highlightQueue.isEmpty) _highlightTimer?.cancel();
     _completedAyahs.removeWhere((ayah) => ayah >= startAyah);
     _greenWordsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
     _redWordsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
@@ -116,11 +168,19 @@ class LiveRecitationController extends ChangeNotifier {
   /// Directly streams pure delta audio chunks without rolling memory overhead
   void feed(Uint8List audioChunk, {bool isFinal = false}) {
     if (_state != TrackerState.tracking) return;
+
+    if (!isFinal) {
+      _chunkStartTime = DateTime.now();
+    }
+
     _engine.transcribe(audioChunk, isFinal: isFinal);
   }
 
   void reset() {
     _state = TrackerState.tracking;
+    currentTier = _baselineHardwareTier;
+    _recentLatencies.clear();
+
     if (_currentMatch == null) {
       final verse = repository.getVerse(_targetSurah, 1);
       _currentMatch = verse != null
@@ -153,6 +213,17 @@ class LiveRecitationController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void unloadEngine() {
+    _state = TrackerState.discovery;
+    _engine.destroy();
+    notifyListeners();
+  }
+
+  Future<void> reloadEngine() async {
+    await _engine.initialize();
+    notifyListeners();
+  }
+
   void _clearTrackingState({bool preservePrevWords = false}) {
     _lastCommittedWordIdx = -1;
     _cachedExpectedNorm = null;
@@ -164,6 +235,40 @@ class LiveRecitationController extends ChangeNotifier {
 
   void _onResult(TranscriptionResult result) {
     if (_state != TrackerState.tracking || _currentMatch == null) return;
+
+    if (_chunkStartTime != null) {
+      final int processingTimeMs = DateTime.now()
+          .difference(_chunkStartTime!)
+          .inMilliseconds;
+      _chunkStartTime = null;
+
+      _recentLatencies.add(processingTimeMs);
+      if (_recentLatencies.length > _maxLatenciesToTrack) {
+        _recentLatencies.removeAt(0);
+      }
+
+      if (_recentLatencies.length == _maxLatenciesToTrack) {
+        double avgLatency =
+            _recentLatencies.fold(0, (a, b) => a + b) / _maxLatenciesToTrack;
+
+        // One-way thermal latch
+        if (currentTier == HardwareTier.flagship && avgLatency > 200) {
+          currentTier = HardwareTier.standard;
+          _recentLatencies.clear();
+          FileLogger.instance.log(
+            '[THERMAL] Warning: Flagship throttling (${avgLatency.toStringAsFixed(1)}ms). Downgrading to Standard tier.',
+          );
+          onDowngradeRequired?.call(currentTier);
+        } else if (currentTier == HardwareTier.standard && avgLatency > 400) {
+          currentTier = HardwareTier.budget;
+          _recentLatencies.clear();
+          FileLogger.instance.log(
+            '[THERMAL] Warning: Standard throttling (${avgLatency.toStringAsFixed(1)}ms). Downgrading to Budget tier.',
+          );
+          onDowngradeRequired?.call(currentTier);
+        }
+      }
+    }
 
     debugRecognizedText.value = result.text.trim();
 
@@ -204,33 +309,52 @@ class LiveRecitationController extends ChangeNotifier {
       _cachedVerseAyah = currentVerse.ayah;
     }
 
-    // ── Deduplication: skip words that are residual from old audio ──────────
-    // The sliding window re-transcribes overlapping audio, producing the same
-    // words as the previous cycle. Without dedup, those old words can falsely
-    // match future expected words (e.g. repeated words across ayahs).
-    //
-    // Find the longest common prefix between this and the previous transcript.
-    // Only process words AFTER the prefix — those are genuinely new.
-    final int prevLen = _prevSpokenWords.length;
-    int commonPrefix = 0;
-    while (commonPrefix < prevLen &&
-        commonPrefix < spokenWords.length &&
-        spokenWords[commonPrefix] == _prevSpokenWords[commonPrefix]) {
-      commonPrefix++;
+    // ── Deduplication via Overlap-Matching (Suffix-Prefix Alignment) ────────
+    // Because we now use a strict 1.5s sliding window to achieve ultra-low
+    // latency, the ASR drops the oldest audio. This means the start of the
+    // transcript changes completely!
+    // We cannot use simple commonPrefix anymore. We must find the longest
+    // suffix of the PREVIOUS transcript that perfectly matches a prefix of
+    // the NEW transcript.
+    int overlap = 0;
+    int maxK = math.min(_prevSpokenWords.length, spokenWords.length);
+    for (int k = maxK; k > 0; k--) {
+      bool match = true;
+      int prevStart = _prevSpokenWords.length - k;
+      for (int i = 0; i < k; i++) {
+        if (_prevSpokenWords[prevStart + i] != spokenWords[i]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) {
+        overlap = k;
+        break;
+      }
     }
+
     // Save reference before overwriting (for stale word detection in Pass 2)
     final List<String> prevCycleWords = _prevSpokenWords;
     _prevSpokenWords = List<String>.from(spokenWords);
 
+    FileLogger.instance.log(
+      '[MATCH] 🔄 Overlap: $overlap | Prev: $prevCycleWords | New: $spokenWords',
+    );
+    if (overlap == 0 && prevCycleWords.isNotEmpty && spokenWords.isNotEmpty) {
+      FileLogger.instance.log(
+        '[MATCH] 🚨 CONTINUITY BROKEN - Overlap dropped to 0. ASR dropped prefix!',
+      );
+    }
+
     // If the transcript is identical to the previous one, nothing new.
-    if (commonPrefix >= spokenWords.length && commonPrefix >= prevLen) {
+    if (overlap >= spokenWords.length && overlap >= prevCycleWords.length) {
       return;
     }
 
-    // Start from the first genuinely new/changed spoken word.
-    // We allow re-checking one word before divergence in case the CTC
+    // Start processing only the genuinely new words (after the overlap).
+    // We allow re-checking one word before the divergence in case the CTC
     // refined a partial word (e.g. "الل" → "الله").
-    int spokenPtr = math.max(0, commonPrefix > 0 ? commonPrefix - 1 : 0);
+    int spokenPtr = math.max(0, overlap > 0 ? overlap - 1 : 0);
 
     int maxLookahead = AppState.instance.lookahead;
     int targetIndex = math.max(0, _lastCommittedWordIdx + 1);
@@ -242,8 +366,8 @@ class LiveRecitationController extends ChangeNotifier {
     // trigger lookahead jumps, which would falsely skip/red-mark words.
     final Set<String>? staleWordsSet =
         (maxLookahead > 1 && prevCycleWords.isNotEmpty)
-            ? prevCycleWords.toSet()
-            : null;
+        ? prevCycleWords.toSet()
+        : null;
 
     // Forward-only greedy alignment (reference: _align_position in server.py):
     // Scan NEW spoken words left-to-right and match each to the earliest
@@ -267,11 +391,21 @@ class LiveRecitationController extends ChangeNotifier {
         for (int i = spokenPtr; i < spokenWords.length; i++) {
           final String spoken = spokenWords[i];
           if (spoken.isEmpty) continue;
-          if (_calculateMatchScore(spoken, _cachedExpectedNorm![targetIndex]) >=
-              0.70) {
+
+          final targetNorm = _cachedExpectedNorm![targetIndex];
+          final score = _calculateMatchScore(spoken, targetNorm);
+
+          if (score >= 0.70) {
+            FileLogger.instance.log(
+              '[MATCH] ✅ MATCHED (Pass 1): "$spoken" == "$targetNorm" (Score: $score)',
+            );
             foundAt = targetIndex;
             foundSpokenAt = i;
             break;
+          } else {
+            FileLogger.instance.log(
+              '[MATCH] ❌ FAILED (Pass 1): "$spoken" != "$targetNorm" (Score: $score)',
+            );
           }
         }
         // Pass 2: try lookahead positions (skip targetIndex, already tried)
@@ -285,7 +419,7 @@ class LiveRecitationController extends ChangeNotifier {
             if (staleWordsSet!.contains(spoken)) continue;
             for (int j = targetIndex + 1; j < limit; j++) {
               final expectedNorm = _cachedExpectedNorm![j];
-              
+
               // ── Common Word / Stop Word Lookahead Penalty ──
               // Short words (1-2 letters like و, من, في, لا) are extremely common.
               // If we aggressively jump lookahead based on these, we cause false
@@ -293,10 +427,20 @@ class LiveRecitationController extends ChangeNotifier {
               // We only allow lookahead jumping on "substantial" words (>= 3 letters).
               if (expectedNorm.length <= 2) continue;
 
-              if (_calculateMatchScore(spoken, expectedNorm) >= 0.85) {
+              if (expectedNorm.length <= 2) continue;
+
+              final score = _calculateMatchScore(spoken, expectedNorm);
+              if (score >= 0.85) {
+                FileLogger.instance.log(
+                  '[MATCH] ✅ MATCHED (Pass 2): "$spoken" == "$expectedNorm" (Score: $score)',
+                );
                 foundAt = j;
                 foundSpokenAt = i;
                 break;
+              } else {
+                FileLogger.instance.log(
+                  '[MATCH] ❌ FAILED (Pass 2): "$spoken" != "$expectedNorm" (Score: $score)',
+                );
               }
             }
             if (foundAt != -1) break;
@@ -310,11 +454,20 @@ class LiveRecitationController extends ChangeNotifier {
 
           for (int j = targetIndex; j < limit; j++) {
             double threshold = (j == targetIndex) ? 0.70 : 0.85;
-            if (_calculateMatchScore(spoken, _cachedExpectedNorm![j]) >=
-                threshold) {
+            final expectedNorm = _cachedExpectedNorm![j];
+            final score = _calculateMatchScore(spoken, expectedNorm);
+
+            if (score >= threshold) {
+              FileLogger.instance.log(
+                '[MATCH] ✅ MATCHED (SinglePass): "$spoken" == "$expectedNorm" (Score: $score, Threshold: $threshold)',
+              );
               foundAt = j;
               foundSpokenAt = i;
               break;
+            } else {
+              FileLogger.instance.log(
+                '[MATCH] ❌ FAILED (SinglePass): "$spoken" != "$expectedNorm" (Score: $score, Threshold: $threshold)',
+              );
             }
           }
           if (foundAt != -1) break;
@@ -326,15 +479,15 @@ class LiveRecitationController extends ChangeNotifier {
       // Mark skipped expected words as red (skip during grace period)
       if (!_freshAyah) {
         for (int i = targetIndex; i < foundAt; i++) {
-          _redWordsByVerse[currentVerse.ayah] ??= {};
-          _redWordsByVerse[currentVerse.ayah]!.add(i);
+          _highlightQueue.add(
+            _PendingHighlight.word(currentVerse.ayah, i, isRed: true),
+          );
         }
       }
 
       // Mark matched word as green
-      _greenWordsByVerse[currentVerse.ayah] ??= {};
-      _greenWordsByVerse[currentVerse.ayah]!.add(foundAt);
-      _redWordsByVerse[currentVerse.ayah]?.remove(foundAt);
+      _highlightQueue.add(_PendingHighlight.word(currentVerse.ayah, foundAt));
+      _startHighlightTimer();
 
       _lastCommittedWordIdx = foundAt;
       targetIndex = foundAt + 1;
@@ -352,12 +505,24 @@ class LiveRecitationController extends ChangeNotifier {
     }
   }
 
-  double _calculateMatchScore(String raw1, String raw2) {
-    if (raw1 == raw2) return 1.0;
+  double _calculateMatchScore(String spoken, String expected) {
+    if (spoken == expected) return 1.0;
+
+    // ── Partial Match Recovery (Anti-False-Red) ──────────────
+    // When reading fast, the sliding audio window occasionally cuts off
+    // the start or end of a long word, causing the offline ASR to output
+    // only the surviving prefix or suffix (e.g., "قيم" instead of "المستقيم").
+    // If the spoken fragment is at least 3 letters and perfectly matches
+    // the start or end of the expected word, we accept it to prevent false reds!
+    if (spoken.length >= 3 && expected.length >= 4) {
+      if (expected.startsWith(spoken) || expected.endsWith(spoken)) {
+        return 0.85; // High enough to pass the threshold cleanly
+      }
+    }
 
     // ASR Tajweed Fix: Ignore "ال" differences due to Lam Shamsiyyah blending.
-    String w1 = raw1.startsWith("ال") ? raw1.substring(2) : raw1;
-    String w2 = raw2.startsWith("ال") ? raw2.substring(2) : raw2;
+    String w1 = spoken.startsWith("ال") ? spoken.substring(2) : spoken;
+    String w2 = expected.startsWith("ال") ? expected.substring(2) : expected;
 
     int dist = _getLevenshteinDistance(w1, w2);
     int maxLen = math.max(w1.length, w2.length);
@@ -421,26 +586,22 @@ class LiveRecitationController extends ChangeNotifier {
     );
 
     // Always mark the current Ayah as completed, even if it's the last one
-    _completedAyahs.add(current.ayah);
-
-    // Free memory: the green word set is redundant once the ayah is in
-    // _completedAyahs (isWordGreen checks _completedAyahs.contains first).
-    // Red sets are kept — they're still needed to show mistake words.
-    _greenWordsByVerse.remove(current.ayah);
+    _highlightQueue.add(_PendingHighlight.completeAyah(current.ayah));
+    _startHighlightTimer();
 
     if (next != null) {
       _currentMatch = VerseMatch(verse: next, score: 1.0);
-      // Bug 3 fix: When lookahead > 1 and reciting fast, the sliding
+      // Bug 3 fix: When reciting fast, the sliding
       // window still contains audio from the previous ayah. If we clear
       // _prevSpokenWords, the dedup logic can't filter those residual
       // ASR words, causing them to falsely highlight in the new ayah.
-      // Preserving _prevSpokenWords lets the common-prefix dedup catch
-      // those stale words. For lookahead == 1 this is not needed because
-      // the narrow window already prevents cross-ayah bleed.
+      // We must ALWAYS preserve _prevSpokenWords across ayah boundaries.
       _freshAyah = true; // Suppress false reds on first match of new ayah
-      final bool preserve = AppState.instance.lookahead > 1;
-      _clearTrackingState(preservePrevWords: preserve);
-      onAyahChanged?.call();
+      _clearTrackingState(preservePrevWords: true);
+      // We DO NOT call onAyahChanged() here anymore.
+      // Calling it would force main.dart to wipe the AudioProcessor buffer,
+      // completely destroying the continuous stream and dropping the first
+      // words of the new ayah!
     } else {
       // End of Surah reached, shut down the tracker gracefully.
       _currentMatch = null;
@@ -455,4 +616,19 @@ class LiveRecitationController extends ChangeNotifier {
     _clearTrackingState();
     notifyListeners();
   }
+}
+
+class _PendingHighlight {
+  final int? ayah;
+  final int? wordIndex;
+  final bool isRed;
+  final bool isAyahCompletion;
+
+  _PendingHighlight.word(this.ayah, this.wordIndex, {this.isRed = false})
+    : isAyahCompletion = false;
+
+  _PendingHighlight.completeAyah(this.ayah)
+    : wordIndex = null,
+      isRed = false,
+      isAyahCompletion = true;
 }

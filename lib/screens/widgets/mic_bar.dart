@@ -1,12 +1,12 @@
-/// Bottom action bar — the main toolbar for the recitation screen.
-///
-/// States:
-/// 1. **Default**: Shows mic, blur, read, and font buttons with captions
-/// 2. **Recording**: Single centered stop button
-/// 3. **Auto-scrolling**: Centered stop pill
-///
-/// Transitions between states use [AnimatedSwitcher] with slide-up/fade
-/// for a modern feel. The toolbar itself is transparent (no background).
+// Bottom action bar — the main toolbar for the recitation screen.
+//
+// States:
+// 1. **Default**: Shows mic, blur, read, and font buttons with captions
+// 2. **Recording**: Single centered stop button
+// 3. **Auto-scrolling**: Centered stop pill
+//
+// Transitions between states use [AnimatedSwitcher] with slide-up/fade
+// for a modern feel. The toolbar itself is transparent (no background).
 import 'package:flutter/material.dart';
 import '../../core/app_state.dart';
 
@@ -18,6 +18,7 @@ class BottomActionBar extends StatefulWidget {
   final VoidCallback onMic;
   final VoidCallback onToggleAutoScroll;
   final VoidCallback onSettingsTap;
+  final VoidCallback onTajweedTap;
 
   const BottomActionBar({
     super.key,
@@ -28,6 +29,7 @@ class BottomActionBar extends StatefulWidget {
     required this.onMic,
     required this.onToggleAutoScroll,
     required this.onSettingsTap,
+    required this.onTajweedTap,
   });
 
   @override
@@ -128,14 +130,20 @@ class _BottomActionBarState extends State<BottomActionBar> {
             child: _showFontSlider
                 ? Container(
                     margin: const EdgeInsets.only(
-                        bottom: 6, left: 24, right: 24),
+                      bottom: 6,
+                      left: 24,
+                      right: 24,
+                    ),
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 2),
+                      horizontal: 12,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: c.surface.withValues(alpha: 0.95),
                       borderRadius: BorderRadius.circular(18),
-                      border:
-                          Border.all(color: c.border.withValues(alpha: 0.2)),
+                      border: Border.all(
+                        color: c.border.withValues(alpha: 0.2),
+                      ),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.05),
@@ -146,19 +154,25 @@ class _BottomActionBarState extends State<BottomActionBar> {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.text_decrease_rounded,
-                            color: c.muted, size: 13),
+                        Icon(
+                          Icons.text_decrease_rounded,
+                          color: c.muted,
+                          size: 13,
+                        ),
                         Expanded(
                           child: SliderTheme(
                             data: SliderThemeData(
                               thumbShape: const RoundSliderThumbShape(
-                                  enabledThumbRadius: 5),
+                                enabledThumbRadius: 5,
+                              ),
                               overlayShape: const RoundSliderOverlayShape(
-                                  overlayRadius: 10),
+                                overlayRadius: 10,
+                              ),
                               trackHeight: 2,
                               activeTrackColor: c.gold,
-                              inactiveTrackColor:
-                                  c.border.withValues(alpha: 0.4),
+                              inactiveTrackColor: c.border.withValues(
+                                alpha: 0.4,
+                              ),
                               thumbColor: c.gold,
                             ),
                             child: Slider(
@@ -169,8 +183,11 @@ class _BottomActionBarState extends State<BottomActionBar> {
                             ),
                           ),
                         ),
-                        Icon(Icons.text_increase_rounded,
-                            color: c.muted, size: 13),
+                        Icon(
+                          Icons.text_increase_rounded,
+                          color: c.muted,
+                          size: 13,
+                        ),
                       ],
                     ),
                   )
@@ -222,6 +239,15 @@ class _BottomActionBarState extends State<BottomActionBar> {
                             ),
                     ),
                   ),
+                ),
+
+                // Tajweed mode switch button
+                _ToolbarButton(
+                  icon: Icons.menu_book_rounded,
+                  label: isAr ? 'تجويد' : 'Tajweed',
+                  isActive: false,
+                  c: c,
+                  onTap: widget.onTajweedTap,
                 ),
 
                 // Blur mode toggle
@@ -278,13 +304,16 @@ class _BottomActionBarState extends State<BottomActionBar> {
         return FadeTransition(
           opacity: animation,
           child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 0.4),
-              end: Offset.zero,
-            ).animate(CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-            )),
+            position:
+                Tween<Offset>(
+                  begin: const Offset(0, 0.4),
+                  end: Offset.zero,
+                ).animate(
+                  CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                  ),
+                ),
             child: child,
           ),
         );
@@ -294,7 +323,7 @@ class _BottomActionBarState extends State<BottomActionBar> {
   }
 }
 
-/// A toolbar icon button with an active state indicator and small caption.
+// A toolbar icon button with an active state indicator and small caption.
 class _ToolbarButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -350,7 +379,7 @@ class _ToolbarButton extends StatelessWidget {
   }
 }
 
-/// Wrapper that adds a small caption label below any child widget.
+// Wrapper that adds a small caption label below any child widget.
 class _LabeledButton extends StatelessWidget {
   final String label;
   final ThemeColors c;

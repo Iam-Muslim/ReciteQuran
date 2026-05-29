@@ -1,8 +1,8 @@
-/// In-memory Quran repository.
-///
-/// Wraps the full flat verse list loaded from [assets/model/quran.json]
-/// and exposes fast, cached per-surah access.
-library data.models.quran_repository;
+// In-memory Quran repository.
+//
+// Wraps the full flat verse list loaded from [assets/model/quran.json]
+// and exposes fast, cached per-surah access.
+
 
 import '../quran_metadata_service.dart';
 import 'quran_data.dart';
