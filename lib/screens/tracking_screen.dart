@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -15,8 +16,9 @@ import 'widgets/settings_dialog.dart';
 import '../tajweed/providers/muaalem_provider.dart';
 import '../tajweed/ui/widgets/tajweed_toolbar.dart';
 import '../tajweed/ui/screens/tajweed_settings_screen.dart';
-import '../tajweed/ui/widgets/interactive_verse.dart'; import '../tajweed/models/word_model.dart';
-import '../tajweed/ui/widgets/ayah_player.dart';
+import '../tajweed/ui/widgets/interactive_verse.dart';
+import '../tajweed/models/word_model.dart';
+
 
 class TrackingScreen extends ConsumerStatefulWidget {
   final LiveRecitationController controller;
@@ -286,7 +288,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen>
                 // Main Content
                 Positioned.fill(
                   top: top + 60,
-                  bottom: 120, // space for bottom bars
+                  bottom: 90, // space for bottom bars
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 400),
                     child: isTajweed
@@ -357,72 +359,109 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen>
     return Container(
       key: ValueKey('header_$isTajweed'),
       margin: EdgeInsets.only(top: top + 4, left: 24, right: 24, bottom: 2),
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-      decoration: BoxDecoration(
-        color: c.surface,
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-        border: Border.all(color: c.border.withValues(alpha: 0.15)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          GestureDetector(
-            onTap: _showSurahPicker,
-            behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ListenableBuilder(
-                    listenable: widget.controller,
-                    builder: (context, _) {
-                      final displayVerses = widget.controller.repository
-                          .getSurah(widget.controller.targetSurah);
-                      return Text(
-                        app.isArabic
-                            ? displayVerses.first.surahName
-                            : displayVerses.first.surahNameEn,
-                        style: TextStyle(
-                          color: c.gold,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24.0, sigmaY: 24.0),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+            decoration: BoxDecoration(
+              color: c.surface.withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+              border: Border.all(color: c.border.withValues(alpha: 0.2)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                GestureDetector(
+                  onTap: _showSurahPicker,
+                  behavior: HitTestBehavior.opaque,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 4,
+                      horizontal: 4,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListenableBuilder(
+                          listenable: widget.controller,
+                          builder: (context, _) {
+                            final displayVerses = widget.controller.repository
+                                .getSurah(widget.controller.targetSurah);
+                            return Text(
+                              app.isArabic
+                                  ? displayVerses.first.surahName
+                                  : displayVerses.first.surahNameEn,
+                              style: TextStyle(
+                                fontFamily: app.isArabic
+                                    ? 'HafsSmart'
+                                    : 'Inter',
+                                color: c.gold,
+                                fontSize: app.isArabic ? 18 : 15,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: app.isArabic ? 0 : 0.5,
+                              ),
+                            );
+                          },
                         ),
-                      );
-                    },
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: c.gold.withValues(alpha: 0.7),
+                          size: 18,
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(width: 2),
-                  Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    color: c.muted.withValues(alpha: 0.4),
-                    size: 16,
+                ),
+                Container(
+                  height: 16,
+                  width: 1,
+                  margin: const EdgeInsets.symmetric(horizontal: 12),
+                  color: c.border.withValues(alpha: 0.3),
+                ),
+                GestureDetector(
+                  onTap: isTajweed ? _showTajweedSettings : _showSettingsDialog,
+                  behavior: HitTestBehavior.opaque,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.settings_rounded,
+                          color: c.gold.withValues(alpha: 0.7),
+                          size: 20,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          app.isArabic ? 'إعدادات' : 'Settings',
+                          style: TextStyle(
+                            color: c.gold.withValues(alpha: 0.7),
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: isTajweed ? _showTajweedSettings : _showSettingsDialog,
-            behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: const EdgeInsets.all(10),
-              child: Icon(
-                Icons.tune_rounded,
-                color: c.gold.withValues(alpha: 0.6),
-                size: 18,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -527,11 +566,6 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen>
                     ),
                     child: Column(
                       children: [
-                        AyahPlayer(
-                          sura: widget.controller.targetSurah,
-                          aya: v.ayah,
-                        ),
-                        const SizedBox(height: 16),
                         InteractiveVerse(
                           words: WordModel.buildFrom(
                             v,
@@ -637,6 +671,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen>
       isAnalyzing: isAnalyzing,
       uploadProgress: progress,
       c: c,
+      currentSurah: widget.controller.targetSurah,
       currentAyah: v?.ayah ?? 1,
       currentSurahName: v?.surahName ?? '',
       onExit: () {

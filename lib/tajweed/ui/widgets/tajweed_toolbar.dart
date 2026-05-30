@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/app_state.dart';
+import 'ayah_player.dart';
 
 class TajweedToolbar extends StatelessWidget {
   final bool isRecording;
@@ -10,6 +11,7 @@ class TajweedToolbar extends StatelessWidget {
   final VoidCallback onExit;
   final VoidCallback onRecord;
   final VoidCallback onSelectAyah;
+  final int currentSurah;
   final int currentAyah;
   final String currentSurahName;
 
@@ -22,6 +24,7 @@ class TajweedToolbar extends StatelessWidget {
     required this.onExit,
     required this.onRecord,
     required this.onSelectAyah,
+    required this.currentSurah,
     required this.currentAyah,
     required this.currentSurahName,
   });
@@ -31,14 +34,14 @@ class TajweedToolbar extends StatelessWidget {
     final app = AppState.instance;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 24, left: 24, right: 24),
+      padding: const EdgeInsets.only(bottom: 12, left: 16, right: 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           // Dynamic status text
           if (isRecording)
             Padding(
-              padding: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.only(bottom: 12),
               child: Text(
                 app.isArabic ? 'جاري التسجيل...' : 'Recording...',
                 style: TextStyle(color: c.red, fontWeight: FontWeight.bold),
@@ -46,7 +49,7 @@ class TajweedToolbar extends StatelessWidget {
             ),
           if (isAnalyzing)
             Padding(
-              padding: const EdgeInsets.only(bottom: 16, left: 32, right: 32),
+              padding: const EdgeInsets.only(bottom: 12, left: 32, right: 32),
               child: Column(
                 children: [
                   Text(
@@ -87,8 +90,8 @@ class TajweedToolbar extends StatelessWidget {
                 onTap: onExit,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
+                    horizontal: 12,
+                    vertical: 8,
                   ),
                   decoration: BoxDecoration(
                     color: c.surface.withValues(alpha: 0.9),
@@ -97,13 +100,14 @@ class TajweedToolbar extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.close_rounded, color: c.muted, size: 20),
-                      const SizedBox(width: 8),
+                      Icon(Icons.close_rounded, color: c.muted, size: 16),
+                      const SizedBox(width: 6),
                       Text(
                         app.isArabic ? 'خروج' : 'Exit',
                         style: TextStyle(
                           color: c.text,
                           fontWeight: FontWeight.bold,
+                          fontSize: 12,
                         ),
                       ),
                     ],
@@ -118,8 +122,8 @@ class TajweedToolbar extends StatelessWidget {
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeOutBack,
-                  width: isRecording ? 80 : 70,
-                  height: isRecording ? 80 : 70,
+                  width: isRecording ? 60 : 54,
+                  height: isRecording ? 60 : 54,
                   decoration: BoxDecoration(
                     color: isAnalyzing
                         ? c.muted
@@ -144,19 +148,23 @@ class TajweedToolbar extends StatelessWidget {
                       : Icon(
                           isRecording ? Icons.stop_rounded : Icons.mic_rounded,
                           color: Colors.white,
-                          size: 32,
+                          size: 26,
                         ),
                 ),
               ),
 
-              // Replaced Ayah Selector with an invisible dummy box to keep Record button centered
-              Container(
-                width: 80, // Approximate width of the exit button to balance
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
+              // Ayah Player
+              SizedBox(
+                width: 100, // Fixed width to balance the exit button side
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: AyahPlayer(
+                    sura: currentSurah,
+                    aya: currentAyah,
+                    compact:
+                        true, // Use a compact mode if it exists or just rely on its own sizing
+                  ),
                 ),
-                child: const SizedBox.shrink(),
               ),
             ],
           ),

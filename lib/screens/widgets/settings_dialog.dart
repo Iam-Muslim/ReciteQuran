@@ -277,11 +277,18 @@ class _SettingTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         decoration: BoxDecoration(
           color: c.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: c.border.withValues(alpha: 0.25)),
+          borderRadius: BorderRadius.circular(16), // More rounded
+          border: Border.all(color: c.border.withValues(alpha: 0.15)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.02),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
           children: [
@@ -292,14 +299,20 @@ class _SettingTile extends StatelessWidget {
                   Text(
                     title,
                     style: TextStyle(
+                      fontFamily: 'Inter',
                       color: c.text,
-                      fontSize: 14,
+                      fontSize: 15,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                  const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: TextStyle(color: c.muted, fontSize: 11),
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      color: c.muted, 
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
@@ -329,10 +342,11 @@ class _SegmentedSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: c.border.withValues(alpha: 0.25)),
+        color: c.surfaceHigh.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: c.border.withValues(alpha: 0.1)),
       ),
       child: Row(
         children: List.generate(labels.length, (i) {
@@ -340,20 +354,31 @@ class _SegmentedSelector extends StatelessWidget {
           return Expanded(
             child: GestureDetector(
               onTap: () => onSelected(i),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 8),
+              behavior: HitTestBehavior.opaque,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOutCubic,
+                padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
-                  color: isSel
-                      ? c.gold.withValues(alpha: 0.12)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(9),
+                  color: isSel ? c.surface : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: isSel 
+                    ? [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        )
+                      ]
+                    : [],
                 ),
                 child: Text(
                   labels[i],
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: isSel ? c.gold : c.muted,
-                    fontSize: 12,
+                    fontFamily: 'Inter',
+                    color: isSel ? c.gold : c.muted.withValues(alpha: 0.8),
+                    fontSize: 13,
                     fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
                   ),
                 ),

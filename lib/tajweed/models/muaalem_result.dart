@@ -1,6 +1,6 @@
 // Heavily-typed Dart translation of Quran-Muaalem-Swift APIModels
 
-
+import 'package:flutter/material.dart';
 class MuaalemResponse {
   final String phonemesText;
   final String wav2vec2Text;
@@ -25,17 +25,38 @@ class MuaalemResponse {
   });
 
   factory MuaalemResponse.fromJson(Map<String, dynamic> json) {
+    final phonemesUnit = PhonemeUnit.fromJson(
+      json['phonemes'] as Map<String, dynamic>? ?? {},
+    );
+
+    List<SifaItem> parsedSifat =
+        (json['sifat'] as List<dynamic>?)
+            ?.map((e) => SifaItem.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        [];
+
+    // If API response does not include 'sifat' but has phonemes, synthesize them
+    // so that the UI can still map characters and probabilities to words.
+    if (parsedSifat.isEmpty && phonemesUnit.probs.isNotEmpty) {
+      final chars = phonemesUnit.text.characters.toList();
+      for (int i = 0; i < chars.length; i++) {
+        if (i < phonemesUnit.probs.length) {
+          parsedSifat.add(
+            SifaItem(
+              phonemesGroup: chars[i],
+              index: i,
+              phonemeProb: phonemesUnit.probs[i],
+            ),
+          );
+        }
+      }
+    }
+
     return MuaalemResponse(
       phonemesText: json['phonemes_text'] as String? ?? '',
       wav2vec2Text: json['wav2vec2_text'] as String? ?? '',
-      phonemes: PhonemeUnit.fromJson(
-        json['phonemes'] as Map<String, dynamic>? ?? {},
-      ),
-      sifat:
-          (json['sifat'] as List<dynamic>?)
-              ?.map((e) => SifaItem.fromJson(e as Map<String, dynamic>))
-              .toList() ??
-          [],
+      phonemes: phonemesUnit,
+      sifat: parsedSifat,
       reference: Reference.fromJson(
         json['reference'] as Map<String, dynamic>? ?? {},
       ),
@@ -235,6 +256,8 @@ class SifaItem {
   final int index;
   final double? startMs;
   final double? endMs;
+  double phonemeProb; // Added to store the probability from phonemes list
+  int charIndex; // Added to store character index alignment within the word
   final SingleUnit? hamsOrJahr;
   final SingleUnit? shiddaOrRakhawa;
   final SingleUnit? tafkheemOrTaqeeq;
@@ -251,6 +274,8 @@ class SifaItem {
     required this.index,
     this.startMs,
     this.endMs,
+    this.phonemeProb = 1.0,
+    this.charIndex = 0,
     this.hamsOrJahr,
     this.shiddaOrRakhawa,
     this.tafkheemOrTaqeeq,
@@ -269,6 +294,7 @@ class SifaItem {
       index: json['index'] as int? ?? 0,
       startMs: (json['start_ms'] as num?)?.toDouble(),
       endMs: (json['end_ms'] as num?)?.toDouble(),
+      phonemeProb: 1.0,
       hamsOrJahr: json['hams_or_jahr'] != null
           ? SingleUnit.fromJson(json['hams_or_jahr'])
           : null,

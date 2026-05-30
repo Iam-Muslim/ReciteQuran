@@ -193,27 +193,13 @@ class MuaalemController extends Notifier<MuaalemState> {
       debugPrint("✅ [MuaalemController] API success!");
       debugPrint("   phonemes_text: ${result.phonemesText}");
       debugPrint("   wav2vec2_text: ${result.wav2vec2Text}");
-      debugPrint(
-        "   sifat_errors count: ${result.sifatErrors?.length ?? 'null'}",
-      );
-      debugPrint(
-        "   phonemes_by_word count: ${result.phonemesByWord?.length ?? 'null'}",
-      );
-      debugPrint(
-        "   phoneme_diff count: ${result.phonemeDiff?.length ?? 'null'}",
-      );
+      debugPrint("   sifat count: ${result.sifat.length}");
+      debugPrint("   phonemes probabilities count: ${result.phonemes.probs.length}");
 
-      if (result.sifatErrors != null) {
-        for (final err in result.sifatErrors!) {
-          debugPrint(
-            "   🔴 sifatError index=${err.index} phoneme='${err.phoneme}' expectedPhoneme='${err.expectedPhoneme}' errors=${err.errors.length}",
-          );
-          for (final a in err.errors) {
-            debugPrint(
-              "      attr='${a.attribute}' ar='${a.attributeAr}' expected='${a.expected}' actual='${a.actual}' prob=${a.prob.toStringAsFixed(2)}",
-            );
-          }
-        }
+      for (final sifa in result.sifat.take(3)) {
+        debugPrint(
+          "   🔍 Sample Sifa: phoneme='${sifa.phonemesGroup}' index=${sifa.index}",
+        );
       }
 
       if (result.phonemesByWord != null) {

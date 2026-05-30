@@ -7,6 +7,7 @@
 //
 // Transitions between states use [AnimatedSwitcher] with slide-up/fade
 // for a modern feel. The toolbar itself is transparent (no background).
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../core/app_state.dart';
 
@@ -194,93 +195,117 @@ class _BottomActionBarState extends State<BottomActionBar> {
                 : const SizedBox.shrink(),
           ),
 
-          // Main toolbar buttons (transparent — no card/pill background)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                // Record button (larger, gradient)
-                _LabeledButton(
-                  label: isAr ? 'تسجيل' : 'Rec',
-                  c: c,
-                  child: GestureDetector(
-                    onTap: widget.onMic,
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [c.red, c.red.withValues(alpha: 0.7)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: c.red.withValues(alpha: 0.25),
-                            blurRadius: 12,
-                            spreadRadius: 1,
-                          ),
-                        ],
-                      ),
-                      child: widget.isLoadingEngine
-                          ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : const Icon(
-                              Icons.mic_rounded,
-                              color: Colors.white,
-                              size: 22,
-                            ),
+          // Main toolbar buttons (glassmorphic pill)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(32),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20.0, sigmaY: 20.0),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: c.surface.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(32),
+                  border: Border.all(color: c.border.withValues(alpha: 0.2)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
                     ),
-                  ),
+                  ],
                 ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    // Record button (larger, gradient)
+                    _LabeledButton(
+                      label: isAr ? 'تسجيل' : 'Rec',
+                      c: c,
+                      child: GestureDetector(
+                        onTap: widget.onMic,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [c.red, c.red.withValues(alpha: 0.8)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: c.red.withValues(alpha: 0.3),
+                                blurRadius: 16,
+                                spreadRadius: 2,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: widget.isLoadingEngine
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2.5,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.mic_rounded,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                        ),
+                      ),
+                    ),
 
-                // Tajweed mode switch button
-                _ToolbarButton(
-                  icon: Icons.menu_book_rounded,
-                  label: isAr ? 'تجويد' : 'Tajweed',
-                  isActive: false,
-                  c: c,
-                  onTap: widget.onTajweedTap,
-                ),
+                    // Tajweed mode switch button
+                    _ToolbarButton(
+                      icon: Icons.menu_book_rounded,
+                      label: isAr ? 'تجويد' : 'Tajweed',
+                      isActive: false,
+                      c: c,
+                      onTap: widget.onTajweedTap,
+                    ),
 
-                // Blur mode toggle
-                _ToolbarButton(
-                  icon: app.isBlurMode
-                      ? Icons.visibility_off_rounded
-                      : Icons.visibility_rounded,
-                  label: isAr ? 'إخفاء' : 'Hide',
-                  isActive: app.isBlurMode,
-                  c: c,
-                  onTap: () => app.toggleBlurMode(),
-                ),
+                    // Blur mode toggle
+                    _ToolbarButton(
+                      icon: app.isBlurMode
+                          ? Icons.visibility_off_rounded
+                          : Icons.visibility_rounded,
+                      label: isAr ? 'إخفاء' : 'Hide',
+                      isActive: app.isBlurMode,
+                      c: c,
+                      onTap: () => app.toggleBlurMode(),
+                    ),
 
-                // Read mode
-                _ToolbarButton(
-                  icon: Icons.auto_stories_rounded,
-                  label: isAr ? 'قراءة' : 'Read',
-                  isActive: false,
-                  c: c,
-                  onTap: widget.onToggleAutoScroll,
-                ),
+                    // Read mode
+                    _ToolbarButton(
+                      icon: Icons.auto_stories_rounded,
+                      label: isAr ? 'قراءة' : 'Read',
+                      isActive: false,
+                      c: c,
+                      onTap: widget.onToggleAutoScroll,
+                    ),
 
-                // Font size toggle
-                _ToolbarButton(
-                  icon: Icons.format_size_rounded,
-                  label: isAr ? 'الخط' : 'Font',
-                  isActive: _showFontSlider,
-                  c: c,
-                  onTap: () {
-                    setState(() => _showFontSlider = !_showFontSlider);
-                  },
+                    // Font size toggle
+                    _ToolbarButton(
+                      icon: Icons.format_size_rounded,
+                      label: isAr ? 'الخط' : 'Font',
+                      isActive: _showFontSlider,
+                      c: c,
+                      onTap: () {
+                        setState(() => _showFontSlider = !_showFontSlider);
+                      },
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ],

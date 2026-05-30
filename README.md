@@ -33,6 +33,7 @@ An offline Android app that listens to your Quran recitation and tracks your pro
 
 <img width="270" height="585" alt="Image" src="https://github.com/user-attachments/assets/8578d6d9-284e-40db-b186-47d8cb700591" />
 <img width="270" height="585" alt="Image" src="https://github.com/user-attachments/assets/2323b20e-c6bd-4368-8481-a04c1399fd07" />
+
 ## Features
 - **Real-time word tracking** — highlights each word as you recite it [Yazinsai Offline-Tarteel](https://github.com/yazinsai/offline-tarteel)
 - **100% Offline** — all audio processing happens on-device, zero internet required

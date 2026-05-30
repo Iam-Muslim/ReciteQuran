@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
+import '../../../core/app_state.dart';
+import '../../models/muaalem_result.dart';
 import '../../models/word_model.dart';
 import '../../utils/text_helper.dart';
 
@@ -23,7 +25,7 @@ List<TextSpan> buildHighlightedWordSpans({
         style: TextStyle(
           fontFamily: 'HafsSmart',
           fontSize: fontSize,
-          color: isSelected ? Colors.blue : const Color(0xFF1E293B),
+          color: isSelected ? Colors.blue : AppState.instance.colors.text,
           backgroundColor: isSelected
               ? Colors.blue.withValues(alpha: 0.1)
               : Colors.transparent,
@@ -121,7 +123,7 @@ class _InteractiveVerseState extends State<InteractiveVerse> {
 
     if (_selectedWordIndex != null) {
       final word = widget.words[_selectedWordIndex!];
-      if (word.sifatErrors.isNotEmpty) {
+      if (word.sifatList.isNotEmpty) {
         showModalBottomSheet(
           context: context,
           isScrollControlled: true,
@@ -208,14 +210,13 @@ class _WordErrorsSheetState extends State<WordErrorsSheet> {
         final durationMs = duration?.inMilliseconds.toDouble() ?? 0;
 
         final wordIndex = widget.word.index;
-        // Use next word's end if available, else current word's end + 1 second, clamped to duration
         double targetEnd =
             widget.word.endMs ?? (durationMs * widget.word.endFraction);
         if (wordIndex < widget.allWords.length - 1) {
           targetEnd =
               widget.allWords[wordIndex + 1].endMs ?? (targetEnd + 1000);
         } else {
-          targetEnd += 500; // Add a little buffer if it's the last word
+          targetEnd += 500;
         }
 
         if (pos.inMilliseconds >= targetEnd) {
@@ -245,7 +246,6 @@ class _WordErrorsSheetState extends State<WordErrorsSheet> {
         final durationMs = duration?.inMilliseconds.toDouble() ?? 0;
 
         final wordIndex = widget.word.index;
-        // Start from previous word's start time if available
         double targetStart =
             widget.word.startMs ?? (durationMs * widget.word.startFraction);
         if (wordIndex > 0) {
@@ -277,26 +277,20 @@ class _WordErrorsSheetState extends State<WordErrorsSheet> {
 
   List<String> getCharMappings(String baseChar) {
     final mappings = <String, List<String>>{
-      // Hamza variants
       "ء": ["أ", "إ", "آ", "ؤ", "ئ", "ٱ"],
       "أ": ["ء", "إ", "آ", "ٱ"],
       "إ": ["ء", "أ", "آ", "ٱ"],
-      // Alef variants
       "ا": ["آ", "أ", "إ", "ٰ", "ى", "ٱ", "ـٰ"],
       "ٱ": ["ا", "آ", "أ", "إ"],
       "ٰ": ["ا"],
       "ـٰ": ["ا"],
-      // Ha/Ta marbuta
       "ه": ["ة", "ھ"],
       "ة": ["ه"],
-      // Yaa variants
       "ي": ["ى", "ۦ", "ئ", "ی"],
       "ى": ["ي", "ۦ"],
       "ۦ": ["ي", "ى", "ئ"],
-      // Waw variants
       "و": ["ۥ", "ؤ"],
       "ۥ": ["و", "ؤ"],
-      // Common substitutions
       "ن": ["ں"],
       "ر": ["ڔ"],
       "ل": ["ڵ"],
@@ -320,10 +314,10 @@ class _WordErrorsSheetState extends State<WordErrorsSheet> {
 
   List<TextSpan> _buildInteractiveWordSpans() {
     final spans = <TextSpan>[];
-    final phonemeGroups = _groupErrorsByPhoneme(widget.word.sifatErrors);
-    
-    if (selectedPhonemeIndex == null || selectedPhonemeIndex! >= phonemeGroups.length) {
-      // Return default word with no highlights
+    final sifatList = widget.word.sifatList;
+
+    if (selectedPhonemeIndex == null ||
+        selectedPhonemeIndex! >= sifatList.length) {
       return [
         TextSpan(
           text: widget.word.text,
@@ -333,26 +327,41 @@ class _WordErrorsSheetState extends State<WordErrorsSheet> {
             color: Color(0xFF1E293B),
             height: 1.8,
           ),
-        )
+        ),
       ];
     }
 
-    final selectedGroup = phonemeGroups[selectedPhonemeIndex!];
-    final originalPhoneme = selectedGroup.phoneme;
-    
-    final phonemeBase = stripArabicDiacritics(originalPhoneme);
+    final selectedGroup = sifatList[selectedPhonemeIndex!];
+    final originalPhoneme = selectedGroup.phonemesGroup;
+
+    String normalizeChar(String c) {
+      var s = stripArabicDiacritics(c).trim();
+      s = s.replaceAll(RegExp(r'[\u200e\u200f\u202a-\u202c\u200b]'), '');
+      s = s.replaceAll(RegExp(r'[ٱآأإٰ]'), 'ا');
+      s = s.replaceAll('ـٰ', 'ا');
+      s = s.replaceAll(RegExp(r'[ىئۦيـی]'), 'ي');
+      s = s.replaceAll(RegExp(r'[ؤۥ]'), 'و');
+      s = s.replaceAll('ة', 'ه');
+      s = s.replaceAll('ء', 'ا');
+      s = s.replaceAll('ـ', '');
+      return s;
+    }
+
+    final phonemeBase = normalizeChar(originalPhoneme);
     final uniqueChars = phonemeBase.split('').toSet();
     final targetBase = (uniqueChars.length == 1 && phonemeBase.isNotEmpty)
         ? uniqueChars.first
         : phonemeBase;
-        
-    final charactersList = widget.word.text.characters.toList();
 
-    for (int i = 0; i < charactersList.length; i++) {
-      final charStr = charactersList[i];
-      final charBase = stripArabicDiacritics(charStr);
+    final fullText = widget.word.text;
+    final chars = fullText.characters.toList();
 
-      bool isMatch = false;
+    List<bool> isHighlighted = List.filled(chars.length, false);
+    bool foundMatch = false;
+
+    for (int i = 0; i < chars.length; i++) {
+      final charStr = chars[i];
+      final charBase = normalizeChar(charStr);
 
       if (charBase.isNotEmpty && targetBase.isNotEmpty) {
         final mappings = getCharMappings(targetBase);
@@ -361,18 +370,93 @@ class _WordErrorsSheetState extends State<WordErrorsSheet> {
             mappings.contains(charBase) ||
             (targetBase.contains(charBase) &&
                 targetBase.length > charBase.length)) {
-          isMatch = true;
+          isHighlighted[i] = true;
+          foundMatch = true;
+
+          int j = i + 1;
+          while (j < chars.length && normalizeChar(chars[j]).isEmpty) {
+            isHighlighted[j] = true;
+            j++;
+          }
+          i = j - 1;
+        }
+      }
+    }
+
+    // Mathematical Fallback based on relative position if no match found
+    if (!foundMatch && chars.isNotEmpty) {
+      double frac = selectedPhonemeIndex! / sifatList.length;
+      int charIdx = (chars.length * frac).floor().clamp(0, chars.length - 1);
+
+      // Find nearest non-empty base char
+      int bestIdx = charIdx;
+      for (int i = 0; i < chars.length; i++) {
+        int left = charIdx - i;
+        int right = charIdx + i;
+        if (left >= 0 && normalizeChar(chars[left]).isNotEmpty) {
+          bestIdx = left;
+          break;
+        }
+        if (right < chars.length && normalizeChar(chars[right]).isNotEmpty) {
+          bestIdx = right;
+          break;
         }
       }
 
+      isHighlighted[bestIdx] = true;
+      foundMatch = true;
+
+      int j = bestIdx + 1;
+      while (j < chars.length && normalizeChar(chars[j]).isEmpty) {
+        isHighlighted[j] = true;
+        j++;
+      }
+    }
+
+    String currentText = "";
+    bool currentStyle = false;
+    bool first = true;
+
+    for (int i = 0; i < chars.length; i++) {
+      final highlight = isHighlighted[i];
+      if (first) {
+        currentStyle = highlight;
+        currentText = chars[i];
+        first = false;
+      } else if (currentStyle == highlight) {
+        currentText += chars[i];
+      } else {
+        spans.add(
+          TextSpan(
+            text: currentText,
+            style: TextStyle(
+              fontFamily: 'HafsSmart',
+              fontSize: 48,
+              color: currentStyle ? Colors.white : const Color(0xFF1E293B),
+              backgroundColor: currentStyle
+                  ? Colors.blueAccent
+                  : Colors
+                        .transparent, // Use blue instead of red since it's just selection
+              height: 1.8,
+            ),
+          ),
+        );
+        currentStyle = highlight;
+        currentText = chars[i];
+      }
+    }
+
+    if (currentText.isNotEmpty) {
       spans.add(
         TextSpan(
-          text: charStr,
+          text: currentText,
           style: TextStyle(
             fontFamily: 'HafsSmart',
             fontSize: 48,
-            color: isMatch ? Colors.red : const Color(0xFF1E293B),
-            backgroundColor: isMatch ? Colors.red.withValues(alpha: 0.15) : Colors.transparent,
+            color: currentStyle ? Colors.white : const Color(0xFF1E293B),
+            backgroundColor: currentStyle
+                ? Colors.blueAccent
+                : Colors.transparent,
             height: 1.8,
           ),
         ),
@@ -405,7 +489,6 @@ class _WordErrorsSheetState extends State<WordErrorsSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Handle indicator
               Center(
                 child: Container(
                   width: 40,
@@ -418,15 +501,13 @@ class _WordErrorsSheetState extends State<WordErrorsSheet> {
                 ),
               ),
 
-              // Word text & Error Count
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Audio button
                   Material(
                     color: _isPlaying
-                        ? Colors.red.withValues(alpha: 0.1)
-                        : Colors.red,
+                        ? Colors.blue.withValues(alpha: 0.1)
+                        : Colors.blue,
                     shape: const CircleBorder(),
                     child: InkWell(
                       onTap: _toggleAudio,
@@ -435,36 +516,16 @@ class _WordErrorsSheetState extends State<WordErrorsSheet> {
                         padding: const EdgeInsets.all(12),
                         child: Icon(
                           _isPlaying ? Icons.stop : Icons.volume_up,
-                          color: _isPlaying ? Colors.red : Colors.white,
+                          color: _isPlaying ? Colors.blue : Colors.white,
                           size: 24,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  // Error count badge
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: const BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        '${widget.word.sifatErrors.length}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                  ),
                   const Spacer(),
-                  // Word itself (Highlighted with letters)
                   RichText(
                     textAlign: TextAlign.right,
+                    textDirection: TextDirection.rtl,
                     text: TextSpan(
                       children: _buildInteractiveWordSpans(),
                       style: const TextStyle(
@@ -479,19 +540,20 @@ class _WordErrorsSheetState extends State<WordErrorsSheet> {
 
               const SizedBox(height: 24),
 
-              // Errors list grouped by phoneme, displayed vertically
               Builder(
                 builder: (context) {
-                  final groups = _groupErrorsByPhoneme(widget.word.sifatErrors);
                   return Column(
-                    children: groups.asMap().entries.map((entry) {
+                    children: widget.word.sifatList.asMap().entries.map((
+                      entry,
+                    ) {
                       final index = entry.key;
-                      final group = entry.value;
+                      final sifa = entry.value;
                       final isSelected = selectedPhonemeIndex == index;
-                      
+
                       return PhonemeGroupButton(
-                        group: group,
+                        sifa: sifa,
                         isSelected: isSelected,
+                        cleanWord: widget.word.cleanText,
                         onTap: () {
                           setState(() {
                             if (selectedPhonemeIndex == index) {
@@ -504,7 +566,7 @@ class _WordErrorsSheetState extends State<WordErrorsSheet> {
                       );
                     }).toList(),
                   );
-                }
+                },
               ),
             ],
           ),
@@ -512,158 +574,194 @@ class _WordErrorsSheetState extends State<WordErrorsSheet> {
       ),
     );
   }
-
-  List<_PhonemeGroup> _groupErrorsByPhoneme(List<TajweedError> errors) {
-    final Map<String, List<TajweedError>> groups = {};
-    final List<String> order = [];
-
-    // Sort errors by their exact character index
-    final sortedErrors = List<TajweedError>.from(errors)
-      ..sort((a, b) {
-        int idxA = a.charIndex ?? 999;
-        int idxB = b.charIndex ?? 999;
-
-        // Fallback if charIndex is not available
-        if (idxA == 999) {
-          final baseA = stripArabicDiacritics(a.expectedPhoneme);
-          if (baseA.isNotEmpty) idxA = widget.word.cleanText.indexOf(baseA[0]);
-          if (idxA == -1 && a.expectedPhoneme.isNotEmpty) {
-            idxA = widget.word.cleanText.indexOf(a.expectedPhoneme[0]);
-          }
-          if (idxA == -1) idxA = 999;
-        }
-
-        if (idxB == 999) {
-          final baseB = stripArabicDiacritics(b.expectedPhoneme);
-          if (baseB.isNotEmpty) idxB = widget.word.cleanText.indexOf(baseB[0]);
-          if (idxB == -1 && b.expectedPhoneme.isNotEmpty) {
-            idxB = widget.word.cleanText.indexOf(b.expectedPhoneme[0]);
-          }
-          if (idxB == -1) idxB = 999;
-        }
-
-        return idxA.compareTo(idxB);
-      });
-
-    for (final error in sortedErrors) {
-      if (!groups.containsKey(error.phoneme)) {
-        order.add(error.phoneme);
-        groups[error.phoneme] = [];
-      }
-      groups[error.phoneme]!.add(error);
-    }
-
-    return order
-        .map(
-          (phoneme) =>
-              _PhonemeGroup(phoneme: phoneme, errors: groups[phoneme]!),
-        )
-        .toList();
-  }
-}
-
-        )
-        .toList();
-  }
-}
-
-class _PhonemeGroup {
-  final String phoneme;
-  final List<TajweedError> errors;
-  _PhonemeGroup({required this.phoneme, required this.errors});
 }
 
 class PhonemeGroupButton extends StatelessWidget {
-  final _PhonemeGroup group;
+  final SifaItem sifa;
   final bool isSelected;
   final VoidCallback onTap;
+  final String cleanWord;
 
   const PhonemeGroupButton({
-    required this.group,
+    super.key,
+    required this.sifa,
     required this.isSelected,
     required this.onTap,
+    required this.cleanWord,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-          decoration: BoxDecoration(
-            color: isSelected ? Colors.red.withValues(alpha: 0.1) : Colors.clear,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            textDirection: TextDirection.rtl,
-            children: [
-              // Header row: selection indicator and phoneme
-              Row(
-                textDirection: TextDirection.rtl,
-                children: [
-                  Icon(
-                    isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                    color: isSelected ? Colors.red : Colors.grey,
-                    size: 20,
-                  ),
-                  const Spacer(),
-                  Text(
-                    group.phoneme,
-                    style: TextStyle(
-                      fontFamily: 'HafsSmart',
-                      fontSize: 24,
-                      color: isSelected ? Colors.red : const Color(0xFF1E293B),
-                    ),
-                    textDirection: TextDirection.rtl,
-                  ),
-                ],
-              ),
-              
-              // Always show all errors vertically
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                textDirection: TextDirection.rtl,
-                children: group.errors.map((error) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Row(
-                      textDirection: TextDirection.rtl,
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        Text(
-                          error.expected,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Colors.green,
-                          ),
-                          textDirection: TextDirection.rtl,
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(
-                          Icons.arrow_back,
-                          size: 14,
-                          color: Colors.grey,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          error.actual,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Colors.red,
-                          ),
-                          textDirection: TextDirection.rtl,
-                        ),
+    // Collect all valid attributes
+    final attributes = <String>[];
+
+    void addAttr(SingleUnit? unit) {
+      if (unit != null &&
+          unit.text.isNotEmpty &&
+          unit.text != '[PAD]' &&
+          unit.text != 'none' &&
+          unit.text != 'false') {
+        final translated = translateSifa(unit.text);
+        if (translated != 'غير واضح' && translated != 'لا يوجد') {
+          attributes.add(translated);
+        }
+      }
+    }
+
+    addAttr(sifa.hamsOrJahr);
+    addAttr(sifa.shiddaOrRakhawa);
+    addAttr(sifa.tafkheemOrTaqeeq);
+    addAttr(sifa.itbaq);
+    addAttr(sifa.safeer);
+    addAttr(sifa.qalqla);
+    addAttr(sifa.tikraar);
+    addAttr(sifa.tafashie);
+    addAttr(sifa.istitala);
+    addAttr(sifa.ghonna);
+
+    final bool isError = sifa.phonemeProb < 0.85;
+    final MaterialColor themeColor = isError ? Colors.red : Colors.blue;
+
+    String displayChar = sifa.phonemesGroup;
+    if (sifa.charIndex >= 0 && sifa.charIndex < cleanWord.length) {
+      final actualChar = cleanWord[sifa.charIndex];
+      // Note: we can show actual character if they differ substantially
+      displayChar = actualChar;
+      if (isError &&
+          sifa.phonemesGroup != actualChar &&
+          sifa.phonemesGroup.isNotEmpty &&
+          !['ي', 'و', 'ا'].contains(sifa.phonemesGroup)) {
+        displayChar = '$actualChar (نُطقت: ${sifa.phonemesGroup})';
+      }
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: isSelected
+            ? [
+                BoxShadow(
+                  color: themeColor.withValues(alpha: 0.15),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : [],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          splashColor: themeColor.withValues(alpha: 0.1),
+          highlightColor: themeColor.withValues(alpha: 0.05),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            decoration: BoxDecoration(
+              gradient: isSelected
+                  ? LinearGradient(
+                      colors: [
+                        themeColor.withValues(alpha: 0.08),
+                        themeColor.withValues(alpha: 0.02),
                       ],
+                      begin: Alignment.topRight,
+                      end: Alignment.bottomLeft,
+                    )
+                  : const LinearGradient(
+                      colors: [Colors.transparent, Colors.transparent],
                     ),
-                  );
-                }).toList(),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isSelected
+                    ? themeColor.withValues(alpha: 0.4)
+                    : Colors.grey.withValues(alpha: 0.2),
+                width: isSelected ? 1.5 : 1,
               ),
-            ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              textDirection: TextDirection.rtl,
+              children: [
+                // Header row: selection indicator and phoneme
+                Row(
+                  textDirection: TextDirection.rtl,
+                  children: [
+                    Text(
+                      displayChar,
+                      style: TextStyle(
+                        fontFamily: 'HafsSmart',
+                        fontSize: 28, // Slightly larger for modern look
+                        color: isSelected
+                            ? themeColor
+                            : (isError ? Colors.red : const Color(0xFF1E293B)),
+                      ),
+                      textDirection: TextDirection.rtl,
+                    ),
+                    const Spacer(),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      transitionBuilder: (child, animation) =>
+                          ScaleTransition(scale: animation, child: child),
+                      child: Icon(
+                        isSelected
+                            ? Icons.check_circle_rounded
+                            : Icons.radio_button_unchecked_rounded,
+                        key: ValueKey(isSelected),
+                        color: isSelected
+                            ? themeColor
+                            : Colors.grey.withValues(alpha: 0.5),
+                        size: 24,
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Show attributes in a wrap
+                if (attributes.isNotEmpty)
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Wrap(
+                        textDirection: TextDirection.rtl,
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: attributes.map((attr) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.8),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: themeColor.withValues(alpha: 0.1),
+                              ),
+                            ),
+                            child: Text(
+                              attr,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: isError
+                                    ? Colors.red.shade700
+                                    : Colors.blueGrey,
+                              ),
+                              textDirection: TextDirection.rtl,
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

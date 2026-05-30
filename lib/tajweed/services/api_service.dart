@@ -7,25 +7,70 @@ import 'package:http_parser/http_parser.dart';
 import '../models/muaalem_result.dart';
 
 class MuaalemApiService {
-  // Configure your Modal API endpoint URL here
-  // Option 1: Replace the URL below with your own Modal deployment URL
-  // Option 2: Pass custom URL to constructor
-  static const String _defaultBaseUrl =
-      'https://iam-muslim--quran-muaalem-api-muaalemapi-serve.modal.run';
+  static const String _configUrl =
+      'https://iam-muslim.github.io/AlQuranElMajeed-Audio/config.json';
 
   final Dio _dio;
   CancelToken? _cancelToken;
+  Future<void>? _initFuture;
 
   MuaalemApiService({String? baseUrl})
     : _dio = Dio(
         BaseOptions(
-          baseUrl: baseUrl ?? _defaultBaseUrl,
-
+          baseUrl: baseUrl ?? '',
           connectTimeout: const Duration(minutes: 2),
           receiveTimeout: const Duration(minutes: 2),
           sendTimeout: const Duration(minutes: 2),
+          headers: {'bypass-tunnel-reminder': 'true'},
         ),
       );
+
+  Future<void> _initDynamicBaseUrl() async {
+    try {
+      // 1. Asynchronously attempt to pull the updated URL from the remote source
+      final tempDio = Dio(
+        BaseOptions(connectTimeout: const Duration(seconds: 10)),
+      );
+      final response = await tempDio.get(_configUrl);
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        Map<String, dynamic> jsonMap;
+        if (data is String) {
+          jsonMap = jsonDecode(data);
+        } else {
+          jsonMap = data;
+        }
+
+        final fetchedUrl = jsonMap['api_base_url'];
+        if (fetchedUrl != null && _isValidUrl(fetchedUrl.toString())) {
+          final newUrl = fetchedUrl.toString().trim();
+          if (_dio.options.baseUrl != newUrl) {
+            _dio.options.baseUrl = newUrl;
+            debugPrint("Updated API URL from remote config: $newUrl");
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Failed to fetch remote config: $e");
+      // Rethrow to see the actual network error in the console instead of just 'No API URL'
+      if (_dio.options.baseUrl.isEmpty) {
+        throw Exception("Failed to fetch GitHub config: $e");
+      }
+    }
+
+    if (_dio.options.baseUrl.isEmpty) {
+      throw Exception(
+        "No API URL configured. Please check network or config.json",
+      );
+    }
+  }
+
+  bool _isValidUrl(String url) {
+    if (!url.startsWith('https://')) return false;
+    final uri = Uri.tryParse(url);
+    return uri != null && uri.isAbsolute;
+  }
 
   /// Analyzes the recorded verse audio against the reference text.
   ///
@@ -43,6 +88,13 @@ class MuaalemApiService {
     int maddAaredLen = 2,
     void Function(int sent, int total)? onSendProgress,
   }) async {
+    if (_dio.options.baseUrl.isEmpty) {
+      _initFuture ??= _initDynamicBaseUrl();
+    }
+
+    if (_initFuture != null) {
+      await _initFuture;
+    }
     _cancelToken = CancelToken();
     FormData formData = FormData.fromMap({
       'sura': sura.toString(),

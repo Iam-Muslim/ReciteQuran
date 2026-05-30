@@ -159,6 +159,8 @@ class _VerseRowState extends State<VerseRow> {
 
   /// Builds the list of [TextSpan]s for this verse's words.
   /// Only called when the fingerprint changes (cache miss).
+  /// Builds the list of [InlineSpan]s for this verse's words.
+  /// Only called when the fingerprint changes (cache miss).
   List<InlineSpan> _buildSpans(
     List<String> words,
     bool isActive,
@@ -182,7 +184,7 @@ class _VerseRowState extends State<VerseRow> {
       // Unmatched words use text color, matched use green/red
       final Color color;
       if (isHidden) {
-        color = c.bg;
+        color = Colors.transparent;
       } else {
         color = _getColor(i, c, app);
       }
@@ -215,19 +217,6 @@ class _VerseRowState extends State<VerseRow> {
       }
     }
 
-    // Inline ayah number — plain Arabic digits with generous spacing
-    spans.add(
-      TextSpan(
-        text: '       ${_toArabicDigits(widget.verse.ayah)}',
-        style: TextStyle(
-          fontFamily: '',
-          fontSize: app.fontSize * 0.38,
-          color: c.muted.withValues(alpha: 0.35),
-          height: 2.4,
-        ),
-      ),
-    );
-
     return spans;
   }
 
@@ -249,34 +238,60 @@ class _VerseRowState extends State<VerseRow> {
     return GestureDetector(
       onTap: widget.onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 350),
+        duration: const Duration(milliseconds: 400),
         curve: Curves.easeOutCubic,
         margin: EdgeInsets.symmetric(
-          horizontal: isActive ? 8 : 12,
-          vertical: isActive ? 6 : 3,
+          horizontal: 16,
+          vertical: isActive ? 8 : 4,
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         decoration: BoxDecoration(
-          color: isActive ? c.surfaceHigh.withAlpha(150) : Colors.transparent,
+          color: isActive ? c.gold.withValues(alpha: 0.05) : Colors.transparent,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isActive ? c.goldFade : Colors.transparent,
+            color: isActive
+                ? c.gold.withValues(alpha: 0.2)
+                : Colors.transparent,
             width: 1,
           ),
-          boxShadow: isActive
-              ? [
-                  BoxShadow(
-                    color: c.goldFade.withAlpha(20),
-                    blurRadius: 12,
-                    spreadRadius: 2,
-                  ),
-                ]
-              : [],
         ),
-        child: RichText(
-          textAlign: TextAlign.justify,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           textDirection: TextDirection.rtl,
-          text: TextSpan(children: _cachedSpans),
+          children: [
+            Expanded(
+              child: RichText(
+                textAlign: TextAlign.justify,
+                textDirection: TextDirection.rtl,
+                text: TextSpan(children: _cachedSpans),
+              ),
+            ),
+            Container(
+              margin: const EdgeInsets.only(right: 16, bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? c.gold.withValues(alpha: 0.15)
+                    : c.surface.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isActive
+                      ? c.gold.withValues(alpha: 0.3)
+                      : c.border.withValues(alpha: 0.1),
+                  width: 1,
+                ),
+              ),
+              child: Text(
+                _toArabicDigits(widget.verse.ayah),
+                style: TextStyle(
+                  fontFamily: 'Inter', // Modern font for digits
+                  fontSize: app.fontSize * 0.35,
+                  fontWeight: FontWeight.w600,
+                  color: isActive ? c.gold : c.muted.withValues(alpha: 0.7),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
