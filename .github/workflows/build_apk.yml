@@ -1,15 +1,25 @@
-name: Build Flutter APK
+name: Build and Release APKs
 
 on:
+  # 1. Triggers when you push a version tag (e.g., git tag v1.0.0 && git push origin v1.0.0)
   push:
-    branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
-  workflow_dispatch: # Allows manual triggering from GitHub UI
+    tags:
+      - 'v*'
+  # 2. Allows manual triggering from the Actions tab with a custom version name
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Release Version Tag (e.g., v1.0.1)'
+        required: true
+        default: 'v1.0.0'
+
+# CRITICAL: This permission is required for GitHub Actions to create a Release
+permissions:
+  contents: write
 
 jobs:
-  build:
-    name: Build APK
+  build-and-release:
+    name: Build and Publish Release
     runs-on: ubuntu-latest
 
     steps:
@@ -32,12 +42,24 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build APK
-        run: flutter build apk --release
+      # --- BUILD STEP ---
+      # This generates separate, lightweight APKs for each architecture
+      - name: Build Split APKs
+        run: flutter build apk --release --split-per-abi
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+      # (Optional) If you decided to use your keystore secrets, put the Decode and key.properties steps right here!
+
+      # --- RELEASE STEP ---
+      # Pushes the APKs to the GitHub Releases tab
+      - name: Create GitHub Release and Upload APKs
+        uses: softprops/action-gh-release@v2
         with:
-          name: app-release
-          path: build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 7
+          # Uses the pushed tag name, or the manual input name
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version_tag }}
+          name: Release ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version_tag }}
+          draft: false
+          prerelease: false
+          files: |
+            build/app/outputs/flutter-apk/ReciteQuran-arm64-v8a-release.apk
+            build/app/outputs/flutter-apk/ReciteQuran-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/ReciteQuran-x86_64-release.apk
