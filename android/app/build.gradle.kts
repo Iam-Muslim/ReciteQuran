@@ -14,7 +14,9 @@ android {
 
     val keystoreProperties = Properties()
     val keystorePropertiesFile = rootProject.file("key.properties")
-    if (keystorePropertiesFile.exists()) {
+    val hasKeyProperties = keystorePropertiesFile.exists()
+
+    if (hasKeyProperties) {
         keystoreProperties.load(FileInputStream(keystorePropertiesFile))
     }
 
@@ -34,28 +36,39 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
-signingConfigs {
+
+    signingConfigs {
         create("release") {
-            // This reads the properties
-            val storePass = keystoreProperties.getProperty("storePassword")
-            val keyPass = keystoreProperties.getProperty("keyPassword")
-            val alias = keystoreProperties.getProperty("keyAlias")
-            val storePath = keystoreProperties.getProperty("storeFile")
+            if (hasKeyProperties) {
+                val storePass = keystoreProperties.getProperty("storePassword")
+                val keyPass = keystoreProperties.getProperty("keyPassword")
+                val alias = keystoreProperties.getProperty("keyAlias")
+                val storePath = keystoreProperties.getProperty("storeFile")
 
-            // This ensures we get a clear error if something is missing
-            if (storePass == null || keyPass == null || alias == null || storePath == null) {
-                throw GradleException("Key properties are missing or key.properties file was not found!")
+                if (storePass != null && keyPass != null && alias != null && storePath != null) {
+                    keyAlias = alias
+                    keyPassword = keyPass
+                    storeFile = file(storePath)
+                    storePassword = storePass
+                }
             }
-
-            keyAlias = alias
-            keyPassword = keyPass
-            storeFile = file(storePath)
-            storePassword = storePass
         }
     }
+
     buildTypes {
         getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
+            // Only apply release signing configuration if the key properties actually exist
+            if (hasKeyProperties && 
+                keystoreProperties.containsKey("storePassword") && 
+                keystoreProperties.containsKey("keyPassword") && 
+                keystoreProperties.containsKey("keyAlias") && 
+                keystoreProperties.containsKey("storeFile")) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                println("WARNING: key.properties or signing keys missing. Building an UNSIGNED release.")
+                signingConfig = null
+            }
+            
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
