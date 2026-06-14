@@ -5,13 +5,17 @@ on:
   push:
     tags:
       - 'v*'
-  # Allows manual triggering from the Actions tab with a custom version name
+  # Allows manual triggering from the Actions tab with a custom version name and display title
   workflow_dispatch:
     inputs:
       version_tag:
-        description: 'Release Version Tag (e.g., v1.0.1)'
+        description: 'Strict Tag Name (NO SPACES! e.g., v2.0.0)'
         required: true
-        default: 'v1.0.0'
+        default: 'v2.0.0'
+      release_title:
+        description: 'Display Title (Can include spaces/Arabic! e.g.,  الحمد لله رب العالمين)'
+        required: true
+        default: 'الحمد لله رب العالمين'
 
 # Required to allow GitHub Actions to create a Release and upload assets
 permissions:
@@ -66,11 +70,15 @@ jobs:
       - name: Create GitHub Release and Upload APKs
         uses: softprops/action-gh-release@v2
         with:
+          # Uses the strict tag name for the underlying Git reference
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version_tag }}
-          name: Release ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version_tag }}
+          
+          # Uses your custom input text for the public title headline
+          name:  ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.release_title }}
+          
           draft: false
           prerelease: false
           files: |
-            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
-            build/app/outputs/flutter-apk/app-x86_64-release.apk
+            build/app/outputs/flutter-apk/ReciteQuran-arm64-v8a.apk
+            build/app/outputs/flutter-apk/ReciteQuran-armeabi-v7a.apk
+            build/app/outputs/flutter-apk/ReciteQuran-x86_64.apk
