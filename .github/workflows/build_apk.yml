@@ -1,11 +1,11 @@
 name: Build and Release APKs
 
 on:
-  # 1. Triggers when you push a version tag (e.g., git tag v1.0.0 && git push origin v1.0.0)
+  # Triggers when you push a version tag (e.g., git tag v1.0.0 && git push origin v1.0.0)
   push:
     tags:
       - 'v*'
-  # 2. Allows manual triggering from the Actions tab with a custom version name
+  # Allows manual triggering from the Actions tab with a custom version name
   workflow_dispatch:
     inputs:
       version_tag:
@@ -13,7 +13,7 @@ on:
         required: true
         default: 'v1.0.0'
 
-# CRITICAL: This permission is required for GitHub Actions to create a Release
+# Required to allow GitHub Actions to create a Release and upload assets
 permissions:
   contents: write
 
@@ -42,24 +42,35 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # --- DOWNLOAD ONNX MODEL ---
+      # This creates the directory structure and fetches the asset from the remote release
+      - name: Create assets directory
+        run: mkdir -p assets/model
+
+      - name: Download ONNX Model
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download v0.1.0 \
+            --repo yazinsai/offline-tarteel \
+            --pattern "fastconformer_ar_ctc_q8.onnx" \
+            --dir assets/model
+
       # --- BUILD STEP ---
-      # This generates separate, lightweight APKs for each architecture
+      # Generates separate, lightweight APKs per architecture using the updated build.gradle.kts
       - name: Build Split APKs
         run: flutter build apk --release --split-per-abi
 
-      # (Optional) If you decided to use your keystore secrets, put the Decode and key.properties steps right here!
-
       # --- RELEASE STEP ---
-      # Pushes the APKs to the GitHub Releases tab
+      # Automatically pushes the generated split APK architectural binaries to the Releases tab
       - name: Create GitHub Release and Upload APKs
         uses: softprops/action-gh-release@v2
         with:
-          # Uses the pushed tag name, or the manual input name
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version_tag }}
           name: Release ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version_tag }}
           draft: false
           prerelease: false
           files: |
-            build/app/outputs/flutter-apk/ReciteQuran-arm64-v8a-release.apk
-            build/app/outputs/flutter-apk/ReciteQuran-armeabi-v7a-release.apk
-            build/app/outputs/flutter-apk/ReciteQuran-x86_64-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-x86_64-release.apk
