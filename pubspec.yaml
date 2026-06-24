@@ -1,0 +1,48 @@
+name: the_great_quran
+description: "The Great Quran — Real-time recitation tracker"
+publish_to: 'none'
+version: 1.0.0+3
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  device_info_plus: ^13.1.0
+  diff_match_patch: ^0.4.1
+  flutter:
+    sdk: flutter
+  in_app_update: ^4.2.5
+  package_info_plus: ^10.1.0
+  path_provider: ^2.1.5
+  permission_handler: ^12.0.1
+  record: ^6.2.0
+  share_plus: ^13.1.0
+  shared_preferences: ^2.2.0
+  sherpa_onnx: ^1.13.1
+  wakelock_plus: ^1.6.1
+  wav: ^1.5.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/model/quran_phoneme_zipformer.int8.onnx
+    - assets/model/tokens.txt
+    - assets/model/ordered_quran_phonemes.json
+    - assets/icon/app_icon.png
+
+  fonts:
+    - family: HafsSmart
+      fonts:
+        - asset: assets/fonts/HafsSmart_08.ttf
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
