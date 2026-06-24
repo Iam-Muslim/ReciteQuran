@@ -1,14 +1,21 @@
-# ELHamdule Allah 
-# هذا من فضل ربي
-# ReciteQuran — Under-Development Technical Reference
-# ربنا تقبل منا انك ان السميع العليم
-
 > *"And We have certainly made the Quran easy for remembrance, so is there any who will remember?"* — Al-Qamar 54:17
 
 #  وَما أَسأَلُكُم عَلَيهِ مِن أَجرٍ إِنَّ أَجرِيَ إِلّا عَلَىٰ رَبِّ العالَمِين 
 **For The Sake Of Allah only** if you used this app or the source code in any other work you aren't allowed to get from it any money or make profit from it and you have to mention that this app is for the sake of Allah only .
-(1) you may use and redistribute it ONLY in applications that are FREE to end users; (2) you may NOT sell it, place it behind a paid subscription or paywall, monetize it with ads, or earn any revenue from an app or service that uses this model or its outputs; (3) these terms pass on to anyone you share it with.
+
+
+(1) you may use and redistribute it ONLY in applications that are FREE to end users
+
+(2) you may NOT sell it, place it behind a paid subscription or paywall, monetize it with ads, or earn any revenue from an app or service that uses this model or its outputs;
+
+(3) these terms pass on to anyone you share it with.
+
 ---
+<img width="279" height="585" alt="5900085639712018203" src="https://github.com/user-attachments/assets/6eeb46e3-a773-4e9d-b29d-4a322dbd42c0" />
+<img width="279" height="585" alt="5900085639712018204" src="https://github.com/user-attachments/assets/9b5670cb-1f60-44dc-968d-893dae1b8902" />
+<img width="279" height="585" alt="5900085639712018205" src="https://github.com/user-attachments/assets/767c65b4-0f4f-41cc-ae4b-a19c18b8ec95" />
+
+
 
 ## What Is This Project?
 
@@ -32,19 +39,6 @@ It runs **entirely on-device**, with no internet connection needed. An Arabic AS
 9. [The Phonetic Representation System](#the-phonetic-representation-system)
 10. [Directory Structure](#directory-structure)
 11. [Known Limitations & Open Tasks](#known-limitations--open-tasks)
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| UI Framework | Flutter (Dart) |
-| On-Device ASR | [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx) — ZipFormer CTC model |
-| Phonetic Alignment | Custom port of [quran-transcript](https://github.com/OmarMuhammedAli/quran-transcript) |
-| Voice Navigation | Custom port of [qua_sdk](https://github.com/) N-gram/TF-IDF anchor matching |
-| State Management | Flutter `ChangeNotifier` (no external state library) |
-| Persistence | `SharedPreferences` for settings only |
 
 ---
 
@@ -453,3 +447,6 @@ This project is built on research and code from the following open-source projec
 | [quran-transcript](https://github.com/OmarMuhammedAli/quran-transcript)       | obadx
 | [qua_sdk](https://huggingface.co/spaces/hetchyy/quranic-universal-aligner)    | Hetchy
   and more .....
+
+
+  # هذا من فضل ربي - ربنا تقبل منا انك ان السميع العليم
