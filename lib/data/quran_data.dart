@@ -1,9 +1,6 @@
 import 'dart:convert';
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:the_great_quran/tracking/quran_normalizer.dart';
-
 // ---------------------------------------------------------------------------
 // quran_data.dart
 // ---------------------------------------------------------------------------
@@ -56,8 +53,6 @@ class QuranVerse {
     List<int>? wordMap,
   }) : _wordMap = wordMap;
 
-
-
   factory QuranVerse.fromJson(
     int surahNum,
     int ayahNum,
@@ -80,10 +75,12 @@ class QuranVerse {
 
     if (json.containsKey('aya_phonemes_list')) {
       phonemeWords = List<String>.from(json['aya_phonemes_list']);
-      
+
       // Safety check: Pad if mismatch
       if (phonemeWords.length < uthmaniWords.length) {
-          phonemeWords.addAll(List.filled(uthmaniWords.length - phonemeWords.length, ''));
+        phonemeWords.addAll(
+          List.filled(uthmaniWords.length - phonemeWords.length, ''),
+        );
       }
     } else {
       phonemeWords = List.filled(uthmaniWords.length, '');

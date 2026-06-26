@@ -1,5 +1,3 @@
-// lib/tracking/phonetic_word_tracker.dart
-
 import 'dart:math';
 
 import 'package:the_great_quran/tracking/quran_normalizer.dart';
@@ -24,19 +22,10 @@ class PhoneticWordTracker {
   final List<String> _rawExpected;
 
   int _wordCursor = 0;
-  int _charCursor = 0;
+  int _asrCursor = 0;
 
   String _accumNorm = '';
-  int _consumedLen = 0;
-
-  late final List<String> _flatRefPhonemes;
-  late final List<int> _rWordIndices;
-
-  // Streaming DP State
-  List<double> _dpActiveRow = [];
-  static const int _windowRadius = 25; // Window around _charCursor
-  
-  Map<int, int> _wordStartAsrIndices = {};
+  bool _isFirstMatch = true;
 
   PhoneticWordTracker({
     required this.expectedPhonemes,
@@ -54,179 +43,180 @@ class PhoneticWordTracker {
        _rawExpected = expectedPhonemes,
        _normExpected = expectedPhonemes
            .map(QuranNormalizer.normalizeBare)
-           .toList(growable: false) {
-    _initReferenceArrays();
-  }
-
-  void _initReferenceArrays() {
-    _flatRefPhonemes = [];
-    _rWordIndices = [];
-
-    for (int i = 0; i < _normExpected.length; i++) {
-      final wordChars = _normExpected[i].split('');
-      for (final char in wordChars) {
-        _flatRefPhonemes.add(char);
-        _rWordIndices.add(i);
-      }
-    }
-    
-    _dpActiveRow = List.filled(_flatRefPhonemes.length + 1, double.infinity);
-    _dpActiveRow[0] = 0.0;
-    _wordStartAsrIndices[0] = 0;
-  }
+           .toList(growable: false);
 
   bool get isComplete => _wordCursor >= expectedPhonemes.length;
   int get cursor => _wordCursor;
 
-  bool feed(String asrText) {
+  double _calcAccuracy(String s1, String s2) {
+    if (s1 == s2) return 1.0;
+
+    if (strictTracking) {
+      return 0.0; // If they don't exactly match (checked above), it's a fail in strict mode
+    }
+
+    if (s1.length >= 4 && s2.length >= 6) {
+      if (s2.startsWith(s1) || s2.endsWith(s1)) {
+        return 0.85;
+      }
+    }
+
+    String w1 = s1.startsWith('ال') ? s1.substring(2) : s1;
+    String w2 = s2.startsWith('ال') ? s2.substring(2) : s2;
+
+    int distance = _levenshtein(w1, w2);
+    int maxLength = max(w1.length, w2.length);
+    return maxLength == 0 ? 1.0 : 1.0 - (distance / maxLength);
+  }
+
+  /// Feeds new ASR text into the tracker.
+  /// [isEndpoint] indicates if the user stopped speaking (VAD triggered).
+  bool feed(String asrText, {bool isEndpoint = false}) {
     if (isComplete) return false;
 
-    final normNew = QuranNormalizer.normalizeBare(asrText);
+    // Use full phonetic normalizer (preserves Tashkeel, Shaddah, Madd)
+    String normNew = QuranNormalizer.normalizeWithTashkeel(asrText);
     
-    if (normNew.length <= _consumedLen) return false;
-    final newChars = normNew.substring(_consumedLen);
+    // Detect if the ASR engine was externally reset (e.g. safety limits or manual clear)
+    if (normNew.length < _accumNorm.length) {
+      _asrCursor = 0;
+      _accumNorm = '';
+    }
+
+    if (normNew.length <= _asrCursor) return false;
+
+    _accumNorm = normNew;
+    String activeChunk = _accumNorm.substring(_asrCursor);
+    
+    // Self-healing rolling buffer: If there is too much unmatched noise (> 150 phonemes), 
+    // drop the oldest noise to prevent the tracker from getting permanently stuck behind.
+    // Increased to 150 because Tashkeel makes strings naturally longer, and a full wrong verse can be 100 chars.
+    if (activeChunk.length > 150) {
+      int excess = activeChunk.length - 150;
+      _asrCursor += excess;
+      activeChunk = _accumNorm.substring(_asrCursor);
+    }
     
     bool changed = false;
 
-    for (int i = 0; i < newChars.length; i++) {
-      String predChar = newChars[i];
-      int currentAsrIndex = _consumedLen + i;
+    // Process new phonemes using Sliding Window Prefix Matcher
+    while (_wordCursor < expectedPhonemes.length && activeChunk.isNotEmpty) {
+      bool wordCommitted = false;
       
-      List<double> nextDpRow = List.filled(_flatRefPhonemes.length + 1, double.infinity);
-      List<bool> consumedThisFrame = List.filled(_flatRefPhonemes.length + 1, false);
-      
-      int windowStart = max(0, _charCursor - _windowRadius);
-      int windowEnd = min(_flatRefPhonemes.length, _charCursor + _windowRadius);
-
-      double minCost = double.infinity;
-
-      double currentInsCost = 1.0;
-      if (i > 0 && newChars[i - 1] == predChar) {
-        currentInsCost = 0.0;
-      } else if (i == 0 && _consumedLen > 0 && _accumNorm[_consumedLen - 1] == predChar) {
-        currentInsCost = 0.0;
-      }
-
-      for (int j = windowStart; j <= windowEnd; j++) {
-        // Insertion (consuming predChar without advancing refChar). 
-        // Cost is 0 if it's a CTC stutter frame.
-        double insCost = _dpActiveRow[j] + currentInsCost;
+      int maxLookahead = isLookaheadEnabled ? lookAheadWords : 0;
+      for (int look = 0; look <= maxLookahead && _wordCursor + look < expectedPhonemes.length; look++) {
+        int targetIdx = _wordCursor + look;
+        String expectedPhoneme = QuranNormalizer.normalizeWithTashkeel(_normExpected[targetIdx]);
         
-        // Deletion (costs 1)
-        double delCost = j > 0 ? nextDpRow[j - 1] + 1.0 : double.infinity;
-        
-        // Substitution/Match
-        double subCost = double.infinity;
-        if (j > 0) {
-          String refChar = _flatRefPhonemes[j - 1];
-          double cost = (refChar == predChar) ? 0.0 : 1.0;
-          subCost = _dpActiveRow[j - 1] + cost;
-        }
-
-        double best = min(insCost, min(delCost, subCost));
-
-        if (j == 0) {
-          // Allow free leading insertions to naturally absorb "Bismillah" or pre-speech noise
-          best = min(best, 0.0);
-        }
-
-        nextDpRow[j] = best;
-
-        if (best < minCost) {
-          minCost = best;
+        // Skip very short words in lookahead (prevent jitter on و, من, في, لا)
+        // Adjust length threshold to 4 because Tashkeel makes short words longer
+        if (look > 0 && expectedPhoneme.length <= 4) {
+          continue;
         }
         
-        if (best == subCost || best == insCost || j == 0) {
-          consumedThisFrame[j] = true;
-        }
-      }
-
-      // Normalize row and trace furthest robust J
-      int furthestJ = _charCursor;
-      int furthestConsumedJ = -1;
-      for (int j = windowStart; j <= windowEnd; j++) {
-        if (nextDpRow[j] < double.infinity) {
-          nextDpRow[j] -= minCost; // Normalization prevents cost infinity-lock
-          // Allow path drift up to 2.0 errors behind the optimal path
-          if (nextDpRow[j] <= 2.0) {
-            if (j > furthestJ) {
-              furthestJ = j;
+        double bestAcc = -1.0;
+        int bestL = -1;
+        int bestStartK = -1;
+        
+        // Scan the entire active chunk for the target word. 
+        // The early break on 'L' ensures this remains O(N) performance.
+        int maxStartK = activeChunk.length;
+        
+        // Find the best matching candidate within the RAW active chunk
+        for (int startK = 0; startK < maxStartK; startK++) {
+          
+          for (int L = 1; L <= activeChunk.length - startK; L++) {
+            String rawCandidate = activeChunk.substring(startK, startK + L);
+            
+            // Optimization: If the candidate is significantly longer than the expected word,
+            // it mathematically cannot pass the accuracy threshold. Break early to prevent O(N^2).
+            if (rawCandidate.length > expectedPhoneme.length * 1.5 + 4) {
+              break; 
             }
-            if (consumedThisFrame[j] && j > furthestConsumedJ) {
-              furthestConsumedJ = j;
+            
+            double acc = _calcAccuracy(rawCandidate, expectedPhoneme);
+            
+            // Favor highest accuracy. If tied, favor earlier startK. If tied, favor SHORTER match (leaves text for next word).
+            if (acc > bestAcc) {
+              bestAcc = acc;
+              bestL = L;
+              bestStartK = startK;
+            } else if (acc == bestAcc) {
+              if (startK < bestStartK) {
+                bestStartK = startK;
+                bestL = L;
+              } else if (startK == bestStartK && L < bestL) {
+                bestL = L;
+              }
             }
           }
         }
-      }
 
-      _dpActiveRow = nextDpRow;
-
-      if (furthestJ > _charCursor) {
-        _charCursor = furthestJ;
-      }
-      
-      if (furthestConsumedJ > 0) {
-        int newLastMatchedWord = _rWordIndices[furthestConsumedJ - 1];
-        for (int w = 1; w <= newLastMatchedWord; w++) {
-          if (!_wordStartAsrIndices.containsKey(w)) {
-            _wordStartAsrIndices[w] = currentAsrIndex; // Word w starts precisely here
+        // Require slightly higher threshold if we're jumping ahead (skipping words)
+        double requiredThreshold = look > 0 ? matchThreshold + 0.15 : matchThreshold;
+        
+        if (bestAcc >= requiredThreshold) {
+          // If ASR is still outputting the word (candidate reaches the very end of our buffer)
+          // and it's not a perfect match yet, we wait for more letters rather than chopping it off prematurely.
+          if (bestAcc < 1.0 && (bestStartK + bestL) == activeChunk.length) {
+             String rawMatched = activeChunk.substring(bestStartK, bestStartK + bestL);
+             String bareMatched = QuranNormalizer.normalizeBare(rawMatched);
+             String bareExpected = QuranNormalizer.normalizeBare(expectedPhoneme);
+             
+             // If the bare consonants match perfectly, the user just dropped a trailing vowel (Waqf).
+             bool isConsonantPerfect = (bareMatched == bareExpected);
+             
+             // If consonants aren't perfect, AND the engine hasn't stopped listening, wait for more text!
+             if (!isConsonantPerfect && !isEndpoint) {
+                 break; 
+             }
           }
+
+          // Commit targetIdx!
+          
+          // 1. Mark skipped words as RED (unless it's the very first match of a new Ayah, avoiding stale audio errors)
+          if (!_isFirstMatch) {
+            for (int skipped = 0; skipped < look; skipped++) {
+              statuses[_wordCursor + skipped] = WordMatchStatus.skipped;
+              errors[_wordCursor + skipped] = [
+                ReciterError(
+                  errorType: ErrorCategory.normal,
+                  speechErrorType: SpeechErrorType.delete,
+                  expectedPh: _rawExpected[_wordCursor + skipped],
+                  predictedPh: '',
+                )
+              ];
+            }
+          }
+          _isFirstMatch = false;
+          
+          // 2. Mark targetIdx as GREEN
+          statuses[targetIdx] = WordMatchStatus.correct;
+          errors[targetIdx] = [];
+          
+          String rawMatched = activeChunk.substring(bestStartK, bestStartK + bestL);
+          print('[Prefix Sliding Window] Word $targetIdx "${_rawExpected[targetIdx]}" matched. Candidate: "$rawMatched", Acc: $bestAcc');
+          
+          // 3. Advance cursors (consume garbage + the matched raw length)
+          _asrCursor += bestStartK + bestL;
+          _wordCursor = targetIdx + 1;
+          
+          // 4. Update the active chunk to evaluate the remaining tail for the next word
+          activeChunk = _accumNorm.substring(_asrCursor);
+          
+          changed = true;
+          wordCommitted = true;
+          break; 
         }
       }
       
-      if (furthestConsumedJ == _flatRefPhonemes.length) {
-        if (!_wordStartAsrIndices.containsKey(expectedPhonemes.length)) {
-          _wordStartAsrIndices[expectedPhonemes.length] = currentAsrIndex + 1;
-        }
+      // If we couldn't confidently commit any word (current or lookahead), 
+      // we stop and wait for more ASR text to arrive.
+      if (!wordCommitted) {
+        break; 
       }
     }
     
-    _accumNorm = normNew;
-    _consumedLen = normNew.length;
-
-    if (_charCursor > 0 && _charCursor <= _flatRefPhonemes.length) {
-      int activeWordIdx = _charCursor < _flatRefPhonemes.length 
-          ? _rWordIndices[_charCursor] 
-          : expectedPhonemes.length;
-
-      while (_wordCursor < activeWordIdx) {
-        int startAsr = _wordStartAsrIndices[_wordCursor] ?? _consumedLen;
-        int endAsr = _wordStartAsrIndices[_wordCursor + 1] ?? _consumedLen;
-        
-        startAsr = max(0, min(startAsr, _accumNorm.length));
-        endAsr = max(startAsr, min(endAsr, _accumNorm.length));
-        
-        String spokenChunk = _accumNorm.substring(startAsr, endAsr);
-        
-        if (spokenChunk.isEmpty && statuses[_wordCursor] == WordMatchStatus.pending) {
-            // Restore legacy lookahead "skipped" behavior to prevent massive red error blocks
-            statuses[_wordCursor] = WordMatchStatus.skipped;
-            errors[_wordCursor] = [
-              ReciterError(
-                errorType: ErrorCategory.normal,
-                speechErrorType: SpeechErrorType.delete,
-                expectedPh: _rawExpected[_wordCursor],
-                predictedPh: '',
-              )
-            ];
-            print('[Streaming DP] Word $_wordCursor skipped entirely.');
-            _wordCursor++;
-            changed = true;
-            continue;
-        }
-
-        // 1. We ONLY evaluate simple green/red word boundaries in real-time.
-        // No inline Tajweed DP checking is done here anymore.
-        statuses[_wordCursor] = WordMatchStatus.correct;
-        errors[_wordCursor] = [];
-        
-        print('[Streaming DP] Word $_wordCursor "${_rawExpected[_wordCursor]}" completed. Spoken slice: "$spokenChunk".');
-        
-        _wordCursor++;
-        changed = true;
-      }
-    }
-
     return changed;
   }
   
@@ -234,18 +224,36 @@ class PhoneticWordTracker {
 
   void reset() {
     _wordCursor = 0;
-    _charCursor = 0;
-    _consumedLen = 0;
+    _asrCursor = 0;
     _accumNorm = '';
-    _wordStartAsrIndices.clear();
-    
-    _dpActiveRow = List.filled(_flatRefPhonemes.length + 1, double.infinity);
-    _dpActiveRow[0] = 0.0;
-    _wordStartAsrIndices[0] = 0;
+    _isFirstMatch = true;
 
     for (int i = 0; i < statuses.length; i++) {
       statuses[i] = WordMatchStatus.pending;
       errors[i] = null;
     }
+  }
+
+  int _levenshtein(String s, String t) {
+    if (s.isEmpty) return t.length;
+    if (t.isEmpty) return s.length;
+
+    List<int> v0 = List<int>.filled(t.length + 1, 0);
+    List<int> v1 = List<int>.filled(t.length + 1, 0);
+
+    for (int i = 0; i <= t.length; i++) v0[i] = i;
+
+    for (int i = 0; i < s.length; i++) {
+      v1[0] = i + 1;
+
+      for (int j = 0; j < t.length; j++) {
+        int cost = (s[i] == t[j]) ? 0 : 1;
+        v1[j + 1] = min(v1[j] + 1, min(v0[j + 1] + 1, v0[j] + cost));
+      }
+
+      for (int j = 0; j <= t.length; j++) v0[j] = v1[j];
+    }
+
+    return v1[t.length];
   }
 }

@@ -321,7 +321,7 @@ class HighlightingController extends ChangeNotifier {
     final targetAyah = _currentMatch!.verse;
 
     // Feed the accumulated stream to the word tracker
-    final changed = tracker.feed(asrText);
+    final changed = tracker.feed(asrText, isEndpoint: result.isFinal);
 
     if (!changed) return;
 
