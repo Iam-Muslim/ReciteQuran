@@ -53,6 +53,8 @@ class QuranVerse {
     List<int>? wordMap,
   }) : _wordMap = wordMap;
 
+  static final RegExp _hizbSajdahRegex = RegExp(r'[۞۩]');
+
   factory QuranVerse.fromJson(
     int surahNum,
     int ayahNum,
@@ -66,7 +68,7 @@ class QuranVerse {
     }
 
     final uthmaniWords = rawWords
-        .map((w) => w.replaceAll(RegExp(r'[۞۩]'), ''))
+        .map((w) => w.replaceAll(_hizbSajdahRegex, ''))
         .where((s) => s.isNotEmpty)
         .toList();
 

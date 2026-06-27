@@ -52,6 +52,10 @@ class ErrorExplainer {
     int n = refGroups.length;
     int m = predGroups.length;
 
+    // Precompute first characters to avoid string operations inside the hot loop
+    List<String> refChars = List.generate(n, (i) => refGroups[i].isNotEmpty ? refGroups[i][0] : '');
+    List<String> predChars = List.generate(m, (i) => predGroups[i].isNotEmpty ? predGroups[i][0] : '');
+
     // Create distance matrix
     List<List<int>> dp = List.generate(n + 1, (_) => List.filled(m + 1, 0));
 
@@ -60,17 +64,13 @@ class ErrorExplainer {
 
     for (int i = 1; i <= n; i++) {
       for (int j = 1; j <= m; j++) {
-        String refChar = refGroups[i - 1].isNotEmpty ? refGroups[i - 1][0] : '';
-        String predChar = predGroups[j - 1].isNotEmpty
-            ? predGroups[j - 1][0]
-            : '';
-
-        int cost = (refChar == predChar) ? 0 : 1;
-        dp[i][j] = [
-          dp[i - 1][j] + 1, // deletion
-          dp[i][j - 1] + 1, // insertion
-          dp[i - 1][j - 1] + cost, // substitution
-        ].reduce(min);
+        int cost = (refChars[i - 1] == predChars[j - 1]) ? 0 : 1;
+        
+        int del = dp[i - 1][j] + 1;
+        int ins = dp[i][j - 1] + 1;
+        int sub = dp[i - 1][j - 1] + cost;
+        
+        dp[i][j] = min(del, min(ins, sub));
       }
     }
 
@@ -81,15 +81,10 @@ class ErrorExplainer {
 
     while (i > 0 || j > 0) {
       if (i > 0 && j > 0) {
-        String refChar = refGroups[i - 1].isNotEmpty ? refGroups[i - 1][0] : '';
-        String predChar = predGroups[j - 1].isNotEmpty
-            ? predGroups[j - 1][0]
-            : '';
-        int cost = (refChar == predChar) ? 0 : 1;
+        int cost = (refChars[i - 1] == predChars[j - 1]) ? 0 : 1;
 
         if (dp[i][j] == dp[i - 1][j - 1] + cost) {
-          alignments.insert(
-            0,
+          alignments.add(
             PhonemeGroupAlignment(
               opType: cost == 0 ? 'equal' : 'replace',
               refIdx: i - 1,
@@ -103,8 +98,7 @@ class ErrorExplainer {
       }
 
       if (i > 0 && dp[i][j] == dp[i - 1][j] + 1) {
-        alignments.insert(
-          0,
+        alignments.add(
           PhonemeGroupAlignment(
             opType: 'delete',
             refIdx: i - 1,
@@ -113,8 +107,7 @@ class ErrorExplainer {
         );
         i--;
       } else if (j > 0 && dp[i][j] == dp[i][j - 1] + 1) {
-        alignments.insert(
-          0,
+        alignments.add(
           PhonemeGroupAlignment(
             opType: 'insert',
             refIdx: i, // or -1
@@ -125,7 +118,7 @@ class ErrorExplainer {
       }
     }
 
-    return alignments;
+    return alignments.reversed.toList();
   }
 
   static List<String> _applyCtcCollapse(List<String> rawChunks) {

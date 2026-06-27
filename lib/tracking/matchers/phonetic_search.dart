@@ -142,17 +142,20 @@ class PhoneticSearch {
     _isLoaded = true;
   }
 
+  static const String _coreChars = "ءبتثجحخدذرزسشصضطظعغفقكلمنهوياۥۦ۾ںـٲ";
+  static const String _residualChars = "َُِڇؙ۪ۜ";
+  
+  static final RegExp _chunkRegex = () {
+    String coreGroup = _coreChars.split('').map((c) => '$c+').join('|');
+    return RegExp('((?:$coreGroup)[$_residualChars]?)');
+  }();
+
   /// Normalizes the query by combining consecutive identical core characters
   /// into a single character and stripping residuals.
   String _normalizeQuery(String query) {
-    const String coreChars = "ءبتثجحخدذرزسشصضطظعغفقكلمنهوياۥۦ۾ںـٲ";
-    const String residualChars = "َُِڇؙ۪ۜ";
-
-    String coreGroup = coreChars.split('').map((c) => '$c+').join('|');
-    RegExp chunkRegex = RegExp('((?:$coreGroup)[$residualChars]?)');
 
     StringBuffer normQ = StringBuffer();
-    for (var match in chunkRegex.allMatches(query)) {
+    for (var match in _chunkRegex.allMatches(query)) {
       String group = match.group(1)!;
       if (group.isNotEmpty) {
         normQ.write(group[0]);

@@ -60,6 +60,13 @@ If too much "noise" accumulates (e.g., > 150 characters unmatched), a self-heali
 
 If the matched substring reaches the very end of the `activeChunk`, it means the ASR is still outputting the word. The algorithm normally waits for more text to ensure the highest possible accuracy before committing. However, if it's the **last word of the verse**, waiting indefinitely would cause the system to hang. The tracker explicitly handles this case: if it's the last word and accuracy is acceptable, it commits immediately instead of waiting for more phonemes that will never arrive.
 
+### Matching Difficulty (Easy vs Strict)
+
+The tracker supports dynamic accuracy calculation based on the user's settings:
+- **Easy Mode:** Uses standard Levenshtein distance on normalized strings, allowing partial matches (e.g., if you say one wrong letter but match 85% of the phonetic word).
+- **Strict Mode:** Bypasses Levenshtein distance and strictly demands an exact 1-to-1 match. If there is a single mismatch, accuracy collapses to `0.0`.
+*(This toggle operates entirely independently of the Lookahead logic).*
+
 ---
 
 ## Word Commitment

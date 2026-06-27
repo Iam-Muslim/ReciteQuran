@@ -41,12 +41,14 @@ class _VerseRowState extends State<VerseRow> {
 
   /// Cached TextSpan list — avoids re-allocating on every build.
   List<InlineSpan>? _cachedSpans;
+  late String _ayahArabicDigits;
 
   bool _isListeningToController = false;
 
   @override
   void initState() {
     super.initState();
+    _ayahArabicDigits = _toArabicDigits(widget.verse.ayah);
     widget.controller.activeAyah.addListener(_onActiveAyahChanged);
     AppState.instance.addListener(_onStateChanged);
     _updateSubscription();
@@ -156,19 +158,18 @@ class _VerseRowState extends State<VerseRow> {
     int hash = isActive ? 1 : 0;
     hash = hash * 31 + (isCompleted ? 1 : 0);
 
-    // Hash green/red word sets for this ayah.
-    // Completed ayahs have frozen state — skip the word loop entirely.
-    // This eliminates ~30 function calls per completed visible verse per cycle.
-    if (isCompleted) {
-      hash = hash * 31 + 999; // Stable constant — hash never changes
-    } else {
-      final wordCount = widget.verse.uthmaniWords.length;
-      for (int i = 0; i < wordCount; i++) {
-        final cIdx = i;
-        if (cIdx >= 0) {
-          if (ctrl.isWordGreen(ayah, cIdx)) hash = hash * 31 + (i + 1) * 7;
-          if (ctrl.isWordRed(ayah, cIdx)) hash = hash * 31 + (i + 1) * 13;
-        }
+    if (isActive) {
+      hash = hash * 31 + (ctrl.activeWordIndex ?? -1);
+    }
+
+    // Hash green/red/yellow word sets for this ayah.
+    final wordCount = widget.verse.uthmaniWords.length;
+    for (int i = 0; i < wordCount; i++) {
+      final cIdx = i;
+      if (cIdx >= 0) {
+        if (ctrl.isWordGreen(ayah, cIdx)) hash = hash * 31 + (i + 1) * 7;
+        if (ctrl.isWordRed(ayah, cIdx)) hash = hash * 31 + (i + 1) * 13;
+        if (ctrl.isWordYellow(ayah, cIdx)) hash = hash * 31 + (i + 1) * 17;
       }
     }
 
@@ -191,6 +192,13 @@ class _VerseRowState extends State<VerseRow> {
     if (widget.controller.isWordRed(widget.verse.ayah, cIdx)) return c.red;
     if (widget.controller.isWordYellow(widget.verse.ayah, cIdx)) return Colors.orange; // Tajweed/Tashkeel warning color
     
+    final activeMatch = widget.controller.currentMatchedVerse;
+    if (activeMatch != null && activeMatch.verse.surah == widget.verse.surah && activeMatch.verse.ayah == widget.verse.ayah) {
+      if (widget.controller.activeWordIndex == cIdx) {
+        return c.currentWord;
+      }
+    }
+
     return c.text;
   }
 
@@ -266,9 +274,10 @@ class _VerseRowState extends State<VerseRow> {
 
     for (int i = 0; i < words.length; i++) {
       final cIdx = i;
+      final isActiveWord = isActive && ctrl.activeWordIndex == cIdx;
       final isRead =
           cIdx >= 0 &&
-          (ctrl.isWordGreen(ayah, cIdx) || ctrl.isWordRed(ayah, cIdx) || ctrl.isWordYellow(ayah, cIdx));
+          (ctrl.isWordGreen(ayah, cIdx) || ctrl.isWordRed(ayah, cIdx) || ctrl.isWordYellow(ayah, cIdx) || isActiveWord);
 
       // Zero-GPU blur: unrecited words match background color (invisible).
       // Words "materialize" instantly when highlighted green/red.
@@ -392,7 +401,7 @@ class _VerseRowState extends State<VerseRow> {
                 ),
               ),
               child: Text(
-                _toArabicDigits(widget.verse.ayah),
+                _ayahArabicDigits,
                 style: TextStyle(
                   fontFamily: 'Inter', // Modern font for digits
                   fontSize: app.fontSize * 0.35,

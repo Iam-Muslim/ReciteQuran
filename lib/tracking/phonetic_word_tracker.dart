@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:the_great_quran/tracking/quran_normalizer.dart';
 import 'matchers/error_explainer.dart';
@@ -19,6 +20,9 @@ class PhoneticWordTracker {
   final List<List<ReciterError>?> errors;
 
   final List<String> _rawExpected;
+  final List<String> _normalizedExpected;
+  final List<String> _bareExpected;
+  final List<String> _bareExpectedWithoutAl;
 
   int _wordCursor = 0;
   int _asrCursor = 0;
@@ -39,12 +43,16 @@ class PhoneticWordTracker {
          WordMatchStatus.pending,
        ),
        errors = List<List<ReciterError>?>.filled(expectedPhonemes.length, null),
-       _rawExpected = expectedPhonemes;
+       _rawExpected = expectedPhonemes,
+       _normalizedExpected = expectedPhonemes.map(QuranNormalizer.normalizeWithTashkeel).toList(),
+       _bareExpected = expectedPhonemes.map(QuranNormalizer.normalizeWithTashkeel).map(QuranNormalizer.normalizeBare).toList(),
+       _bareExpectedWithoutAl = expectedPhonemes.map(QuranNormalizer.normalizeWithTashkeel).map(QuranNormalizer.normalizeBare).map((s) => s.startsWith('ال') ? s.substring(2) : s).toList();
 
   bool get isComplete => _wordCursor >= expectedPhonemes.length;
   int get cursor => _wordCursor;
 
-  double _calcAccuracy(String s1, String s2) {
+  double _calcAccuracy(String s1, int targetIdx) {
+    String s2 = _bareExpected[targetIdx];
     if (s1 == s2) return 1.0;
 
     if (strictTracking) {
@@ -57,11 +65,12 @@ class PhoneticWordTracker {
       }
     }
 
-    String w1 = s1.startsWith('ال') ? s1.substring(2) : s1;
-    String w2 = s2.startsWith('ال') ? s2.substring(2) : s2;
+    bool s1HasAl = s1.length >= 2 && s1.codeUnitAt(0) == 0x0627 && s1.codeUnitAt(1) == 0x0644;
+    String w1 = s1HasAl ? s1.substring(2) : s1;
+    String w2 = _bareExpectedWithoutAl[targetIdx];
 
     int distance = _levenshtein(w1, w2);
-    int maxLength = max(w1.length, w2.length);
+    int maxLength = w1.length > w2.length ? w1.length : w2.length;
     return maxLength == 0 ? 1.0 : 1.0 - (distance / maxLength);
   }
 
@@ -91,10 +100,26 @@ class PhoneticWordTracker {
       activeChunk = _accumNorm.substring(_asrCursor);
     }
 
+    // Pre-calculate the bare version of activeChunk to avoid O(N^2) regex normalization
+    Int32List bareToRawIndex = Int32List(activeChunk.length);
+    Int32List bareChars = Int32List(activeChunk.length);
+    int bareLen = 0;
+    
+    for (int i = 0; i < activeChunk.length; i++) {
+      int code = activeChunk.codeUnitAt(i);
+      // 0x064E=Fatha, 0x064F=Damma, 0x0650=Kasra
+      if (code != 0x064E && code != 0x064F && code != 0x0650) {
+        bareChars[bareLen] = code;
+        bareToRawIndex[bareLen] = i;
+        bareLen++;
+      }
+    }
+    String bareActiveChunk = String.fromCharCodes(bareChars, 0, bareLen);
+
     bool changed = false;
 
     // Process new phonemes using Sliding Window Prefix Matcher
-    while (_wordCursor < expectedPhonemes.length && activeChunk.isNotEmpty) {
+    while (_wordCursor < expectedPhonemes.length && bareActiveChunk.isNotEmpty) {
       bool wordCommitted = false;
 
       int maxLookahead = isLookaheadEnabled ? lookAheadWords : 0;
@@ -104,10 +129,8 @@ class PhoneticWordTracker {
         look++
       ) {
         int targetIdx = _wordCursor + look;
-        String expectedPhoneme = QuranNormalizer.normalizeWithTashkeel(
-          _rawExpected[targetIdx],
-        );
-        String bareExpectedPhoneme = QuranNormalizer.normalizeBare(expectedPhoneme);
+        String expectedPhoneme = _normalizedExpected[targetIdx];
+        String bareExpectedPhoneme = _bareExpected[targetIdx];
 
         // Skip very short words in lookahead (prevent jitter on و, من, في, لا)
         // Adjust length threshold to 4 because Tashkeel makes short words longer
@@ -116,40 +139,36 @@ class PhoneticWordTracker {
         }
 
         double bestAcc = -1.0;
-        int bestL = -1;
-        int bestStartK = -1;
+        int bestBareL = -1;
+        int bestBareStart = -1;
 
-        // Scan the entire active chunk for the target word.
-        // The early break on 'L' ensures this remains O(N) performance.
-        int maxStartK = activeChunk.length;
+        // Scan the bare chunk for the target word.
+        int maxStartK = bareActiveChunk.length;
 
-        // Find the best matching candidate within the RAW active chunk
+        // Find the best matching candidate within the BARE active chunk
         for (int startK = 0; startK < maxStartK; startK++) {
-          for (int L = 1; L <= activeChunk.length - startK; L++) {
-            String rawCandidate = activeChunk.substring(startK, startK + L);
-
+          for (int L = 1; L <= bareActiveChunk.length - startK; L++) {
             // Optimization: If the candidate is significantly longer than the expected word,
             // it mathematically cannot pass the accuracy threshold. Break early to prevent O(N^2).
-            if (rawCandidate.length > expectedPhoneme.length * 1.5 + 4) {
+            if (L > bareExpectedPhoneme.length * 1.5 + 4) {
               break;
             }
 
-            double acc = _calcAccuracy(
-              QuranNormalizer.normalizeBare(rawCandidate),
-              bareExpectedPhoneme,
-            );
+            String bareCandidate = bareActiveChunk.substring(startK, startK + L);
+
+            double acc = _calcAccuracy(bareCandidate, targetIdx);
 
             // Favor highest accuracy. If tied, favor earlier startK. If tied, favor SHORTER match (leaves text for next word).
             if (acc > bestAcc) {
               bestAcc = acc;
-              bestL = L;
-              bestStartK = startK;
+              bestBareL = L;
+              bestBareStart = startK;
             } else if (acc == bestAcc) {
-              if (startK < bestStartK) {
-                bestStartK = startK;
-                bestL = L;
-              } else if (startK == bestStartK && L < bestL) {
-                bestL = L;
+              if (startK < bestBareStart) {
+                bestBareStart = startK;
+                bestBareL = L;
+              } else if (startK == bestBareStart && L < bestBareL) {
+                bestBareL = L;
               }
             }
           }
@@ -163,9 +182,7 @@ class PhoneticWordTracker {
         if (bestAcc >= requiredThreshold) {
           // If the match is NOT perfect (bestAcc < 1.0) and reaches the absolute end of the active chunk,
           // the user is likely still pronouncing the rest of the word. We wait for more audio to arrive.
-          // If bestAcc == 1.0, it means the final core consonant of the word has been spoken, 
-          // guaranteeing all preceding vowels (like Madd) are already in the buffer! We can instantly commit.
-          if (bestAcc < 1.0 && (bestStartK + bestL) == activeChunk.length && !isEndpoint) {
+          if (bestAcc < (requiredThreshold + 0.1) && (bestBareStart + bestBareL) == bareActiveChunk.length && !isEndpoint) {
             print('[DEBUG-TRACKER] targetIdx: $targetIdx, Acc: $bestAcc. Imperfect match reaches end of buffer. Waiting for more text.');
             break;
           }
@@ -192,20 +209,49 @@ class PhoneticWordTracker {
           statuses[targetIdx] = WordMatchStatus.correct;
           errors[targetIdx] = [];
 
+          // Map bare indices back to raw indices to properly consume the stream
+          int rawStart = bareToRawIndex[bestBareStart];
+          int endK = bestBareStart + bestBareL - 1;
+          int rawEnd = bareToRawIndex[endK];
+          
+          // Consume any trailing tashkeel that belong to the final consonant
+          while (rawEnd + 1 < activeChunk.length) {
+            int nextCode = activeChunk.codeUnitAt(rawEnd + 1);
+            if (nextCode == 0x064E || nextCode == 0x064F || nextCode == 0x0650) {
+              rawEnd++;
+            } else {
+              break;
+            }
+          }
+          int bestRawStart = rawStart;
+          int bestRawL = (rawEnd + 1) - rawStart;
+
           String rawMatched = activeChunk.substring(
-            bestStartK,
-            bestStartK + bestL,
+            bestRawStart,
+            bestRawStart + bestRawL,
           );
           print(
             '[Prefix Sliding Window] Word $targetIdx "${_rawExpected[targetIdx]}" matched. Candidate: "$rawMatched", Acc: $bestAcc',
           );
 
           // 3. Advance cursors (consume garbage + the matched raw length)
-          _asrCursor += bestStartK + bestL;
+          _asrCursor += bestRawStart + bestRawL;
           _wordCursor = targetIdx + 1;
 
           // 4. Update the active chunk to evaluate the remaining tail for the next word
           activeChunk = _accumNorm.substring(_asrCursor);
+          
+          // Re-calculate the bare active chunk for the remaining text
+          bareLen = 0;
+          for (int i = 0; i < activeChunk.length; i++) {
+            int code = activeChunk.codeUnitAt(i);
+            if (code != 0x064E && code != 0x064F && code != 0x0650) {
+              bareChars[bareLen] = code;
+              bareToRawIndex[bareLen] = i;
+              bareLen++;
+            }
+          }
+          bareActiveChunk = String.fromCharCodes(bareChars, 0, bareLen);
 
           changed = true;
           wordCommitted = true;
@@ -241,27 +287,38 @@ class PhoneticWordTracker {
     }
   }
 
+  List<int> _v0 = List<int>.filled(256, 0);
+  List<int> _v1 = List<int>.filled(256, 0);
+
   int _levenshtein(String s, String t) {
     if (s.isEmpty) return t.length;
     if (t.isEmpty) return s.length;
+    if (t.length >= 255) return s.length; // Fallback safety
 
-    List<int> v0 = List<int>.filled(t.length + 1, 0);
-    List<int> v1 = List<int>.filled(t.length + 1, 0);
-
-    for (int i = 0; i <= t.length; i++) v0[i] = i;
+    for (int i = 0; i <= t.length; i++) _v0[i] = i;
 
     for (int i = 0; i < s.length; i++) {
-      v1[0] = i + 1;
+      _v1[0] = i + 1;
+      int sChar = s.codeUnitAt(i);
 
       for (int j = 0; j < t.length; j++) {
-        int cost = (s[i] == t[j]) ? 0 : 1;
-        v1[j + 1] = min(v1[j] + 1, min(v0[j + 1] + 1, v0[j] + cost));
+        int cost = (sChar == t.codeUnitAt(j)) ? 0 : 1;
+        
+        int a = _v1[j] + 1;
+        int b = _v0[j + 1] + 1;
+        int c = _v0[j] + cost;
+        int m = a < b ? a : b;
+        _v1[j + 1] = m < c ? m : c;
       }
 
-      for (int j = 0; j <= t.length; j++) v0[j] = v1[j];
+      // Swap pointers instead of O(N) copying
+      List<int> temp = _v0;
+      _v0 = _v1;
+      _v1 = temp;
     }
 
-    return v1[t.length];
+    // Because of the final swap, the answer is in _v0
+    return _v0[t.length];
   }
 }
 
@@ -277,14 +334,14 @@ class KmpStitcher {
   static List<int> computePrefixFunction(String pattern) {
     if (pattern.isEmpty) return [];
 
-    List<int> pi = List.filled(pattern.length, 0);
+    Int32List pi = Int32List(pattern.length);
     int k = 0;
 
     for (int q = 1; q < pattern.length; q++) {
-      while (k > 0 && pattern[k] != pattern[q]) {
+      while (k > 0 && pattern.codeUnitAt(k) != pattern.codeUnitAt(q)) {
         k = pi[k - 1];
       }
-      if (pattern[k] == pattern[q]) {
+      if (pattern.codeUnitAt(k) == pattern.codeUnitAt(q)) {
         k++;
       }
       pi[q] = k;
@@ -309,12 +366,12 @@ class KmpStitcher {
     int state = 0; // number of matched chars
 
     for (int i = 0; i < tail.length; i++) {
-      String char = tail[i];
+      int charCode = tail.codeUnitAt(i);
       // Backtrack to the last matching prefix
-      while (state > 0 && nextText[state] != char) {
+      while (state > 0 && nextText.codeUnitAt(state) != charCode) {
         state = pi[state - 1];
       }
-      if (nextText[state] == char) {
+      if (nextText.codeUnitAt(state) == charCode) {
         state++;
       }
     }

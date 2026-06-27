@@ -239,6 +239,13 @@ When the path crosses a word boundary marker, that word is "committed" as correc
 
 **Window:** The DP only looks at a ±25 character window around the current position for performance. No scanning the entire 200+ character Ayah on every new frame.
 
+### Matching Level (Easy vs Strict)
+
+The tracker operates in two user-configurable modes:
+- **Easy Mode:** Uses the Levenshtein distance. If you are slightly off (e.g., one character), the engine can still score you > 50% and highlight the word green.
+- **Strict Mode:** Disables Levenshtein distance completely. If the raw ASR output does not 100% identically match the expected phoneme, it forces an accuracy of `0.0`.
+*(This feature operates entirely independently of the Auto-Skip / Lookahead feature).*
+
 ### `lib/tracking/highlighting_controller.dart`
 
 The bridge between the ASR engine and the UI. It:

@@ -126,6 +126,11 @@ class HighlightingController extends ChangeNotifier {
   Set<int> get completedAyahs => _completedAyahs;
   bool get softWarningActive => false;
 
+  int? get activeWordIndex {
+    if (_state == TrackerState.discovery) return null;
+    return _wordTracker?.cursor;
+  }
+
   // ── Word color queries ────────────────────────────────────────────────────
 
   int _mapToPhonemeIndex(int ayah, int uthmaniIndex) {

@@ -91,11 +91,14 @@ List<FuzzyMatch> findNearMatches(String query, String text, int maxDist) {
       );
     }
 
-    // Swap curr and prev
-    for (int i = 0; i <= n; i++) {
-      prevDist[i] = currDist[i];
-      prevStart[i] = currStart[i];
-    }
+    // Swap curr and prev in O(1) time
+    Int32List tempDist = prevDist;
+    prevDist = currDist;
+    currDist = tempDist;
+
+    Int32List tempStart = prevStart;
+    prevStart = currStart;
+    currStart = tempStart;
   }
 
   return _filterOverlapping(matches);
