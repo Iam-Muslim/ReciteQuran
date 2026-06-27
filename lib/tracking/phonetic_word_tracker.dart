@@ -76,17 +76,17 @@ class PhoneticWordTracker {
 
     // Use full phonetic normalizer (preserves Tashkeel, Shaddah, Madd)
     String normNew = QuranNormalizer.normalizeWithTashkeel(asrText);
-    
+
     // Detect if the ASR engine was externally reset (e.g. safety limits or manual clear)
     if (normNew.length < _accumNorm.length) {
       // Instead of discarding text, try to stitch overlapping text gracefully
-      _accumNorm = KmpStitcher.mergeText(_accumNorm, normNew);
+      _accumNorm += normNew;
     } else {
       _accumNorm = normNew;
     }
     String activeChunk = _accumNorm.substring(_asrCursor);
-    
-    // Self-healing rolling buffer: If there is too much unmatched noise (> 150 phonemes), 
+
+    // Self-healing rolling buffer: If there is too much unmatched noise (> 150 phonemes),
     // drop the oldest noise to prevent the tracker from getting permanently stuck behind.
     // Increased to 150 because Tashkeel makes strings naturally longer, and a full wrong verse can be 100 chars.
     if (activeChunk.length > 150) {
@@ -94,46 +94,51 @@ class PhoneticWordTracker {
       _asrCursor += excess;
       activeChunk = _accumNorm.substring(_asrCursor);
     }
-    
+
     bool changed = false;
 
     // Process new phonemes using Sliding Window Prefix Matcher
     while (_wordCursor < expectedPhonemes.length && activeChunk.isNotEmpty) {
       bool wordCommitted = false;
-      
+
       int maxLookahead = isLookaheadEnabled ? lookAheadWords : 0;
-      for (int look = 0; look <= maxLookahead && _wordCursor + look < expectedPhonemes.length; look++) {
+      for (
+        int look = 0;
+        look <= maxLookahead && _wordCursor + look < expectedPhonemes.length;
+        look++
+      ) {
         int targetIdx = _wordCursor + look;
-        String expectedPhoneme = QuranNormalizer.normalizeWithTashkeel(_normExpected[targetIdx]);
-        
+        String expectedPhoneme = QuranNormalizer.normalizeWithTashkeel(
+          _rawExpected[targetIdx],
+        );
+
         // Skip very short words in lookahead (prevent jitter on و, من, في, لا)
         // Adjust length threshold to 4 because Tashkeel makes short words longer
         if (look > 0 && expectedPhoneme.length <= 4) {
           continue;
         }
-        
+
         double bestAcc = -1.0;
         int bestL = -1;
         int bestStartK = -1;
-        
-        // Scan the entire active chunk for the target word. 
+
+        // Scan the entire active chunk for the target word.
         // The early break on 'L' ensures this remains O(N) performance.
         int maxStartK = activeChunk.length;
-        
+
         // Find the best matching candidate within the RAW active chunk
         for (int startK = 0; startK < maxStartK; startK++) {
-          
           for (int L = 1; L <= activeChunk.length - startK; L++) {
             String rawCandidate = activeChunk.substring(startK, startK + L);
-            
+
             // Optimization: If the candidate is significantly longer than the expected word,
             // it mathematically cannot pass the accuracy threshold. Break early to prevent O(N^2).
             if (rawCandidate.length > expectedPhoneme.length * 1.5 + 4) {
-              break; 
+              break;
             }
-            
+
             double acc = _calcAccuracy(rawCandidate, expectedPhoneme);
-            
+
             // Favor highest accuracy. If tied, favor earlier startK. If tied, favor SHORTER match (leaves text for next word).
             if (acc > bestAcc) {
               bestAcc = acc;
@@ -151,29 +156,40 @@ class PhoneticWordTracker {
         }
 
         // Require slightly higher threshold if we're jumping ahead (skipping words)
-        double requiredThreshold = look > 0 ? matchThreshold + 0.15 : matchThreshold;
-        
+        double requiredThreshold = look > 0
+            ? matchThreshold + 0.15
+            : matchThreshold;
+
         if (bestAcc >= requiredThreshold) {
           // If ASR is still outputting the word (candidate reaches the very end of our buffer)
           // and it's not a perfect match yet, we wait for more letters rather than chopping it off prematurely.
           if (bestAcc < 1.0 && (bestStartK + bestL) == activeChunk.length) {
-             String rawMatched = activeChunk.substring(bestStartK, bestStartK + bestL);
-             String bareMatched = QuranNormalizer.normalizeBare(rawMatched);
-             String bareExpected = QuranNormalizer.normalizeBare(expectedPhoneme);
-             
-             // If the bare consonants match perfectly, the user just dropped a trailing vowel (Waqf).
-             bool isConsonantPerfect = (bareMatched == bareExpected);
-             
-             // If consonants aren't perfect, AND the engine hasn't stopped listening, wait for more text!
-             // However, if it's the very last word of the verse, don't wait indefinitely.
-             bool isLastWord = targetIdx == expectedPhonemes.length - 1;
-             if (!isConsonantPerfect && !isEndpoint && !isLastWord) {
-                 break; 
-             }
+            String rawMatched = activeChunk.substring(
+              bestStartK,
+              bestStartK + bestL,
+            );
+            String bareMatched = QuranNormalizer.normalizeBare(rawMatched);
+            String bareExpected = QuranNormalizer.normalizeBare(
+              expectedPhoneme,
+            );
+
+            // If the bare consonants match perfectly, the user just dropped a trailing vowel (Waqf).
+            bool isConsonantPerfect = (bareMatched == bareExpected);
+
+            // If consonants aren't perfect, AND the engine hasn't stopped listening, wait for more text!
+            // However, if it's the very last word of the verse, don't wait indefinitely.
+            bool isLastWord = targetIdx == expectedPhonemes.length - 1;
+            print(
+              '[DEBUG-TRACKER] targetIdx: $targetIdx, Acc: $bestAcc, perfect: $isConsonantPerfect, endpoint: $isEndpoint, isLastWord: $isLastWord',
+            );
+            if (!isConsonantPerfect && !isEndpoint && !isLastWord) {
+              print('[DEBUG-TRACKER] Breaking to wait for more text');
+              break;
+            }
           }
 
           // Commit targetIdx!
-          
+
           // 1. Mark skipped words as RED (unless it's the very first match of a new Ayah, avoiding stale audio errors)
           if (!_isFirstMatch) {
             for (int skipped = 0; skipped < look; skipped++) {
@@ -184,42 +200,51 @@ class PhoneticWordTracker {
                   speechErrorType: SpeechErrorType.delete,
                   expectedPh: _rawExpected[_wordCursor + skipped],
                   predictedPh: '',
-                )
+                ),
               ];
             }
           }
           _isFirstMatch = false;
-          
+
           // 2. Mark targetIdx as GREEN
           statuses[targetIdx] = WordMatchStatus.correct;
           errors[targetIdx] = [];
-          
-          String rawMatched = activeChunk.substring(bestStartK, bestStartK + bestL);
-          print('[Prefix Sliding Window] Word $targetIdx "${_rawExpected[targetIdx]}" matched. Candidate: "$rawMatched", Acc: $bestAcc');
-          
+
+          String rawMatched = activeChunk.substring(
+            bestStartK,
+            bestStartK + bestL,
+          );
+          print(
+            '[Prefix Sliding Window] Word $targetIdx "${_rawExpected[targetIdx]}" matched. Candidate: "$rawMatched", Acc: $bestAcc',
+          );
+
           // 3. Advance cursors (consume garbage + the matched raw length)
           _asrCursor += bestStartK + bestL;
           _wordCursor = targetIdx + 1;
-          
+
           // 4. Update the active chunk to evaluate the remaining tail for the next word
           activeChunk = _accumNorm.substring(_asrCursor);
-          
+
           changed = true;
           wordCommitted = true;
-          break; 
+          break;
+        } else {
+          print(
+            '[DEBUG-TRACKER] Target $targetIdx: bestAcc ($bestAcc) < required ($requiredThreshold)',
+          );
         }
       }
-      
-      // If we couldn't confidently commit any word (current or lookahead), 
+
+      // If we couldn't confidently commit any word (current or lookahead),
       // we stop and wait for more ASR text to arrive.
       if (!wordCommitted) {
-        break; 
+        break;
       }
     }
-    
+
     return changed;
   }
-  
+
   String get accumulatedNormText => _accumNorm;
 
   void reset() {
@@ -269,10 +294,10 @@ class KmpStitcher {
   /// Computes the KMP prefix function (pi array) for the given pattern.
   static List<int> computePrefixFunction(String pattern) {
     if (pattern.isEmpty) return [];
-    
+
     List<int> pi = List.filled(pattern.length, 0);
     int k = 0;
-    
+
     for (int q = 1; q < pattern.length; q++) {
       while (k > 0 && pattern[k] != pattern[q]) {
         k = pi[k - 1];
@@ -282,7 +307,7 @@ class KmpStitcher {
       }
       pi[q] = k;
     }
-    
+
     return pi;
   }
 
@@ -293,12 +318,14 @@ class KmpStitcher {
     if (nextText.isEmpty) return baseText;
 
     // The maximum possible overlap is the length of the shorter string.
-    int maxOverlap = baseText.length < nextText.length ? baseText.length : nextText.length;
+    int maxOverlap = baseText.length < nextText.length
+        ? baseText.length
+        : nextText.length;
     String tail = baseText.substring(baseText.length - maxOverlap);
-    
+
     List<int> pi = computePrefixFunction(nextText);
     int state = 0; // number of matched chars
-    
+
     for (int i = 0; i < tail.length; i++) {
       String char = tail[i];
       // Backtrack to the last matching prefix
@@ -309,7 +336,7 @@ class KmpStitcher {
         state++;
       }
     }
-    
+
     // state now contains the length of the matching overlap.
     // We append only the non-overlapping part of nextText.
     return baseText + nextText.substring(state);

@@ -67,7 +67,47 @@ class VoiceSearchController {
     engine.resetBuffer();
   }
 
-  /// Called when the user releases the long-press.
+  /// Called continuously as new partial text is streamed from the ASR.
+  /// If the engine finds exactly ONE unique Ayah that matches the input,
+  /// it returns the [AnchorResult] immediately (bypassing VAD silence wait).
+  AnchorResult? processRealtime(String partialText) {
+    if (_search == null) return null;
+
+    String normText = QuranNormalizer.normalizeWithTashkeel(partialText);
+    
+    // Safety guard: Don't run search on very short strings (e.g. just "بسم")
+    // as it will match thousands of verses and is too ambiguous.
+    if (normText.length < 8) return null;
+
+    final results = _search!.search(normText, errorRatio: 0.18);
+    if (results.isEmpty) return null;
+
+    // We only want to jump if we are 100% confident. 
+    // Confidence = there is exactly 1 unique Ayah in the entire Quran 
+    // that matches the spoken words so far.
+    final uniqueAyahs = <String>{};
+    for (var r in results) {
+      uniqueAyahs.add('${r.start.surahIdx}-${r.start.ayahIdx}');
+    }
+
+    if (uniqueAyahs.length == 1) {
+      // Perfect unique match found!
+      results.sort((a, b) => a.distance.compareTo(b.distance));
+      final bestMatch = results.first;
+      
+      print('[VoiceSearch] ⚡ REALTIME UNIQUE MATCH FOUND! Surah ${bestMatch.start.surahIdx}, Ayah ${bestMatch.start.ayahIdx}');
+      
+      return AnchorResult(
+        surah: bestMatch.start.surahIdx,
+        ayah: bestMatch.start.ayahIdx,
+      );
+    }
+    
+    // More than 1 match means it's still ambiguous. Wait for the user to speak more.
+    return null;
+  }
+
+  /// Called when the user releases the long-press, OR when VAD silence is detected.
   ///
   /// Takes the raw ASR text accumulated during the press, normalizes it,
   /// and runs fuzzy phonetic search to find the best match.
@@ -85,6 +125,12 @@ class VoiceSearchController {
     // Normalize input text.
     String normText = QuranNormalizer.normalizeWithTashkeel(finalAsrText);
     print('[VoiceSearch] Normalized input: "$normText"');
+    
+    // If we're forcing a stop (VAD/button), we still want to guard against completely empty/garbage searches
+    if (normText.length < 4) {
+      print('[VoiceSearch] Search aborted: input too short after normalization.');
+      return null;
+    }
 
     // Run PhoneticSearch (allow ~18% error ratio to account for ASR misrecognitions)
     final results = _search!.search(normText, errorRatio: 0.18);

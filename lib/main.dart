@@ -111,6 +111,13 @@ class _OrchestratorState extends State<_Orchestrator> {
         setState(() {
           _voiceSearchAsrText = res.text;
         });
+
+        // REAL-TIME SEARCH EVALUATION
+        final rtResult = _voiceSearchCtrl.processRealtime(res.text);
+        if (rtResult != null) {
+          // Unique match found! Bypass VAD and jump immediately.
+          _stopVoiceSearch(precalculatedResult: rtResult);
+        }
       }
     });
 
@@ -290,7 +297,7 @@ class _OrchestratorState extends State<_Orchestrator> {
     }
   }
 
-  Future<void> _stopVoiceSearch() async {
+  Future<void> _stopVoiceSearch({AnchorResult? precalculatedResult}) async {
     if (!_isVoiceSearching || _isToggling) return;
     _isToggling = true;
 
@@ -305,8 +312,7 @@ class _OrchestratorState extends State<_Orchestrator> {
         });
       }
 
-      debugPrint('[VoiceSearch] Stopping search with text: $_voiceSearchAsrText');
-      final result = _voiceSearchCtrl.stopSearch(_voiceSearchAsrText);
+      final result = precalculatedResult ?? _voiceSearchCtrl.stopSearch(_voiceSearchAsrText);
       if (result != null && _ctrl != null) {
         // Automatically navigate to the found Ayah!
         await _ctrl!.setTargetSurah(result.surah);
