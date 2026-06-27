@@ -218,6 +218,9 @@ class PhoneticSearch {
       );
     }
 
+    // Sort by distance (best matches first) to align with python reference implementation
+    results.sort((a, b) => a.distance.compareTo(b.distance));
+
     return results;
   }
 }

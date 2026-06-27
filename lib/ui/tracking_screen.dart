@@ -1,6 +1,8 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:scroll_to_index/scroll_to_index.dart';
 
 import '../state/app_state.dart';
 import '../tracking/highlighting_controller.dart';
@@ -37,10 +39,12 @@ class TrackingScreen extends StatefulWidget {
 
 class _TrackingScreenState extends State<TrackingScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  final ScrollController _scroll = ScrollController();
+  final AutoScrollController _scroll = AutoScrollController();
   final Map<int, GlobalKey> _keys = {};
+  final ValueNotifier<String> _voiceSearchNotifier = ValueNotifier('');
 
   int? _lastAyah;
+  int? _lastSurah;
   bool _isAutoScrolling = false;
 
   @override
@@ -75,6 +79,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_onControllerUpdate);
     _scroll.dispose();
+    _voiceSearchNotifier.dispose();
     WakelockPlus.disable(); // Always disable wakelock when exiting the screen
     super.dispose();
   }
@@ -89,9 +94,138 @@ class _TrackingScreenState extends State<TrackingScreen>
         _forceScrollToAyah(match.verse.ayah);
       }
     }
+
+    if (widget.voiceSearchText != oldWidget.voiceSearchText) {
+      _voiceSearchNotifier.value = widget.voiceSearchText;
+    }
+
+    if (widget.isVoiceSearching && !oldWidget.isVoiceSearching) {
+      _voiceSearchNotifier.value = widget.voiceSearchText;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showVoiceSearchDialog();
+      });
+    } else if (!widget.isVoiceSearching && oldWidget.isVoiceSearching) {
+      // Close dialog and SurahPicker if open by popping until first route
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && Navigator.of(context).canPop()) {
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        }
+      });
+    }
+  }
+
+  void _showVoiceSearchDialog() {
+    final app = AppState.instance;
+    final c = app.colors;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withValues(
+        alpha: 0.1,
+      ), // very subtle dark tint
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Container(
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: BorderRadius.circular(40),
+              border: Border.all(
+                color: c.gold.withValues(alpha: 0.3),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: c.gold.withValues(alpha: 0.1),
+                  blurRadius: 30,
+                  spreadRadius: 5,
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Glowing Stop Button
+                  GestureDetector(
+                    onTap: widget.onVoiceSearchToggle,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          width: 90,
+                          height: 90,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: RadialGradient(
+                              colors: [
+                                Colors.redAccent.withValues(alpha: 0.1),
+                                Colors.transparent,
+                              ],
+                              stops: const [0.5, 1.0],
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: c.surfaceHigh,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.redAccent.withValues(alpha: 0.4),
+                                blurRadius: 20,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.stop_rounded,
+                            color: Colors.redAccent,
+                            size: 40,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    app.isArabic
+                        ? 'اقرأ آية للانتقال إليها'
+                        : 'Read an Ayah to navigate to it',
+                    style: TextStyle(
+                      color: c.text,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    app.isArabic
+                        ? 'سيقوم النظام بالبحث في كامل المصحف والانتقال مباشرة إلى الآية التي تقرأها'
+                        : 'The system will search the entire Quran and instantly jump to your recitation',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: c.muted, fontSize: 14, height: 1.5),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _onControllerUpdate() {
+    if (widget.controller.targetSurah != _lastSurah) {
+      _lastSurah = widget.controller.targetSurah;
+      _keys.clear();
+      _lastAyah = null;
+    }
+
     final match = widget.controller.currentMatchedVerse;
     if (match != null) {
       final ayah = match.verse.ayah;
@@ -103,43 +237,12 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   void _forceScrollToAyah(int ayah) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final ctx = _keys[ayah]?.currentContext;
-      if (ctx != null) {
-        Scrollable.ensureVisible(
-          ctx,
-          duration: const Duration(milliseconds: 450),
-          curve: Curves.easeOutCubic,
-          alignment: 0.35,
-        );
-      } else {
-        final displayVerses = widget.controller.repository.getSurah(
-          widget.controller.targetSurah,
-        );
-        final idx = displayVerses.indexWhere((v) => v.ayah == ayah);
-        if (idx >= 0 && _scroll.hasClients) {
-          // Estimate height dynamically based on character count
-          double estimated = 100.0; // Account for top padding
-          for (int i = 0; i < idx; i++) {
-            estimated += 80.0 + (displayVerses[i].textUthmani.length * 0.5);
-          }
-          _scroll.jumpTo(estimated);
-          
-          // Try again next frame now that the item is likely rendered!
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            final newCtx = _keys[ayah]?.currentContext;
-            if (newCtx != null) {
-              Scrollable.ensureVisible(
-                newCtx,
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOutCubic,
-                alignment: 0.35,
-              );
-            }
-          });
-        }
-      }
-    });
+    if (!_scroll.hasClients) return;
+    _scroll.scrollToIndex(
+      ayah,
+      duration: const Duration(milliseconds: 500),
+      preferPosition: AutoScrollPosition.middle,
+    );
   }
 
   void _toggleAutoScroll() {
@@ -336,10 +439,6 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   Widget _buildHeader(ThemeColors c, AppState app, double top) {
-    if (widget.isVoiceSearching) {
-      return const SizedBox.shrink(key: ValueKey('empty_header_voice'));
-    }
-
     if (widget.isRecording || _isAutoScrolling) {
       return const SizedBox.shrink(key: ValueKey('empty_header'));
     }
@@ -527,80 +626,12 @@ class _TrackingScreenState extends State<TrackingScreen>
             : top + 70;
         final bottomPadding = (isMainRec || _isAutoScrolling) ? 140.0 : 220.0;
 
-        if (widget.isVoiceSearching) {
-          return Center(
-            child: GestureDetector(
-              onTap: widget.onVoiceSearchToggle,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: Colors.deepPurpleAccent.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(32),
-                    border: Border.all(
-                      color: Colors.deepPurpleAccent.withValues(alpha: 0.5),
-                      width: 2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.deepPurpleAccent.withValues(alpha: 0.05),
-                        blurRadius: 24,
-                        spreadRadius: 4,
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.stop_rounded,
-                        color: Colors.deepPurpleAccent,
-                        size: 48,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        app.isArabic
-                            ? 'اضغط للإيقاف والبحث'
-                            : 'Tap to stop & search',
-                        style: TextStyle(
-                          color: c.text,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        widget.voiceSearchText.isEmpty
-                            ? (app.isArabic
-                                  ? 'جاري الاستماع...'
-                                  : 'Listening...')
-                            : widget.voiceSearchText,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: widget.voiceSearchText.isEmpty
-                              ? c.muted
-                              : c.gold,
-                          fontSize: widget.voiceSearchText.isEmpty ? 16 : 24,
-                          fontFamily: app.isArabic ? 'HafsSmart' : 'Inter',
-                          height: 1.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        }
-
         return ListView.builder(
           controller: _scroll,
           physics: const BouncingScrollPhysics(),
           padding: EdgeInsets.zero, // Padding is 0, list is truly full-screen
-          cacheExtent: 2500.0, // Pre-build verses to handle inaccurate jump estimations
+          cacheExtent:
+              2500.0, // Pre-build verses to handle inaccurate jump estimations
           itemCount:
               displayVerses.length + 2, // +2 for top and bottom padding items
           itemBuilder: (_, i) {
@@ -623,16 +654,20 @@ class _TrackingScreenState extends State<TrackingScreen>
             }
 
             final v = displayVerses[i - 1];
-            _keys.putIfAbsent(v.ayah, () => GlobalKey());
 
-            return VerseRow(
-              key: _keys[v.ayah],
-              verse: v,
-              controller: widget.controller,
-              isAutoScrolling: _isAutoScrolling,
-              onTap: () {
-                widget.controller.setManualAyah(v.surah, v.ayah);
-              },
+            return AutoScrollTag(
+              key: ValueKey(v.ayah),
+              controller: _scroll,
+              index: v.ayah,
+              child: VerseRow(
+                key: ValueKey('verse_${v.surah}_${v.ayah}'),
+                verse: v,
+                controller: widget.controller,
+                isAutoScrolling: _isAutoScrolling,
+                onTap: () {
+                  widget.controller.setManualAyah(v.surah, v.ayah);
+                },
+              ),
             );
           },
         );

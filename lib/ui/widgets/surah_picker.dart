@@ -159,11 +159,6 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                         const SizedBox(width: 12),
                         GestureDetector(
                           onTap: () {
-                            if (!widget.isVoiceSearching) {
-                              if (Navigator.of(context).canPop()) {
-                                Navigator.pop(context);
-                              }
-                            }
                             widget.onVoiceSearchToggle();
                           },
                           child: AnimatedContainer(
