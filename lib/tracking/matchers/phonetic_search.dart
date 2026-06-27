@@ -74,6 +74,7 @@ class PhoneticSearch {
     }
 
     int majorVer = npyData.getUint8(offset++);
+    int minorVer = npyData.getUint8(offset++);
 
     int headerLen;
     if (majorVer == 1) {
@@ -121,6 +122,7 @@ class PhoneticSearch {
     }
 
     int majorVer = npyData.getUint8(offset++);
+    int minorVer = npyData.getUint8(offset++);
 
     int headerLen;
     if (majorVer == 1) {

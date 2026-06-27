@@ -86,8 +86,8 @@ class VoiceSearchController {
     String normText = QuranNormalizer.normalizeWithTashkeel(finalAsrText);
     print('[VoiceSearch] Normalized input: "$normText"');
 
-    // Run PhoneticSearch (allows ~10% error ratio for fuzzy matching)
-    final results = _search!.search(normText, errorRatio: 0.1);
+    // Run PhoneticSearch (allow ~18% error ratio to account for ASR misrecognitions)
+    final results = _search!.search(normText, errorRatio: 0.18);
 
     if (results.isEmpty) {
       print('[VoiceSearch] No match found.');

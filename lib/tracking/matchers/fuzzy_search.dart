@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 class FuzzyMatch {
   final int start;
   final int end;
@@ -21,23 +23,29 @@ List<FuzzyMatch> findNearMatches(String query, String text, int maxDist) {
   // We keep two arrays for DP:
   // prevDist[i] = min distance to match query[0..i] ending at text[j-1]
   // prevStart[i] = start index of that match
-  List<int> prevDist = List.generate(n + 1, (i) => i);
-  List<int> prevStart = List.generate(
-    n + 1,
-    (i) => 0,
-  ); // Start doesn't matter for top row
+  Int32List prevDist = Int32List(n + 1);
+  Int32List prevStart = Int32List(n + 1);
+  Int32List currDist = Int32List(n + 1);
+  Int32List currStart = Int32List(n + 1);
 
-  List<int> currDist = List.filled(n + 1, 0);
-  List<int> currStart = List.filled(n + 1, 0);
+  for (int i = 0; i <= n; i++) {
+    prevDist[i] = i;
+    prevStart[i] = 0;
+  }
+
+  // Cache code units for massive speedup in Dart VM (avoids String indexing overhead in loop)
+  final List<int> queryUnits = query.codeUnits;
+  final List<int> textUnits = text.codeUnits;
 
   for (int j = 1; j <= m; j++) {
     // A match can start anywhere in the text, so cost for prefix 0 is 0.
-    // And its start index is j (the current character we are considering to start from)
     currDist[0] = 0;
     currStart[0] = j;
+    
+    final int textChar = textUnits[j - 1];
 
     for (int i = 1; i <= n; i++) {
-      int cost = (query[i - 1] == text[j - 1]) ? 0 : 1;
+      int cost = queryUnits[i - 1] == textChar ? 0 : 1;
 
       // Option 1: Replace / Match
       int replaceDist = prevDist[i - 1] + cost;
@@ -54,11 +62,11 @@ List<FuzzyMatch> findNearMatches(String query, String text, int maxDist) {
       int minDist = replaceDist;
       int bestStart = replaceStart;
 
-      if (deleteQueryDist < minDist) {
+      if (deleteQueryDist < minDist || (deleteQueryDist == minDist && deleteQueryStart > bestStart)) {
         minDist = deleteQueryDist;
         bestStart = deleteQueryStart;
       }
-      if (insertQueryDist < minDist) {
+      if (insertQueryDist < minDist || (insertQueryDist == minDist && insertQueryStart > bestStart)) {
         minDist = insertQueryDist;
         bestStart = insertQueryStart;
       }
@@ -71,8 +79,8 @@ List<FuzzyMatch> findNearMatches(String query, String text, int maxDist) {
 
     if (currDist[n] <= maxDist) {
       // Found a match ending at j.
-      // The start index is currStart[n] - 1 (since our j is 1-based, currStart[0] = j, which means index j-1).
-      int matchStart = currStart[n] - 1;
+      // The start index is currStart[n].
+      int matchStart = currStart[n];
       int matchEnd = j; // exclusive
 
       // We might have multiple overlapping matches.

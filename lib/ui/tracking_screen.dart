@@ -119,11 +119,24 @@ class _TrackingScreenState extends State<TrackingScreen>
         final idx = displayVerses.indexWhere((v) => v.ayah == ayah);
         if (idx >= 0 && _scroll.hasClients) {
           // Estimate height dynamically based on character count
-          double estimated = 0;
+          double estimated = 100.0; // Account for top padding
           for (int i = 0; i < idx; i++) {
-            estimated += 120.0 + (displayVerses[i].textUthmani.length * 1.5);
+            estimated += 80.0 + (displayVerses[i].textUthmani.length * 0.5);
           }
           _scroll.jumpTo(estimated);
+          
+          // Try again next frame now that the item is likely rendered!
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            final newCtx = _keys[ayah]?.currentContext;
+            if (newCtx != null) {
+              Scrollable.ensureVisible(
+                newCtx,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+                alignment: 0.35,
+              );
+            }
+          });
         }
       }
     });
@@ -587,6 +600,7 @@ class _TrackingScreenState extends State<TrackingScreen>
           controller: _scroll,
           physics: const BouncingScrollPhysics(),
           padding: EdgeInsets.zero, // Padding is 0, list is truly full-screen
+          cacheExtent: 2500.0, // Pre-build verses to handle inaccurate jump estimations
           itemCount:
               displayVerses.length + 2, // +2 for top and bottom padding items
           itemBuilder: (_, i) {
