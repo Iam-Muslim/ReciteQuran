@@ -45,9 +45,10 @@ Instead of computing an expensive matrix or tracking indices rigidly, `PhoneticW
 If the ASR engine resets mid-word (due to a VAD boundary), `KmpStitcher` safely finds the overlap prefix and stitches the new chunk onto the existing text, preventing stutter.
 
 For the current expected word:
-1. It scans possible substrings in `activeChunk` starting at index `startK` with length `L`.
-2. It calculates the Levenshtein accuracy between the substring candidate and the expected phoneme.
-3. If the best accuracy exceeds `matchThreshold` (e.g., 0.65), it marks the word as `correct`.
+1. It runs an **O(N) Anchored Prefix-Levenshtein** dynamic programming matrix against the `activeChunk`.
+2. The matrix is initialized with zero-cost prefix skipping (`DP[i][0] = 0.0`), allowing it to flawlessly lock onto the expected word anywhere in the buffer without nested substring loops.
+3. It calculates an Arabic-weighted accuracy score (penalizing completely different letters with `1.0`, while forgiving ONNX spelling quirks like dropped Alifs with a `0.2` penalty).
+4. If the best accuracy exceeds `matchThreshold` (e.g., 0.65), it marks the word as `correct`.
 4. It consumes the matched part of `activeChunk`, advancing `_asrCursor` to discard used characters, and moves `_wordCursor` to the next word.
 
 ### Lookahead & Self-Healing

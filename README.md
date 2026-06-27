@@ -222,7 +222,7 @@ Output:   "الرحمن"
 
 ### `lib/tracking/phonetic_word_tracker.dart`
 
-**This is the core real-time word matching engine.** It implements a **streaming windowed Levenshtein DP**.
+**This is the core real-time word matching engine.** It implements an **O(N) Anchored Prefix-Levenshtein DP**.
 
 **The concept (explained simply):**
 Imagine you have a long string of expected reference characters:
@@ -237,7 +237,7 @@ When the path crosses a word boundary marker, that word is "committed" as correc
 
 **KMP Stitching:** If the ASR engine resets mid-word due to a VAD boundary, `KmpStitcher` seamlessly overlaps the incoming chunk with the existing buffer using Knuth-Morris-Pratt prefix logic to avoid stuttering or duplicated phonemes.(Vad is already cuts at 800ms , but when the string exceeds it is cleared to not freeze) maybe if i faced wrong merges i can remove the kmp insha'a Allah
 
-**Window:** The DP only looks at a ±25 character window around the current position for performance. No scanning the entire 200+ character Ayah on every new frame.
+**O(N) Matrix Scanning:** The Prefix-Levenshtein algorithm dynamically aligns the expected word against the incoming audio buffer in a single O(N) pass, completely eliminating the legacy O(N²) nested substring loops. It uses a custom Arabic weighted cost matrix (`0.2` penalty for ONNX quirks like missing Alifs, `1.0` penalty for severe recitation errors).
 
 ### Matching Level (Easy vs Strict)
 
