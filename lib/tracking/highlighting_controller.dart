@@ -106,7 +106,6 @@ class HighlightingController extends ChangeNotifier {
   // ── Per-ayah word tracker (quran-transcript PhoneticWordTracker) ──────────
   PhoneticWordTracker? _wordTracker;
 
-  bool isTajweedEnabled = false;
   HighlightingMode mode = HighlightingMode.lookahead;
 
   bool _ignoreUntilBufferReset = false;
@@ -281,7 +280,7 @@ class HighlightingController extends ChangeNotifier {
   void _resetWordTracker(QuranVerse verse) {
     _wordTracker = PhoneticWordTracker(
       expectedPhonemes: verse.phonemeWords,
-      isTajweedEnabled: isTajweedEnabled,
+      isTajweedEnabled: AppState.instance.currentMode == AppMode.tajweed,
       strictTracking: mode == HighlightingMode.strict,
       matchThreshold: 0.5, // quran-transcript default acceptance_ratio
       lookAheadWords: 4,
@@ -356,14 +355,20 @@ class HighlightingController extends ChangeNotifier {
 
     // Check if the ayah is fully resolved (all words matched/wrong)
     if (tracker.isComplete) {
-      if (isTajweedEnabled) {
+      if (AppState.instance.currentMode == AppMode.tajweed) {
         // 1. Post-Ayah Global Tajweed Checking
         print('[Tajweed] Ayah complete. Running global explainAyahError.');
+        print('[Tajweed] --> Sent Expected Ayah (Phonemes): ${targetAyah.textPhoneme}');
+        print('[Tajweed] --> Sent Recited (ASR Accumulated): ${tracker.accumulatedNormText}');
+        print('[Tajweed] --> Sent Expected Words List: ${targetAyah.phonemeWords}');
+
         final errorsByWord = ErrorExplainer.explainAyahError(
           targetAyah.textPhoneme,
           tracker.accumulatedNormText,
           targetAyah.phonemeWords,
         );
+        
+        print('[Tajweed] <-- Response (errorsByWord): $errorsByWord');
 
         // 2. Flip green words to yellow if they have errors
         errorsByWord.forEach((wIdx, errors) {

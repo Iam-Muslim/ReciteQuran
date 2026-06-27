@@ -52,6 +52,7 @@ class AudioProcessor {
   /// Start recording and trigger VAD/chunking pipeline.
   Future<void> start({
     required void Function(Uint8List chunk, bool isFinal) onChunk,
+    void Function()? onVadOff,
   }) async {
     await stopAndGetAudio();
 
@@ -87,7 +88,7 @@ class AudioProcessor {
         );
         offset += frameBytes;
 
-        _processFrame(frame, onChunk);
+        _processFrame(frame, onChunk, onVadOff);
       }
 
       if (offset < allBytes.length) {
@@ -103,6 +104,7 @@ class AudioProcessor {
   void _processFrame(
     Uint8List frame,
     void Function(Uint8List chunk, bool isFinal) onChunk,
+    void Function()? onVadOff,
   ) {
     bool hasSpeech = _isVoiceActive(frame);
 
@@ -160,6 +162,10 @@ class AudioProcessor {
         _speechLength = 0;
         _isSpeaking = false;
         _silenceFramesCount = 0;
+        
+        if (onVadOff != null) {
+          onVadOff();
+        }
       }
     }
   }

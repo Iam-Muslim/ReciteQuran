@@ -7,8 +7,6 @@ class BottomActionBar extends StatefulWidget {
   final bool isAutoScrolling;
   final ThemeColors c;
   final VoidCallback onMic;
-  final VoidCallback? onMicLongPressStart;
-  final VoidCallback? onMicLongPressEnd;
   final VoidCallback onToggleAutoScroll;
   final VoidCallback onSettingsTap;
   final bool isVoiceSearching;
@@ -20,8 +18,6 @@ class BottomActionBar extends StatefulWidget {
     required this.isAutoScrolling,
     required this.c,
     required this.onMic,
-    this.onMicLongPressStart,
-    this.onMicLongPressEnd,
     required this.onToggleAutoScroll,
     required this.onSettingsTap, // Kept for signature compatibility, unused here as settings moved
     this.isVoiceSearching = false,
@@ -50,21 +46,13 @@ class _BottomActionBarState extends State<BottomActionBar> {
             if (!widget.isAutoScrolling) // Show record button if not reading
               GestureDetector(
                 onTap: widget.onMic,
-                onLongPressStart: (_) => widget.onMicLongPressStart?.call(),
-                onLongPressEnd: (_) => widget.onMicLongPressEnd?.call(),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 300),
                   width: 64,
                   height: 64,
                   decoration: BoxDecoration(
-                    gradient: widget.isVoiceSearching
+                    gradient: widget.isRecording
                         ? LinearGradient(
-                            colors: [c.gold, Colors.deepPurpleAccent],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          )
-                        : widget.isRecording
-                            ? LinearGradient(
                                 colors: [c.red, c.red.withValues(alpha: 0.8)],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,

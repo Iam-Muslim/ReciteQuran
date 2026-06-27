@@ -167,7 +167,9 @@ class PhoneticWordTracker {
              bool isConsonantPerfect = (bareMatched == bareExpected);
              
              // If consonants aren't perfect, AND the engine hasn't stopped listening, wait for more text!
-             if (!isConsonantPerfect && !isEndpoint) {
+             // However, if it's the very last word of the verse, don't wait indefinitely.
+             bool isLastWord = targetIdx == expectedPhonemes.length - 1;
+             if (!isConsonantPerfect && !isEndpoint && !isLastWord) {
                  break; 
              }
           }

@@ -8,7 +8,9 @@ class SurahPickerSheet extends StatefulWidget {
   final void Function(int surah, {int? ayah}) onPick;
   final HighlightingController controller;
   final bool isRecording;
+  final bool isVoiceSearching;
   final VoidCallback onToggleRecord;
+  final VoidCallback onVoiceSearchToggle;
 
   const SurahPickerSheet({
     super.key,
@@ -16,7 +18,9 @@ class SurahPickerSheet extends StatefulWidget {
     required this.onPick,
     required this.controller,
     required this.isRecording,
+    required this.isVoiceSearching,
     required this.onToggleRecord,
+    required this.onVoiceSearchToggle,
   });
 
   @override
@@ -149,6 +153,48 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
                                   horizontal: 16,
                                 ),
                               ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        GestureDetector(
+                          onTap: () {
+                            if (!widget.isVoiceSearching) {
+                              if (Navigator.of(context).canPop()) {
+                                Navigator.pop(context);
+                              }
+                            }
+                            widget.onVoiceSearchToggle();
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            width: 50,
+                            height: 50,
+                            decoration: BoxDecoration(
+                              color: widget.isVoiceSearching 
+                                  ? Colors.deepPurpleAccent 
+                                  : c.surfaceHigh.withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(25),
+                              border: Border.all(
+                                color: widget.isVoiceSearching 
+                                    ? Colors.deepPurpleAccent 
+                                    : c.border.withValues(alpha: 0.3),
+                                width: 1.5,
+                              ),
+                              boxShadow: widget.isVoiceSearching 
+                                  ? [
+                                      BoxShadow(
+                                        color: Colors.deepPurpleAccent.withValues(alpha: 0.4),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 4),
+                                      )
+                                    ]
+                                  : [],
+                            ),
+                            child: Icon(
+                              widget.isVoiceSearching ? Icons.stop_rounded : Icons.mic_rounded,
+                              color: widget.isVoiceSearching ? Colors.white : c.gold,
+                              size: 24,
                             ),
                           ),
                         ),

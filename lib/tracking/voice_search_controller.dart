@@ -22,33 +22,42 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:the_great_quran/tracking/quran_normalizer.dart';
 import '../engine/sherpa_engine.dart';
-import 'matchers/anchor.dart';
-import 'matchers/phoneme_chunker.dart';
+import 'matchers/phonetic_search.dart';
+
+class AnchorResult {
+  final int surah;
+  final int ayah;
+  AnchorResult({required this.surah, required this.ayah});
+
+  @override
+  String toString() => 'AnchorResult(surah: $surah, ayah: $ayah)';
+}
+
 
 class VoiceSearchController {
   final SherpaEngine engine;
 
-  // The pre-built N-gram TF-IDF index (loaded once from ngram_index.json).
-  NgramIndex? _index;
+  // The pre-built PhoneticSearch index.
+  PhoneticSearch? _search;
   bool _isIndexLoading = false;
 
   VoiceSearchController({required this.engine});
 
   // ── Lazy Index Loading ───────────────────────────────────────────────────
 
-  /// Loads the N-gram index from bundled JSON the first time it's needed.
+  /// Loads the phonetic index from bundled assets the first time it's needed.
   /// Subsequent calls are no-ops (index stays in memory for the session).
   Future<void> _loadIndexIfNeeded() async {
-    if (_index != null || _isIndexLoading) return;
+    if (_search != null || _isIndexLoading) return;
     _isIndexLoading = true;
     try {
-      print('[VoiceSearch] Loading ngram_index.json...');
-      final String jsonStr = await rootBundle.loadString('assets/model/ngram_index.json');
-      final Map<String, dynamic> data = jsonDecode(jsonStr);
-      _index = NgramIndex.fromJson(data);
+      print('[VoiceSearch] Loading PhoneticSearch index...');
+      _search = PhoneticSearch();
+      await _search!.load();
       print('[VoiceSearch] Index loaded. Ready for search.');
     } catch (e) {
-      print('[VoiceSearch] ERROR: Failed to load ngram_index.json: $e');
+      print('[VoiceSearch] ERROR: Failed to load phonetic search assets: $e');
+      _search = null;
     } finally {
       _isIndexLoading = false;
     }
@@ -67,45 +76,41 @@ class VoiceSearchController {
   /// Called when the user releases the long-press.
   ///
   /// Takes the raw ASR text accumulated during the press, normalizes it,
-  /// chunks it into phoneme groups, and runs TF-IDF N-gram voting.
+  /// and runs fuzzy phonetic search to find the best match.
   ///
   /// Returns the matched [AnchorResult] (surah + ayah), or null if:
   ///   - The index failed to load
   ///   - The input text is empty / too short
   ///   - No Ayah got enough votes
   AnchorResult? stopSearch(String finalAsrText) {
-    if (_index == null) {
+    if (_search == null) {
       print('[VoiceSearch] Search failed: index not loaded.');
       return null;
     }
 
-    // Normalize: strip harakat, normalize alef variants → bare consonant skeleton
-    final normText = QuranNormalizer.normalizeBare(finalAsrText);
+    // Normalize input text.
+    String normText = QuranNormalizer.normalizeWithTashkeel(finalAsrText);
     print('[VoiceSearch] Normalized input: "$normText"');
 
-    // Chunk into phoneme groups (consonant + optional harakat)
-    final chunks = PhonemeChunker.chunkPhonemes(normText);
-    print('[VoiceSearch] Phoneme chunks: $chunks');
+    // Run PhoneticSearch (allows ~10% error ratio for fuzzy matching)
+    final results = _search!.search(normText, errorRatio: 0.1);
 
-    if (chunks.isEmpty) {
-      print('[VoiceSearch] No phoneme chunks found. Returning null.');
+    if (results.isEmpty) {
+      print('[VoiceSearch] No match found.');
       return null;
     }
 
-    // Run TF-IDF N-gram voting across all 6,236 Ayahs
-    final result = Anchor.findAnchorByVoting(
-      phonemeTexts: [chunks],
-      ngramIndex: _index!,
+    // Sort by distance to get the best match first
+    results.sort((a, b) => a.distance.compareTo(b.distance));
+    final bestMatch = results.first;
+
+    // Surah and Ayah indices from Python are already 1-based.
+    final result = AnchorResult(
+      surah: bestMatch.start.surahIdx,
+      ayah: bestMatch.start.ayahIdx,
     );
 
     print('[VoiceSearch] Result: Surah ${result.surah}, Ayah ${result.ayah}');
-
-    // Filter out zero-results (0:0 means no match found)
-    if (result.surah == 0 || result.ayah == 0) {
-      print('[VoiceSearch] No match found (0:0 returned).');
-      return null;
-    }
-
     return result;
   }
 }

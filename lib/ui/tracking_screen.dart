@@ -13,10 +13,10 @@ class TrackingScreen extends StatefulWidget {
   final HighlightingController controller;
   final bool isRecording;
   final bool isVoiceSearching;
+  final String voiceSearchText;
   final bool isLoadingEngine;
   final VoidCallback onToggleRecord;
-  final VoidCallback onVoiceSearchStart;
-  final VoidCallback onVoiceSearchStop;
+  final VoidCallback onVoiceSearchToggle;
   final VoidCallback onClearBuffer;
 
   const TrackingScreen({
@@ -24,10 +24,10 @@ class TrackingScreen extends StatefulWidget {
     required this.controller,
     required this.isRecording,
     required this.isVoiceSearching,
+    this.voiceSearchText = '',
     required this.isLoadingEngine,
     required this.onToggleRecord,
-    required this.onVoiceSearchStart,
-    required this.onVoiceSearchStop,
+    required this.onVoiceSearchToggle,
     required this.onClearBuffer,
   });
 
@@ -62,7 +62,7 @@ class _TrackingScreenState extends State<TrackingScreen>
         widget.onToggleRecord();
       }
       if (widget.isVoiceSearching) {
-        widget.onVoiceSearchStop();
+        widget.onVoiceSearchToggle();
       }
       if (_isAutoScrolling) {
         _toggleAutoScroll();
@@ -189,8 +189,14 @@ class _TrackingScreenState extends State<TrackingScreen>
         current: widget.controller.targetSurah,
         controller: widget.controller,
         isRecording: widget.isRecording,
+        isVoiceSearching: widget.isVoiceSearching,
         onToggleRecord: widget.onToggleRecord,
+        onVoiceSearchToggle: widget.onVoiceSearchToggle,
         onPick: (n, {ayah}) async {
+          if (widget.isRecording) {
+            widget
+                .onToggleRecord(); // Ensure main recording stops on manual navigate
+          }
           if (Navigator.of(context).canPop()) {
             Navigator.pop(context);
           }
@@ -300,9 +306,9 @@ class _TrackingScreenState extends State<TrackingScreen>
                       isLoadingEngine: widget.isLoadingEngine,
                       isAutoScrolling: _isAutoScrolling,
                       c: c,
-                      onMic: widget.onToggleRecord,
-                      onMicLongPressStart: widget.onVoiceSearchStart,
-                      onMicLongPressEnd: widget.onVoiceSearchStop,
+                      onMic: widget.isVoiceSearching
+                          ? widget.onVoiceSearchToggle
+                          : widget.onToggleRecord,
                       onToggleAutoScroll: _toggleAutoScroll,
                       onSettingsTap: _showSettingsDialog,
                     ),
@@ -318,43 +324,7 @@ class _TrackingScreenState extends State<TrackingScreen>
 
   Widget _buildHeader(ThemeColors c, AppState app, double top) {
     if (widget.isVoiceSearching) {
-      return Padding(
-        key: const ValueKey('header_voice_search'),
-        padding: EdgeInsets.only(top: top + 12, left: 16, right: 16, bottom: 12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.deepPurpleAccent.withValues(alpha: 0.9),
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.deepPurpleAccent.withValues(alpha: 0.3),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                app.isArabic ? 'جاري الاستماع للبحث عن الآية...' : 'Listening to navigate...',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+      return const SizedBox.shrink(key: ValueKey('empty_header_voice'));
     }
 
     if (widget.isRecording || _isAutoScrolling) {
@@ -543,6 +513,75 @@ class _TrackingScreenState extends State<TrackingScreen>
             ? top + 16
             : top + 70;
         final bottomPadding = (isMainRec || _isAutoScrolling) ? 140.0 : 220.0;
+
+        if (widget.isVoiceSearching) {
+          return Center(
+            child: GestureDetector(
+              onTap: widget.onVoiceSearchToggle,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.deepPurpleAccent.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(32),
+                    border: Border.all(
+                      color: Colors.deepPurpleAccent.withValues(alpha: 0.5),
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.deepPurpleAccent.withValues(alpha: 0.05),
+                        blurRadius: 24,
+                        spreadRadius: 4,
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.stop_rounded,
+                        color: Colors.deepPurpleAccent,
+                        size: 48,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        app.isArabic
+                            ? 'اضغط للإيقاف والبحث'
+                            : 'Tap to stop & search',
+                        style: TextStyle(
+                          color: c.text,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        widget.voiceSearchText.isEmpty
+                            ? (app.isArabic
+                                  ? 'جاري الاستماع...'
+                                  : 'Listening...')
+                            : widget.voiceSearchText,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: widget.voiceSearchText.isEmpty
+                              ? c.muted
+                              : c.gold,
+                          fontSize: widget.voiceSearchText.isEmpty ? 16 : 24,
+                          fontFamily: app.isArabic ? 'HafsSmart' : 'Inter',
+                          height: 1.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
 
         return ListView.builder(
           controller: _scroll,

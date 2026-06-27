@@ -104,6 +104,16 @@ class _OrchestratorState extends State<_Orchestrator> {
   void initState() {
     super.initState();
     _voiceSearchCtrl = VoiceSearchController(engine: _engine);
+    
+    // Global subscription for Voice Search text
+    _engine.transcriptionStream.listen((res) {
+      if (_isVoiceSearching && mounted) {
+        setState(() {
+          _voiceSearchAsrText = res.text;
+        });
+      }
+    });
+
     _init();
     _checkForUpdates();
   }
@@ -221,15 +231,31 @@ class _OrchestratorState extends State<_Orchestrator> {
     }
   }
 
-  /// Starts global voice search across the Quran
+  /// Toggles global voice search across the Quran
+  Future<void> _toggleVoiceSearch() async {
+    if (_isToggling) return;
+    
+    if (_isVoiceSearching) {
+      await _stopVoiceSearch();
+    } else {
+      if (_isRecording) {
+        await _toggleRecord();
+      }
+      await _startVoiceSearch();
+    }
+  }
+
   Future<void> _startVoiceSearch() async {
-    if (_isRecording || _isVoiceSearching || _isToggling) return;
+    if (_isVoiceSearching || _isToggling) return;
     _isToggling = true;
 
     try {
       if (!_engine.isInitialized) {
         _engine.initialize(); 
       }
+
+      // Suspend highlighting controller so it doesn't consume/reset the engine buffer!
+      _ctrl?.finalize();
 
       await _voiceSearchCtrl.startSearch();
       await WakelockPlus.enable();
@@ -243,17 +269,18 @@ class _OrchestratorState extends State<_Orchestrator> {
 
       _audio.start(
         onChunk: (chunk, isFinal) => _engine.transcribe(chunk, isFinal: isFinal),
+        onVadOff: () {
+          if (_isVoiceSearching && mounted && _voiceSearchAsrText.trim().isNotEmpty) {
+            debugPrint('[VoiceSearch] Auto-stopping search due to VAD OFF (silence detected)');
+            _stopVoiceSearch();
+          }
+        },
       ).catchError((e) {
         debugPrint('❌ AUDIO ERROR in Voice Search: $e');
         if (mounted) setState(() => _isVoiceSearching = false);
       });
       
-      // Subscribe to engine output globally
-      _engine.transcriptionStream.listen((res) {
-        if (_isVoiceSearching) {
-          _voiceSearchAsrText = res.text;
-        }
-      });
+      // Note: transcriptionStream listen is now handled in initState to prevent duplicates.
 
     } catch (e) {
       debugPrint('❌ VOICE SEARCH START ERROR: $e');
@@ -278,6 +305,7 @@ class _OrchestratorState extends State<_Orchestrator> {
         });
       }
 
+      debugPrint('[VoiceSearch] Stopping search with text: $_voiceSearchAsrText');
       final result = _voiceSearchCtrl.stopSearch(_voiceSearchAsrText);
       if (result != null && _ctrl != null) {
         // Automatically navigate to the found Ayah!
@@ -296,6 +324,9 @@ class _OrchestratorState extends State<_Orchestrator> {
           );
         }
       } else {
+        // Fallback: resume previous state if no Ayah was found
+        _ctrl?.resumeTracking();
+        
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -384,10 +415,10 @@ class _OrchestratorState extends State<_Orchestrator> {
       controller: _ctrl!,
       isRecording: _isRecording,
       isVoiceSearching: _isVoiceSearching,
+      voiceSearchText: _voiceSearchAsrText,
       isLoadingEngine: _isLoadingEngine,
       onToggleRecord: _toggleRecord,
-      onVoiceSearchStart: _startVoiceSearch,
-      onVoiceSearchStop: _stopVoiceSearch,
+      onVoiceSearchToggle: _toggleVoiceSearch,
       onClearBuffer: () {
         _engine.resetBuffer();
         _audio.clearBuffer();
