@@ -30,7 +30,11 @@ class PhonemesSearchResult {
   final PhonemesSearchSpan end;
   final int distance;
 
-  PhonemesSearchResult({required this.start, required this.end, required this.distance});
+  PhonemesSearchResult({
+    required this.start,
+    required this.end,
+    required this.distance,
+  });
 
   @override
   String toString() {
@@ -53,14 +57,14 @@ class PhoneticSearch {
 
     // Load NPY index file
     ByteData npyData = await rootBundle.load('assets/model/ph_index.npy');
-    
+
     // An NPY file starts with a Magic string "\x93NUMPY"
     // Then 1 byte major version, 1 byte minor version.
     // Then 2 bytes HEADER_LEN (little endian).
     // The header is a python dictionary string ending with newline.
     // Let's parse it dynamically to find the start of the data.
     int offset = 0;
-    
+
     // Check magic
     final magic = [0x93, 0x4E, 0x55, 0x4D, 0x50, 0x59]; // "\x93NUMPY"
     for (int i = 0; i < 6; i++) {
@@ -68,10 +72,9 @@ class PhoneticSearch {
         throw Exception("Invalid NPY file: bad magic number");
       }
     }
-    
+
     int majorVer = npyData.getUint8(offset++);
-    int minorVer = npyData.getUint8(offset++);
-    
+
     int headerLen;
     if (majorVer == 1) {
       headerLen = npyData.getUint16(offset, Endian.little);
@@ -82,7 +85,7 @@ class PhoneticSearch {
     } else {
       throw Exception("Unsupported NPY version: $majorVer");
     }
-    
+
     // Skip header string
     offset += headerLen;
 
@@ -91,13 +94,15 @@ class PhoneticSearch {
     int remainingBytes = npyData.lengthInBytes - offset;
     int numElements = remainingBytes ~/ 2;
     _indexArray = Uint16List.view(npyData.buffer, offset, numElements);
-    
+
     // Check consistency
     int numRows = _indexArray.length ~/ 7;
     if (numRows != _refPhNorm.length) {
-      throw Exception("Reference length (${_refPhNorm.length}) does not match index length ($numRows)");
+      throw Exception(
+        "Reference length (${_refPhNorm.length}) does not match index length ($numRows)",
+      );
     }
-    
+
     _isLoaded = true;
   }
 
@@ -106,7 +111,7 @@ class PhoneticSearch {
     _refPhNorm = File(refPath).readAsStringSync().trim();
     Uint8List bytes = File(npyPath).readAsBytesSync();
     ByteData npyData = ByteData.view(bytes.buffer);
-    
+
     int offset = 0;
     final magic = [0x93, 0x4E, 0x55, 0x4D, 0x50, 0x59]; // "\x93NUMPY"
     for (int i = 0; i < 6; i++) {
@@ -114,10 +119,9 @@ class PhoneticSearch {
         throw Exception("Invalid NPY file: bad magic number");
       }
     }
-    
+
     int majorVer = npyData.getUint8(offset++);
-    int minorVer = npyData.getUint8(offset++);
-    
+
     int headerLen;
     if (majorVer == 1) {
       headerLen = npyData.getUint16(offset, Endian.little);
@@ -128,7 +132,7 @@ class PhoneticSearch {
     } else {
       throw Exception("Unsupported NPY version: $majorVer");
     }
-    
+
     offset += headerLen;
     int remainingBytes = npyData.lengthInBytes - offset;
     int numElements = remainingBytes ~/ 2;
@@ -136,7 +140,7 @@ class PhoneticSearch {
     _isLoaded = true;
   }
 
-  /// Normalizes the query by combining consecutive identical core characters 
+  /// Normalizes the query by combining consecutive identical core characters
   /// into a single character and stripping residuals.
   String _normalizeQuery(String query) {
     const String coreChars = "ءبتثجحخدذرزسشصضطظعغفقكلمنهوياۥۦ۾ںـٲ";
@@ -169,13 +173,17 @@ class PhoneticSearch {
     // 5: ph_start_idx
     // 6: ph_end_idx
     int rowOffset = refIdx * 7;
-    
+
     return PhonemesSearchSpan(
       surahIdx: _indexArray[rowOffset + 0],
       ayahIdx: _indexArray[rowOffset + 1],
       uthmaniWordIdx: _indexArray[rowOffset + 2],
-      uthmaniCharIdx: isEnd ? _indexArray[rowOffset + 4] : _indexArray[rowOffset + 3],
-      phonemesIdx: isEnd ? _indexArray[rowOffset + 6] : _indexArray[rowOffset + 5],
+      uthmaniCharIdx: isEnd
+          ? _indexArray[rowOffset + 4]
+          : _indexArray[rowOffset + 3],
+      phonemesIdx: isEnd
+          ? _indexArray[rowOffset + 6]
+          : _indexArray[rowOffset + 5],
     );
   }
 
@@ -192,20 +200,22 @@ class PhoneticSearch {
 
     // Use our fuzzy_search algorithm
     List<FuzzyMatch> outs = findNearMatches(normQuery, _refPhNorm, maxEdits);
-    
+
     if (outs.isEmpty) {
       return [];
     }
 
     List<PhonemesSearchResult> results = [];
     for (var out in outs) {
-      results.add(PhonemesSearchResult(
-        start: _refIdxToSpan(out.start, isEnd: false),
-        end: _refIdxToSpan(out.end - 1, isEnd: true),
-        distance: out.dist,
-      ));
+      results.add(
+        PhonemesSearchResult(
+          start: _refIdxToSpan(out.start, isEnd: false),
+          end: _refIdxToSpan(out.end - 1, isEnd: true),
+          distance: out.dist,
+        ),
+      );
     }
-    
+
     return results;
   }
 }

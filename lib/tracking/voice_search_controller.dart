@@ -10,16 +10,11 @@
 //   4. On release, runs TF-IDF N-gram search across ALL 6,236 Ayahs
 //   5. Returns the (surah, ayah) of the best match
 //
-// The N-gram index (ngram_index.json) is loaded LAZILY — only when the user
 // first uses this feature. After that, it stays in memory.
 //
-// This system is a Dart port of the Anchor/NgramIndex from:
-//   qua_sdk/components/anchor_matcher/
 //
 // See also: docs/voice_navigation.md
 
-import 'dart:convert';
-import 'package:flutter/services.dart';
 import 'package:the_great_quran/tracking/quran_normalizer.dart';
 import '../engine/sherpa_engine.dart';
 import 'matchers/phonetic_search.dart';
@@ -32,7 +27,6 @@ class AnchorResult {
   @override
   String toString() => 'AnchorResult(surah: $surah, ayah: $ayah)';
 }
-
 
 class VoiceSearchController {
   final SherpaEngine engine;

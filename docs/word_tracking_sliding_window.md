@@ -42,6 +42,8 @@ When the ASR has accumulated `"بسمللاه"` (7 chars), the Prefix Sliding Wi
 
 Instead of computing an expensive matrix or tracking indices rigidly, `PhoneticWordTracker` buffers all incoming phonemes into an `activeChunk`. 
 
+If the ASR engine resets mid-word (due to a VAD boundary), `KmpStitcher` safely finds the overlap prefix and stitches the new chunk onto the existing text, preventing stutter.
+
 For the current expected word:
 1. It scans possible substrings in `activeChunk` starting at index `startK` with length `L`.
 2. It calculates the Levenshtein accuracy between the substring candidate and the expected phoneme.

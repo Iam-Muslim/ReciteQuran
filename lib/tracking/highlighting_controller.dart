@@ -26,7 +26,6 @@ import '../engine/sherpa_engine.dart';
 import '../data/quran_data.dart';
 import 'phonetic_word_tracker.dart';
 import 'matchers/error_explainer.dart';
-import 'highlighting_mode.dart';
 
 // ── State machine ────────────────────────────────────────────────────────────
 
@@ -105,8 +104,6 @@ class HighlightingController extends ChangeNotifier {
 
   // ── Per-ayah word tracker (quran-transcript PhoneticWordTracker) ──────────
   PhoneticWordTracker? _wordTracker;
-
-  HighlightingMode mode = HighlightingMode.lookahead;
 
   bool _ignoreUntilBufferReset = false;
   int? _pendingClearAyah;
@@ -281,7 +278,7 @@ class HighlightingController extends ChangeNotifier {
     _wordTracker = PhoneticWordTracker(
       expectedPhonemes: verse.phonemeWords,
       isTajweedEnabled: AppState.instance.currentMode == AppMode.tajweed,
-      strictTracking: mode == HighlightingMode.strict,
+      strictTracking: !AppState.instance.isLookaheadEnabled,
       matchThreshold: 0.5, // quran-transcript default acceptance_ratio
       lookAheadWords: 4,
       isLookaheadEnabled: AppState.instance.isLookaheadEnabled,

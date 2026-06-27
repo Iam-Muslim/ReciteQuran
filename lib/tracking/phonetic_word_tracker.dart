@@ -79,13 +79,11 @@ class PhoneticWordTracker {
     
     // Detect if the ASR engine was externally reset (e.g. safety limits or manual clear)
     if (normNew.length < _accumNorm.length) {
-      _asrCursor = 0;
-      _accumNorm = '';
+      // Instead of discarding text, try to stitch overlapping text gracefully
+      _accumNorm = KmpStitcher.mergeText(_accumNorm, normNew);
+    } else {
+      _accumNorm = normNew;
     }
-
-    if (normNew.length <= _asrCursor) return false;
-
-    _accumNorm = normNew;
     String activeChunk = _accumNorm.substring(_asrCursor);
     
     // Self-healing rolling buffer: If there is too much unmatched noise (> 150 phonemes), 
@@ -257,5 +255,63 @@ class PhoneticWordTracker {
     }
 
     return v1[t.length];
+  }
+}
+
+// ── Knuth-Morris-Pratt (KMP) based string merger ───────────────────────────
+// Ported from quran-transcript/src/quran_transcript/tasmeea.py
+//
+// When the streaming ASR engine resets (e.g. at VAD endpoint boundaries),
+// the next output text chunk might slightly overlap with the previous chunk.
+// KMP safely finds the exact character-level overlap prefix and stitches
+// them together without duplicating phonemes.
+class KmpStitcher {
+  /// Computes the KMP prefix function (pi array) for the given pattern.
+  static List<int> computePrefixFunction(String pattern) {
+    if (pattern.isEmpty) return [];
+    
+    List<int> pi = List.filled(pattern.length, 0);
+    int k = 0;
+    
+    for (int q = 1; q < pattern.length; q++) {
+      while (k > 0 && pattern[k] != pattern[q]) {
+        k = pi[k - 1];
+      }
+      if (pattern[k] == pattern[q]) {
+        k++;
+      }
+      pi[q] = k;
+    }
+    
+    return pi;
+  }
+
+  /// Merges two text strings by finding the maximum overlap between the
+  /// end of [baseText] and the start of [nextText].
+  static String mergeText(String baseText, String nextText) {
+    if (baseText.isEmpty) return nextText;
+    if (nextText.isEmpty) return baseText;
+
+    // The maximum possible overlap is the length of the shorter string.
+    int maxOverlap = baseText.length < nextText.length ? baseText.length : nextText.length;
+    String tail = baseText.substring(baseText.length - maxOverlap);
+    
+    List<int> pi = computePrefixFunction(nextText);
+    int state = 0; // number of matched chars
+    
+    for (int i = 0; i < tail.length; i++) {
+      String char = tail[i];
+      // Backtrack to the last matching prefix
+      while (state > 0 && nextText[state] != char) {
+        state = pi[state - 1];
+      }
+      if (nextText[state] == char) {
+        state++;
+      }
+    }
+    
+    // state now contains the length of the matching overlap.
+    // We append only the non-overlapping part of nextText.
+    return baseText + nextText.substring(state);
   }
 }

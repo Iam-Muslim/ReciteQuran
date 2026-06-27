@@ -1,6 +1,6 @@
 import 'dart:math';
 
-import 'phoneme_chunker.dart';
+import '../quran_normalizer.dart';
 import 'tajweed_rules.dart';
 
 enum ErrorCategory { tajweed, normal, tashkeel }
@@ -177,8 +177,8 @@ class ErrorExplainer {
     expectedAyahPh = expectedAyahPh.replaceAll(' ', '');
     predictedAyahPh = predictedAyahPh.replaceAll(' ', '');
 
-    final refRawChunks = PhonemeChunker.chunkPhonemes(expectedAyahPh);
-    final predRawChunks = PhonemeChunker.chunkPhonemes(predictedAyahPh);
+    final refRawChunks = QuranNormalizer.chunkPhonemes(expectedAyahPh);
+    final predRawChunks = QuranNormalizer.chunkPhonemes(predictedAyahPh);
 
     // Map each raw chunk to its word index
     List<int> rawChunkToWord = [];
@@ -255,6 +255,8 @@ class ErrorExplainer {
           
           final allRules = [
             Qalqalah(),
+            TafkheemRule(),
+            HamsRule(),
             LeenMaddRule(),
             MaddRule(name: const LangName(ar: "مد", en: "Madd"), goldenLen: refChunk.length),
             Ghonnah(name: const LangName(ar: "غنة", en: "Ghonnah")),

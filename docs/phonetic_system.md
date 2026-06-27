@@ -108,43 +108,8 @@ The invisible markers between words act as the split point, giving us the correc
 
 ---
 
-## `ngram_index.json` — Pre-Built Search Index
 
-Built by `bin/build_ngram_index.dart` from `ordered_quran_phonemes.json`.
 
-### Structure
 
-```json
-{
-  "ngramSize": 4,
-  "ngramCounts": {
-    "وَ|كَ|ذَ|اا": 12
-  },
-  "ngramPositions": {
-    "وَ|كَ|ذَ|اا": [
-      {"s": 6, "a": 137},
-      {"s": 10, "a": 92}
-    ]
-  }
-}
-```
 
-- `ngramCounts`: How many Ayahs contain this 4-gram (used as IDF weight: `1/count`)
-- `ngramPositions`: Which Surah/Ayah pairs contain this 4-gram (deduplicated per Ayah)
 
-### How the 4-gram is built
-
-For `aya_phoneme = "وَكَذَاالِكَ"`:
-
-1. Chunk into phoneme groups: `["وَ", "كَ", "ذَ", "ا", "ا", "لِ", "كَ"]`
-2. Slide a window of size 4:
-   - Position 0: `"وَ|كَ|ذَ|ا"` → register in index
-   - Position 1: `"كَ|ذَ|ا|ا"` → register in index
-   - Position 2: `"ذَ|ا|ا|لِ"` → register in index
-   - etc.
-
-Regenerate after any changes to `ordered_quran_phonemes.json`:
-```bash
-dart run bin/build_ngram_index.dart
-dart run bin/test_ngram_search.dart  # verify
-```

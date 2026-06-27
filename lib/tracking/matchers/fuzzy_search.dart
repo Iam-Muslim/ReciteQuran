@@ -1,5 +1,3 @@
-import 'dart:math';
-
 class FuzzyMatch {
   final int start;
   final int end;
@@ -24,8 +22,11 @@ List<FuzzyMatch> findNearMatches(String query, String text, int maxDist) {
   // prevDist[i] = min distance to match query[0..i] ending at text[j-1]
   // prevStart[i] = start index of that match
   List<int> prevDist = List.generate(n + 1, (i) => i);
-  List<int> prevStart = List.generate(n + 1, (i) => 0); // Start doesn't matter for top row
-  
+  List<int> prevStart = List.generate(
+    n + 1,
+    (i) => 0,
+  ); // Start doesn't matter for top row
+
   List<int> currDist = List.filled(n + 1, 0);
   List<int> currStart = List.filled(n + 1, 0);
 
@@ -37,11 +38,11 @@ List<FuzzyMatch> findNearMatches(String query, String text, int maxDist) {
 
     for (int i = 1; i <= n; i++) {
       int cost = (query[i - 1] == text[j - 1]) ? 0 : 1;
-      
+
       // Option 1: Replace / Match
       int replaceDist = prevDist[i - 1] + cost;
       int replaceStart = prevStart[i - 1];
-      
+
       // Option 2: Delete from query (Insert in text)
       int deleteQueryDist = prevDist[i] + 1;
       int deleteQueryStart = prevStart[i];
@@ -73,11 +74,13 @@ List<FuzzyMatch> findNearMatches(String query, String text, int maxDist) {
       // The start index is currStart[n] - 1 (since our j is 1-based, currStart[0] = j, which means index j-1).
       int matchStart = currStart[n] - 1;
       int matchEnd = j; // exclusive
-      
+
       // We might have multiple overlapping matches.
       // To mimic fuzzysearch.find_near_matches, we can just yield all local minimums or filter overlaps later.
       // For now, let's just collect all and we can filter overlaps if needed.
-      matches.add(FuzzyMatch(start: matchStart, end: matchEnd, dist: currDist[n]));
+      matches.add(
+        FuzzyMatch(start: matchStart, end: matchEnd, dist: currDist[n]),
+      );
     }
 
     // Swap curr and prev
@@ -92,7 +95,7 @@ List<FuzzyMatch> findNearMatches(String query, String text, int maxDist) {
 
 List<FuzzyMatch> _filterOverlapping(List<FuzzyMatch> matches) {
   if (matches.isEmpty) return [];
-  
+
   // Sort by start index, then by end index, then by distance
   matches.sort((a, b) {
     if (a.start != b.start) return a.start.compareTo(b.start);
@@ -105,7 +108,7 @@ List<FuzzyMatch> _filterOverlapping(List<FuzzyMatch> matches) {
 
   for (int i = 1; i < matches.length; i++) {
     FuzzyMatch next = matches[i];
-    
+
     // Two matches overlap if one starts before the other ends.
     // We want to keep the one with the smallest distance.
     if (next.start < current.end) {

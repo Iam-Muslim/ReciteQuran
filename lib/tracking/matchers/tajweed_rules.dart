@@ -11,6 +11,9 @@ class PhoneticConstants {
   static const String meem = '\u0645';
   static const String noonMokhfah = '\u06ba'; // urdu ghonna
   static const String meemMokhfah = '\u06fe';
+  static const String tafkheemChars = 'خصضغطقظ';
+  static const String hamsChars = 'فحثهشخصسكت';
+  static const String qalqalahChars = 'قطبجد';
 }
 
 class LangName {
@@ -67,12 +70,17 @@ class Qalqalah extends TajweedRule {
   bool match(String refText, String predText) => refText == predText;
 
   @override
-  bool isPhStrIn(String phStr) => true;
+  bool isPhStrIn(String phStr) {
+    if (phStr.isEmpty) return false;
+    // Base consonant is the first character
+    return PhoneticConstants.qalqalahChars.contains(phStr[0]);
+  }
 
   @override
   TajweedRule? getRelevantRule(String phStr) {
-    if (phStr.isEmpty) return null;
-    if (phStr[phStr.length - 1] == PhoneticConstants.qlqla) return this;
+    if (isPhStrIn(phStr)) return this;
+    // Also support the explicit qalqalah small jeem sign at the end
+    if (phStr.isNotEmpty && phStr[phStr.length - 1] == PhoneticConstants.qlqla) return this;
     return null;
   }
 
@@ -341,4 +349,58 @@ class MoshaddadOrModghamNoonRule extends MaddRule {
           name: const LangName(ar: "النون المشددة أو المدغمة", en: "Moshaddad or ModghamNoon"),
           goldenLen: 4,
         );
+}
+
+class TafkheemRule extends TajweedRule {
+  TafkheemRule()
+      : super(
+          name: const LangName(ar: "تفخيم", en: "Tafkheem"),
+          goldenLen: 0,
+          correctnessType: CorrectnessType.match,
+        );
+
+  @override
+  bool match(String refText, String predText) => refText == predText;
+
+  @override
+  bool isPhStrIn(String phStr) {
+    if (phStr.isEmpty) return false;
+    return PhoneticConstants.tafkheemChars.contains(phStr[0]);
+  }
+
+  @override
+  TajweedRule? getRelevantRule(String phStr) {
+    if (isPhStrIn(phStr)) return this;
+    return null;
+  }
+
+  @override
+  TajweedRule copyWith({String? tag, LangName? name, int? offset}) => this;
+}
+
+class HamsRule extends TajweedRule {
+  HamsRule()
+      : super(
+          name: const LangName(ar: "همس", en: "Hams"),
+          goldenLen: 0,
+          correctnessType: CorrectnessType.match,
+        );
+
+  @override
+  bool match(String refText, String predText) => refText == predText;
+
+  @override
+  bool isPhStrIn(String phStr) {
+    if (phStr.isEmpty) return false;
+    return PhoneticConstants.hamsChars.contains(phStr[0]);
+  }
+
+  @override
+  TajweedRule? getRelevantRule(String phStr) {
+    if (isPhStrIn(phStr)) return this;
+    return null;
+  }
+
+  @override
+  TajweedRule copyWith({String? tag, LangName? name, int? offset}) => this;
 }

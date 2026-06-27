@@ -40,34 +40,25 @@ final result = _voiceSearchCtrl.stopSearch(_voiceSearchAsrText);
 ### 4. The Search
 
 `VoiceSearchController.stopSearch()`:
-1. Normalizes the ASR text (removes tashkeel, normalizes alef variants)
-2. Chunks it into phoneme groups using `PhonemeChunker`
-3. Passes the chunks to `Anchor.findAnchorByVoting()`
+1. Normalizes the ASR text using `QuranNormalizer.normalizeWithTashkeel`
+2. Passes the normalized text to `PhoneticSearch.search()`
 
-### 5. TF-IDF N-gram Voting
+### 5. Phonetic Fuzzy Search (Levenshtein)
 
-`findAnchorByVoting` reads the pre-built `ngram_index.json` and:
+`PhoneticSearch` reads the pre-built `ph_index.npy` and `ph_index.txt` files and:
 
-1. Generates all 4-grams from your recitation
-2. For each 4-gram, looks up which Ayahs contain it
-3. Votes for each Ayah, weighted by `1 / total_ayahs_with_this_ngram`
-4. Sums votes by Surah
-5. Within the top Surahs, finds the longest **contiguous Ayah run** with votes
+1. Normalizes the query by combining consecutive identical core characters into a single character and stripping residuals (harakat/tashkeel).
+2. Runs a heavily optimized **Fuzzy Search (Levenshtein Distance)** algorithm (`fuzzy_search.dart`) against the entire Quran phonetic reference string.
+3. Allows for an error ratio (e.g., 10%) so slight mispronunciations or ASR errors do not ruin the search.
+4. Returns all matches, sorted by edit distance (lowest distance wins).
+5. Maps the winning character span back to the exact Surah and Ayah indices using the `.npy` binary index.
 
 **Example:**
 
-You recite Surah Al-An'am 6:137. Your phoneme chunks include:
-```
-["وَ", "كَ", "ذَ", "ا", "ا", "لِ", ...]
-```
+You recite Surah Al-An'am 6:137. 
 
-4-grams generated: `"وَ|كَ|ذَ|ا"`, `"كَ|ذَ|ا|ا"`, `"ذَ|ا|ا|لِ"`, ...
-
-In `ngram_index.json`:
-- `"وَ|كَ|ذَ|ا"` → appears in 12 Ayahs → weight = 1/12 = 0.083
-- `"شُرَكَاا|ءُ|هُ|م"` → appears in only 1 Ayah (6:137) → weight = 1/1 = **1.0**
-
-The unique 4-grams dominate the vote, and 6:137 wins.
+Input:  "وَكَذَاالِكَزَييَنَلِكَثِۦۦرِممممِنَلمُشرِكِ..."
+Output: `PhonemesSearchResult(start: (surah: 6, ayah: 137), end: ..., distance: 2)`
 
 ### 6. Navigation
 
@@ -86,37 +77,21 @@ If nothing found: `"لم يتم العثور على الآية، حاول مرة
 
 ---
 
-## The N-gram Index
+## The Phonetic Index
 
-The index is built offline (not at app startup) and stored in `assets/model/ngram_index.json` (~9.3 MB).
-
-### Building It
-
-```bash
-dart run bin/build_ngram_index.dart
-# Reads: assets/model/ordered_quran_phonemes.json
-# Writes: assets/model/ngram_index.json
-# Time: ~8 seconds
-```
-
-### Testing It
-
-```bash
-dart run bin/test_ngram_search.dart
-# Feeds: aya_phoneme of 6:137
-# Expects: Surah 6, Ayah 137
-# Output: SUCCESS: The index correctly identified Al-An'am (6), Ayah 137!
-```
+The index is built offline and stored in two assets:
+1. `assets/model/ph_index.txt`: A single continuous string containing the stripped phonetic representation of the entire Quran (~350 KB).
+2. `assets/model/ph_index.npy`: A binary NumPy array mapping every character index in the `.txt` file back to its Surah, Ayah, Word, and Uthmani character indices (~2.4 MB).
 
 ### Loading at Runtime
 
-The index is loaded **lazily** — only when the user first long-presses the button. Loading takes ~200ms. After the first load, it stays in memory for the rest of the session.
+The index is loaded **lazily** — only when the user first long-presses the button. Loading takes a fraction of a second. After the first load, it stays in memory for the rest of the session.
 
 ```dart
 // In VoiceSearchController:
-Future<void> startSearch() async {
-    await _loadIndexIfNeeded();  // lazy load
-    engine.resetBuffer();
+Future<void> _loadIndexIfNeeded() async {
+    _search = PhoneticSearch();
+    await _search!.load(); // lazy load
 }
 ```
 
@@ -124,11 +99,9 @@ Future<void> startSearch() async {
 
 ## Accuracy Notes
 
-- **Short verses (1-2 words):** May return wrong results if those words are common across many Ayahs (like Bismillah). The voting system weights uniqueness, but very short inputs have fewer unique 4-grams.
-
-- **Long verses (5+ words):** High accuracy. Unique phrase combinations have very few matches in the entire Quran.
-
-- **Noisy environments:** The ASR model still needs to hear you clearly. In very loud environments, the phoneme chunks may be too corrupted for reliable matching.
+- **Short verses (1-2 words):** May return multiple matches across the Quran (like Bismillah). The system currently returns the first best match found.
+- **Long verses (5+ words):** High accuracy. The fuzzy search will perfectly align to the unique phonetic sequence.
+- **Noisy environments:** The Levenshtein distance gracefully handles small errors (insertions, deletions, substitutions) caused by background noise, making it extremely robust compared to exact N-gram matching.
 
 ---
 

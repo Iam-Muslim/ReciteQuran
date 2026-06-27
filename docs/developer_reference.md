@@ -28,16 +28,6 @@ A fast reference for contributors. For deep explanations, see the other docs.
 
 The app loads ALL 6,236 Ayahs at startup from `ordered_quran_phonemes.json`. No per-surah work needed.
 
----
-
-## Rebuilding the Search Index
-
-After any change to `ordered_quran_phonemes.json`:
-
-```bash
-dart run bin/build_ngram_index.dart
-dart run bin/test_ngram_search.dart
-```
 
 ---
 
@@ -64,7 +54,6 @@ Debug prints are prefixed:
 | `chunkMs` | `audio_processor.dart` | 160ms | Min chunk for ZipFormer model |
 | `maxSilenceMs` | `audio_processor.dart` | 800ms | Pause before phrase ends |
 | `_windowRadius` | `phonetic_word_tracker.dart` | 25 chars | DP window size |
-| `ngramSize` | `build_ngram_index.dart` | 4 | 4-gram for search |
 
 ---
 
