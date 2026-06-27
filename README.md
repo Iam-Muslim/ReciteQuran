@@ -222,22 +222,15 @@ Output:   "الرحمن"
 
 ### `lib/tracking/phonetic_word_tracker.dart`
 
-**This is the core real-time word matching engine.** It implements an **O(N) Anchored Prefix-Levenshtein DP**.
+**This is the core real-time word matching engine.** It is a **100% mathematical port of the QUA SDK's 3D Wraparound DP**, adapted for a real-time sliding window.
 
 **The concept (explained simply):**
-Imagine you have a long string of expected reference characters:
-```
-Reference: [ ب ِ س م ِ | ل ل َ ا ا ه ِ | ر ر َ ح م َ ا ا ن ِ | ر ر َ ح ِ ي م ]
-              word 0         word 1              word 2              word 3
-```
+Instead of naive substring searches, it runs a 3-Dimensional Dynamic Programming matrix over the incoming audio chunk (`P`) and the dynamically estimated expected window (`R`).
 
-As you speak, new characters arrive. The DP matrix tracks the "cheapest path" from the start of the stream to every possible position in the reference. The "furthest J" (the rightmost position the path reached with low cost) determines which word you are currently on.
-
-When the path crosses a word boundary marker, that word is "committed" as correct or skipped.
-
-**KMP Stitching:** If the ASR engine resets mid-word due to a VAD boundary, `KmpStitcher` seamlessly overlaps the incoming chunk with the existing buffer using Knuth-Morris-Pratt prefix logic to avoid stuttering or duplicated phonemes.(Vad is already cuts at 800ms , but when the string exceeds it is cleared to not freeze) maybe if i faced wrong merges i can remove the kmp insha'a Allah
-
-**O(N) Matrix Scanning:** The Prefix-Levenshtein algorithm dynamically aligns the expected word against the incoming audio buffer in a single O(N) pass, completely eliminating the legacy O(N²) nested substring loops. It uses a custom Arabic weighted cost matrix (`0.2` penalty for ONNX quirks like missing Alifs, `1.0` penalty for severe recitation errors).
+1. **Strict Word Boundaries:** The DP is forced to evaluate scores only at exact `wordEnds`, preventing hallucinated matches on partial syllables.
+2. **Dense Arabic Sub-Matrix:** Emphatic pairs (`ص/س`), Nasals (`ن/م`), and Alifs cost only `0.25` to swap, granting hyper-accurate phonetic leniency, while completely wrong letters cost `1.0`.
+3. **Wraparound for Stutters:** A 3rd dimension (`k` wraps) allows the DP to jump backward in the matrix to a `wordStart` if you stutter or repeat a word. It subtracts a `wrapPenalty` so your phonetic distance score isn't ruined by an ASR CTC stutter.
+4. **Spatial Prior Weighting:** Instead of hardcoded if-statements for skipping, it adds an automatic score penalty `prior_weight * abs(matched_word - expected_word)`. The math itself forces the matrix to find the best local word, seamlessly handling skips.
 
 ### Matching Level (Easy vs Strict)
 

@@ -40,26 +40,17 @@ When the ASR has accumulated `"بسمللاه"` (7 chars), the Prefix Sliding Wi
 
 ## The Sliding Window Algorithm
 
-Instead of computing an expensive matrix or tracking indices rigidly, `PhoneticWordTracker` buffers all incoming phonemes into an `activeChunk`. 
-
-If the ASR engine resets mid-word (due to a VAD boundary), `KmpStitcher` safely finds the overlap prefix and stitches the new chunk onto the existing text, preventing stutter.
+Instead of computing an expensive matrix over the entire Ayah, `PhoneticWordTracker` buffers incoming phonemes into an `activeChunk`. It dynamically calculates an estimated search window using `estWords = activeChunk.length / 5.0`.
 
 For the current expected word:
-1. It runs an **O(N) Anchored Prefix-Levenshtein** dynamic programming matrix against the `activeChunk`.
-2. The matrix is initialized with zero-cost prefix skipping (`DP[i][0] = 0.0`), allowing it to flawlessly lock onto the expected word anywhere in the buffer without nested substring loops.
-3. It calculates an Arabic-weighted accuracy score (penalizing completely different letters with `1.0`, while forgiving ONNX spelling quirks like dropped Alifs with a `0.2` penalty).
-4. If the best accuracy exceeds `matchThreshold` (e.g., 0.65), it marks the word as `correct`.
-4. It consumes the matched part of `activeChunk`, advancing `_asrCursor` to discard used characters, and moves `_wordCursor` to the next word.
+1. It runs the **QUA SDK 3D Wraparound DP Matrix** (`_alignWraparound3D`) against the `activeChunk`.
+2. The matrix is constrained by precomputed `wordStarts` and `wordEnds`. It is mathematically impossible for the DP to finish a match in the middle of a syllable.
+3. **Wraparound (k-dimension):** If the user stutters, the DP uses a 3rd dimension to jump backward from `jEnd` to `jStart`, paying a flat `wrapPenalty`. It then explicitly subtracts this penalty from the final Normalized Distance so that stutters score `0.0` distance, rather than triggering a red error.
+4. **Spatial Prior Weighting:** To handle lookahead and skipping, the DP penalizes matches that are far away from the `expectedWord`. If it finds a perfect match for Word 3 while expecting Word 1, it will accept it, seamlessly skipping Words 1 and 2 and marking them Red.
 
-### Lookahead & Self-Healing
+### The Last Word Problem (Endpointing)
 
-The algorithm supports **lookahead**: it doesn't just scan for the *next* expected word, it scans for up to `lookAheadWords` ahead. If it finds a strong match for Word 2 while currently waiting for Word 0, it means the user skipped Words 0 and 1. Those skipped words are marked `skipped` (Red), and the tracker jumps to Word 2.
-
-If too much "noise" accumulates (e.g., > 150 characters unmatched), a self-healing rolling buffer drops the oldest noise, preventing the tracker from getting permanently stuck behind.
-
-### The Last Word Problem (Waqf)
-
-If the matched substring reaches the very end of the `activeChunk`, it means the ASR is still outputting the word. The algorithm normally waits for more text to ensure the highest possible accuracy before committing. However, if it's the **last word of the verse**, waiting indefinitely would cause the system to hang. The tracker explicitly handles this case: if it's the last word and accuracy is acceptable, it commits immediately instead of waiting for more phonemes that will never arrive.
+If the matched substring consumes the entire `activeChunk` (`bestI == P.length`), it means the ASR is still outputting the word. The algorithm normally pauses and waits for more text to ensure the highest possible accuracy before committing. However, if it receives an `isEndpoint` signal, it forces the commit immediately.
 
 ### Matching Difficulty (Easy vs Strict)
 
@@ -86,10 +77,15 @@ statuses[targetIdx] = WordMatchStatus.correct;
 ## Real Terminal Output Example
 
 ```
-[Prefix Sliding Window] Word 0 "بِسمِ" matched. Candidate: "بِسم", Acc: 0.75
-[Prefix Sliding Window] Word 1 "للَااهِ" matched. Candidate: "للَااه", Acc: 0.8333333333333334
-[Prefix Sliding Window] Word 2 "ررَحمَاانِ" matched. Candidate: "ررَحمَاان", Acc: 0.7777777777777778
-[Prefix Sliding Window] Word 3 "ررَحِۦۦۦۦم" matched. Candidate: "ررَحِۦۦم", Acc: 0.625
+[Tracker] ----- NEW DP EVALUATION -----
+[Tracker] Cursor: 0 | Window: 0 to 4
+[Tracker] Audio (P): بسمل
+[Tracker] Expected (R): بسمللاهررحمانررحيم
+[Tracker] DP Outcome: bestI=4, bestJ=5, normDist=0.000 (Threshold: 0.65)
+[Tracker] -> Wait: Match reached end of active chunk but normDist > 0. User still speaking.
+...
+[Tracker] DP Outcome: bestI=8, bestJ=5, normDist=0.000 (Threshold: 0.65)
+[Tracker] -> COMMIT: Matched words 0 to 0
 ```
 
 Then if Tajweed is enabled:

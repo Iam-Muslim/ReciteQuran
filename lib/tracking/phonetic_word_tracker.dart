@@ -55,7 +55,7 @@ class PhoneticWordTracker {
        ),
        errors = List<List<ReciterError>?>.filled(expectedPhonemes.length, null),
        _rawExpected = expectedPhonemes,
-       _bareExpectedWithoutAl = expectedPhonemes.map(QuranNormalizer.normalizeWithTashkeel).map(QuranNormalizer.normalizeBare).map((s) => s.startsWith('ال') && s.length > 2 ? s.substring(2) : s).toList(),
+       _bareExpectedWithoutAl = expectedPhonemes.map(QuranNormalizer.normalizeWithTashkeel).map(QuranNormalizer.normalizeBare).toList(),
        _flatR = [],
        _rPhoneToWord = [] {
     for (int w = 0; w < _bareExpectedWithoutAl.length; w++) {
