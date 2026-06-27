@@ -18,7 +18,6 @@ class PhoneticWordTracker {
   final List<WordMatchStatus> statuses;
   final List<List<ReciterError>?> errors;
 
-  final List<String> _normExpected;
   final List<String> _rawExpected;
 
   int _wordCursor = 0;
@@ -40,10 +39,7 @@ class PhoneticWordTracker {
          WordMatchStatus.pending,
        ),
        errors = List<List<ReciterError>?>.filled(expectedPhonemes.length, null),
-       _rawExpected = expectedPhonemes,
-       _normExpected = expectedPhonemes
-           .map(QuranNormalizer.normalizeBare)
-           .toList(growable: false);
+       _rawExpected = expectedPhonemes;
 
   bool get isComplete => _wordCursor >= expectedPhonemes.length;
   int get cursor => _wordCursor;
@@ -80,7 +76,7 @@ class PhoneticWordTracker {
     // Detect if the ASR engine was externally reset (e.g. safety limits or manual clear)
     if (normNew.length < _accumNorm.length) {
       // Instead of discarding text, try to stitch overlapping text gracefully
-      _accumNorm += normNew;
+      _accumNorm = KmpStitcher.mergeText(_accumNorm, normNew);
     } else {
       _accumNorm = normNew;
     }
@@ -111,6 +107,7 @@ class PhoneticWordTracker {
         String expectedPhoneme = QuranNormalizer.normalizeWithTashkeel(
           _rawExpected[targetIdx],
         );
+        String bareExpectedPhoneme = QuranNormalizer.normalizeBare(expectedPhoneme);
 
         // Skip very short words in lookahead (prevent jitter on و, من, في, لا)
         // Adjust length threshold to 4 because Tashkeel makes short words longer
@@ -137,7 +134,10 @@ class PhoneticWordTracker {
               break;
             }
 
-            double acc = _calcAccuracy(rawCandidate, expectedPhoneme);
+            double acc = _calcAccuracy(
+              QuranNormalizer.normalizeBare(rawCandidate),
+              bareExpectedPhoneme,
+            );
 
             // Favor highest accuracy. If tied, favor earlier startK. If tied, favor SHORTER match (leaves text for next word).
             if (acc > bestAcc) {
@@ -161,31 +161,13 @@ class PhoneticWordTracker {
             : matchThreshold;
 
         if (bestAcc >= requiredThreshold) {
-          // If ASR is still outputting the word (candidate reaches the very end of our buffer)
-          // and it's not a perfect match yet, we wait for more letters rather than chopping it off prematurely.
-          if (bestAcc < 1.0 && (bestStartK + bestL) == activeChunk.length) {
-            String rawMatched = activeChunk.substring(
-              bestStartK,
-              bestStartK + bestL,
-            );
-            String bareMatched = QuranNormalizer.normalizeBare(rawMatched);
-            String bareExpected = QuranNormalizer.normalizeBare(
-              expectedPhoneme,
-            );
-
-            // If the bare consonants match perfectly, the user just dropped a trailing vowel (Waqf).
-            bool isConsonantPerfect = (bareMatched == bareExpected);
-
-            // If consonants aren't perfect, AND the engine hasn't stopped listening, wait for more text!
-            // However, if it's the very last word of the verse, don't wait indefinitely.
-            bool isLastWord = targetIdx == expectedPhonemes.length - 1;
-            print(
-              '[DEBUG-TRACKER] targetIdx: $targetIdx, Acc: $bestAcc, perfect: $isConsonantPerfect, endpoint: $isEndpoint, isLastWord: $isLastWord',
-            );
-            if (!isConsonantPerfect && !isEndpoint && !isLastWord) {
-              print('[DEBUG-TRACKER] Breaking to wait for more text');
-              break;
-            }
+          // If the match is NOT perfect (bestAcc < 1.0) and reaches the absolute end of the active chunk,
+          // the user is likely still pronouncing the rest of the word. We wait for more audio to arrive.
+          // If bestAcc == 1.0, it means the final core consonant of the word has been spoken, 
+          // guaranteeing all preceding vowels (like Madd) are already in the buffer! We can instantly commit.
+          if (bestAcc < 1.0 && (bestStartK + bestL) == activeChunk.length && !isEndpoint) {
+            print('[DEBUG-TRACKER] targetIdx: $targetIdx, Acc: $bestAcc. Imperfect match reaches end of buffer. Waiting for more text.');
+            break;
           }
 
           // Commit targetIdx!

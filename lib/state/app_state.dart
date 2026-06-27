@@ -17,6 +17,9 @@ enum AppLanguage { ar, en }
 // Application Mode: Word Checker (Sherpa) vs Tajweed (Muaalem)
 enum AppMode { wordChecker, tajweed }
 
+// Matching Difficulty
+enum MatchingDifficulty { easy, hard }
+
 // Available color themes.
 enum AppTheme { light, dark }
 
@@ -89,6 +92,19 @@ class AppState extends ChangeNotifier {
     await prefs.setBool('lookahead', isLookaheadEnabled);
   }
 
+  // ── Matching Difficulty ────────────────────────────────────────────────────
+
+  MatchingDifficulty matchingDifficulty = MatchingDifficulty.hard;
+
+  void toggleMatchingDifficulty() async {
+    matchingDifficulty = matchingDifficulty == MatchingDifficulty.easy
+        ? MatchingDifficulty.hard
+        : MatchingDifficulty.easy;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('matchingDifficulty', matchingDifficulty.name);
+  }
+
   int autoScrollSpeed = 1; // 1 = 1x, 2 = 2x
 
   void setAutoScrollSpeed(int speed) async {
@@ -157,7 +173,16 @@ class AppState extends ChangeNotifier {
             : AppTheme.light;
       }
       isBlurMode = prefs.getBool('blurMode') ?? false;
-      isLookaheadEnabled = prefs.getBool('lookahead') ?? true;
+      if (prefs.containsKey('lookahead')) {
+        isLookaheadEnabled = prefs.getBool('lookahead')!;
+      }
+
+      if (prefs.containsKey('matchingDifficulty')) {
+        matchingDifficulty = prefs.getString('matchingDifficulty') == 'easy'
+            ? MatchingDifficulty.easy
+            : MatchingDifficulty.hard;
+      }
+
       autoScrollSpeed = prefs.getInt('autoScrollSpeed') ?? 1;
       fontSize = prefs.getDouble('fontSize') ?? 28.0;
 

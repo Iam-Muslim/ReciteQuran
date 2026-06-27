@@ -101,9 +101,15 @@ class QuranNormalizer {
     );
   }
 
-  /// Strip tashkeel only — used to get the bare consonant skeleton.
-  /// Matches quran-transcript's normalize_aya(remove_tashkeel=True) path.
-  static String normalizeBare(String text) => normalize(text);
+  /// Strip ALL harakat and phonetic residual marks (like small yaa ۦ and small waw ۥ)
+  /// Used to get the pure bare consonant skeleton for real-time sliding window matching.
+  static String normalizeBare(String text) {
+    String s = text.replaceAll(RegExp('[$_residualsStr]'), '');
+    s = s.replaceAll(_alefMaksura, _alef);
+    s = s.replaceAll(_hamzatWasl, _alef);
+    s = s.replaceAll(RegExp(r'\s+'), '');
+    return s;
+  }
 
   // ── Residual characters (harakat, tanween, sukun, etc.) ───────────────────
   // These are "modifier" characters that attach to a base consonant.

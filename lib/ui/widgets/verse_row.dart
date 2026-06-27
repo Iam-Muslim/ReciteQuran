@@ -285,12 +285,18 @@ class _VerseRowState extends State<VerseRow> {
       final recognizer = TapGestureRecognizer()..onTap = () {
         if (!isActive) {
           widget.onTap?.call();
-        } else if (ctrl.isWordRed(ayah, cIdx) || ctrl.isWordYellow(ayah, cIdx)) {
+        }
+        
+        // Show the word error regardless of previous active state since we just activated it
+        // and errors are now persisted across ayah activations.
+        if (ctrl.isWordRed(ayah, cIdx) || ctrl.isWordYellow(ayah, cIdx)) {
           _showWordError(ayah, cIdx, words[i]);
         }
       };
       _recognizers.add(recognizer);
 
+      final bool isClickableError = (color == Colors.orange || color == c.red);
+      
       spans.add(
         TextSpan(
           text: words[i],
@@ -300,6 +306,9 @@ class _VerseRowState extends State<VerseRow> {
             height: 2.0,
             wordSpacing: 6.0,
             color: color,
+            decoration: isClickableError ? TextDecoration.underline : TextDecoration.none,
+            decorationStyle: TextDecorationStyle.dotted,
+            decorationColor: color.withValues(alpha: 0.6),
           ),
           recognizer: recognizer,
         ),

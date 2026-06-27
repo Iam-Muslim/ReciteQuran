@@ -97,6 +97,7 @@ class HighlightingController extends ChangeNotifier {
   final Map<int, Set<int>> _greenWordsByVerse = {};
   final Map<int, Set<int>> _redWordsByVerse = {};
   final Map<int, Set<int>> _yellowWordsByVerse = {};
+  final Map<int, Map<int, List<ReciterError>>> _errorsByVerse = {};
   final Set<int> _completedAyahs = {};
 
   // ── Debug ─────────────────────────────────────────────────────────────────
@@ -158,9 +159,19 @@ class HighlightingController extends ChangeNotifier {
   /// Get errors for a word if any
   List<ReciterError>? getWordErrors(int ayah, int wordIndex) {
     int pIdx = _mapToPhonemeIndex(ayah, wordIndex);
-    if (_wordTracker == null || activeAyah.value != ayah) return null;
-    if (pIdx < 0 || pIdx >= _wordTracker!.errors.length) return null;
-    return _wordTracker!.errors[pIdx];
+    
+    // If it's the active ayah and the tracker is still running, check the real-time tracker first
+    if (activeAyah.value == ayah && _wordTracker != null) {
+      if (pIdx >= 0 && pIdx < _wordTracker!.errors.length) {
+        final realtimeErrors = _wordTracker!.errors[pIdx];
+        if (realtimeErrors != null && realtimeErrors.isNotEmpty) {
+          return realtimeErrors;
+        }
+      }
+    }
+    
+    // Fallback to persisted errors (from post-ayah processing or baseline copy)
+    return _errorsByVerse[ayah]?[pIdx];
   }
 
   // ── Surah / ayah management ───────────────────────────────────────────────
@@ -179,6 +190,8 @@ class HighlightingController extends ChangeNotifier {
     _completedAyahs.clear();
     _greenWordsByVerse.clear();
     _redWordsByVerse.clear();
+    _yellowWordsByVerse.clear();
+    _errorsByVerse.clear();
     notifyListeners();
   }
 
@@ -187,6 +200,7 @@ class HighlightingController extends ChangeNotifier {
     _greenWordsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
     _redWordsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
     _yellowWordsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
+    _errorsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
     notifyListeners();
   }
 
@@ -278,7 +292,7 @@ class HighlightingController extends ChangeNotifier {
     _wordTracker = PhoneticWordTracker(
       expectedPhonemes: verse.phonemeWords,
       isTajweedEnabled: AppState.instance.currentMode == AppMode.tajweed,
-      strictTracking: !AppState.instance.isLookaheadEnabled,
+      strictTracking: AppState.instance.matchingDifficulty == MatchingDifficulty.hard,
       matchThreshold: 0.5, // quran-transcript default acceptance_ratio
       lookAheadWords: 4,
       isLookaheadEnabled: AppState.instance.isLookaheadEnabled,
@@ -352,8 +366,16 @@ class HighlightingController extends ChangeNotifier {
 
     // Check if the ayah is fully resolved (all words matched/wrong)
     if (tracker.isComplete) {
+      // 1. Copy all real-time errors (like skipped words) to persistent storage as a baseline
+      for (int i = 0; i < tracker.errors.length; i++) {
+        final errs = tracker.errors[i];
+        if (errs != null && errs.isNotEmpty) {
+          (_errorsByVerse[targetAyah.ayah] ??= {})[i] = List.from(errs);
+        }
+      }
+
       if (AppState.instance.currentMode == AppMode.tajweed) {
-        // 1. Post-Ayah Global Tajweed Checking
+        // 2. Post-Ayah Global Tajweed Checking
         print('[Tajweed] Ayah complete. Running global explainAyahError.');
         print('[Tajweed] --> Sent Expected Ayah (Phonemes): ${targetAyah.textPhoneme}');
         print('[Tajweed] --> Sent Recited (ASR Accumulated): ${tracker.accumulatedNormText}');
@@ -370,7 +392,7 @@ class HighlightingController extends ChangeNotifier {
         // 2. Flip green words to yellow if they have errors
         errorsByWord.forEach((wIdx, errors) {
           if (errors.isNotEmpty) {
-            tracker.errors[wIdx] = errors;
+            (_errorsByVerse[targetAyah.ayah] ??= {})[wIdx] = errors;
             if (_greenWordsByVerse[targetAyah.ayah]?.contains(wIdx) ?? false) {
               (_yellowWordsByVerse[targetAyah.ayah] ??= {}).add(wIdx);
               _greenWordsByVerse[targetAyah.ayah]?.remove(wIdx);

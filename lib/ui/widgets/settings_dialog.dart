@@ -145,6 +145,32 @@ class SettingsDialog extends StatelessWidget {
                             ),
                             const SizedBox(height: 8),
 
+                            // 5. ── Matching Difficulty ─────────────────────────────────
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: _SettingCard(
+                                title: isAr ? 'مستوى التطابق' : 'Matching Level',
+                                icon: Icons.troubleshoot_rounded,
+                                c: c,
+                                child: _SegmentedSelector(
+                                  labels: isAr
+                                      ? ['سهل', 'دقيق']
+                                      : ['Easy', 'Strict'],
+                                  selected: app.matchingDifficulty == MatchingDifficulty.easy ? 0 : 1,
+                                  c: c,
+                                  onSelected: (i) {
+                                    if ((i == 0 && app.matchingDifficulty != MatchingDifficulty.easy) ||
+                                        (i == 1 && app.matchingDifficulty != MatchingDifficulty.hard)) {
+                                      app.toggleMatchingDifficulty();
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+
                             // 6. ── Theme ────────────────────────────────────────────
                             Padding(
                               padding: const EdgeInsets.symmetric(
