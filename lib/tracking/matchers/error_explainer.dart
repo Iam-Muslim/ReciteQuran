@@ -194,14 +194,18 @@ class ErrorExplainer {
           // Check for Tajweed rules first for ANY mismatch involving the reference
           TajweedRule? expectedTajweed;
           
+          bool isLastWord = wIdx == phonemeWords.length - 1;
+
           final allRules = [
             Qalqalah(),
             TafkheemRule(),
             HamsRule(),
             LeenMaddRule(),
-            MaddRule(name: const LangName(ar: "مد", en: "Madd"), goldenLen: refChunk.length),
+            isLastWord ? AaredMaddRule() : MaddRule(name: const LangName(ar: "مد", en: "Madd"), goldenLen: refChunk.length),
             Ghonnah(name: const LangName(ar: "غنة", en: "Ghonnah")),
           ];
+
+          bool isValidTajweedVariation = false;
 
           for (var rule in allRules) {
             if (rule.isPhStrIn(refChunk)) {
@@ -213,10 +217,31 @@ class ErrorExplainer {
                   break;
                 } else if (specificRule.correctnessType == CorrectnessType.count) {
                   int count = specificRule.count(refChunk, predChunk);
-                  if (count < refChunk.length) { // Instead of goldenLen, we enforce the reference's exact length
+                  int expectedCount = specificRule.count(refChunk, refChunk);
+                  
+                  int requiredCount = expectedCount;
+                  if (specificRule.goldenLen > 0) {
+                    requiredCount = min(expectedCount, specificRule.goldenLen);
+                  }
+                  
+                  if (expectedCount > 1 && count < requiredCount) {
                     expectedTajweed = specificRule;
-                    print('[ErrorExplainer] Tajweed COUNT error found: ${specificRule.name.en}. Expected count >= ${refChunk.length}, got $count. (ref: $refChunk, pred: $predChunk)');
+                    print('[ErrorExplainer] Tajweed COUNT error found: ${specificRule.name.en}. Expected count >= $requiredCount, got $count. (ref: $refChunk, pred: $predChunk)');
                     break;
+                  } else if (expectedCount > 1 && count >= requiredCount) {
+                    if (predChunk.isNotEmpty) {
+                      String baseChar = predChunk[0];
+                      bool isOnlyBase = true;
+                      for (int i = 0; i < predChunk.length; i++) {
+                         if (predChunk[i] != baseChar) {
+                            isOnlyBase = false;
+                            break;
+                         }
+                      }
+                      if (isOnlyBase && refChunk.contains(baseChar)) {
+                          isValidTajweedVariation = true;
+                      }
+                    }
                   }
                 }
               }
@@ -231,6 +256,8 @@ class ErrorExplainer {
               predictedPh: predChunk,
               expectedRule: expectedTajweed,
             );
+          } else if (isValidTajweedVariation) {
+            print('[ErrorExplainer] Ignoring valid Tajweed count variation: ref=$refChunk, pred=$predChunk');
           } else {
             if (align.opType == 'delete') {
               error = ReciterError(

@@ -628,7 +628,9 @@ class _TrackingScreenState extends State<TrackingScreen>
 
         return ListView.builder(
           controller: _scroll,
-          physics: const BouncingScrollPhysics(),
+          physics: _isAutoScrolling
+              ? const NeverScrollableScrollPhysics()
+              : const BouncingScrollPhysics(),
           padding: EdgeInsets.zero, // Padding is 0, list is truly full-screen
           cacheExtent:
               2500.0, // Pre-build verses to handle inaccurate jump estimations

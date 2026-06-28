@@ -213,35 +213,182 @@ class _VerseRowState extends State<VerseRow> {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppState.instance.colors.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(24),
+        final c = AppState.instance.colors;
+        final app = AppState.instance;
+
+        return Padding(
+          padding: const EdgeInsets.only(left: 24, right: 24, top: 24, bottom: 48),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Word Error Details', textAlign: TextAlign.center, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppState.instance.colors.text)),
+              // Handle bar
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: c.muted.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              
+              // The Uthmani Word
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                decoration: BoxDecoration(
+                  color: c.gold.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: c.gold.withValues(alpha: 0.2)),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  word,
+                  textDirection: TextDirection.rtl,
+                  style: TextStyle(
+                    fontFamily: 'HafsSmart',
+                    fontSize: app.fontSize * 1.2,
+                    color: c.text,
+                    height: 1.5,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              
+              Text('Error Details', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: c.text)),
               const SizedBox(height: 16),
+              
               ...errors.map((e) {
-                final String title = e.errorType.toString().split('.').last;
-                final String expected = e.expectedPh.isEmpty ? '(none)' : e.expectedPh;
-                final String predicted = e.predictedPh.isEmpty ? '(none)' : e.predictedPh;
+                String cleanPhoneticString(String input) {
+                  return input
+                      .replaceAll('\u06e5', 'و') // Small waw -> waw
+                      .replaceAll('\u06e6', 'ي') // Small yaa -> yaa
+                      .replaceAll('\u06ba', 'ن') // Noon mokhfah -> noon
+                      .replaceAll('\u06fe', 'م') // Meem mokhfah -> meem
+                      .replaceAll('\u0687', '')  // Qalqalah/Waqf marker
+                      .replaceAll('ڇ', '')       // Qalqalah bounce phonetic marker
+                      .replaceAll('ۜ', '')       // Sakt marker
+                      .replaceAll('۪', '')       // Imala marker
+                      .replaceAll('ؙ', '')       // Tasheel/Ishmam marker
+                      .replaceAll('ٲ', 'أ');     // Alif wavy hamza -> Alif
+                }
+
+                final String expected = e.expectedPh.isEmpty ? '(none)' : cleanPhoneticString(e.expectedPh);
+                final String predicted = e.predictedPh.isEmpty ? '(none)' : cleanPhoneticString(e.predictedPh);
+                
+                String explanation = '';
+                String title = '';
+                IconData icon;
+                Color iconColor;
+
+                if (e.errorType.toString().contains('tajweed')) {
+                  title = 'Tajweed Rule Violation';
+                  icon = Icons.menu_book_rounded;
+                  iconColor = Colors.orange;
+                  String ruleName = e.expectedRule?.name.en ?? 'Tajweed rule';
+                  if (ruleName.isEmpty && e.expectedRule?.name.ar != null) {
+                      ruleName = e.expectedRule!.name.ar!;
+                  }
+                  explanation = 'You recited "$predicted", but you should have recited it with "$ruleName" as "$expected" in the expected way.';
+                } else if (e.errorType.toString().contains('tashkeel')) {
+                  title = 'Harakat (Vowel) Error';
+                  icon = Icons.spellcheck_rounded;
+                  iconColor = Colors.blue;
+                  explanation = 'You pronounced the vowels as "$predicted", but the expected pronunciation is "$expected".';
+                } else {
+                  title = 'Pronunciation Error';
+                  icon = Icons.record_voice_over_rounded;
+                  iconColor = c.red;
+                  explanation = 'You said "$predicted", but you should have recited "$expected".';
+                }
+
+                // Add hints for removed special phonetic markers so the user understands the context
+                bool hasSakt = e.expectedPh.contains('ۜ');
+                bool hasImala = e.expectedPh.contains('۪');
+                bool hasTasheel = e.expectedPh.contains('ؙ');
+                bool hasQalqalahMarker = e.expectedPh.contains('ڇ') || e.expectedPh.contains('\u0687');
+                
+                String specialHint = '';
+                if (hasSakt) specialHint += '\n• Requires a Sakt (short breathless pause).';
+                if (hasImala) specialHint += '\n• Requires Imala (inclining the vowel).';
+                if (hasTasheel) specialHint += '\n• Requires Tasheel (softening of the Hamza).';
+                if (hasQalqalahMarker && !e.errorType.toString().contains('tajweed')) {
+                  specialHint += '\n• Requires Qalqalah (echoing sound).';
+                }
+
+                if (specialHint.isNotEmpty) {
+                  explanation += '\n$specialHint';
+                }
+
                 return Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: AppState.instance.colors.surface.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppState.instance.colors.red.withValues(alpha: 0.3)),
+                    color: c.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: c.border.withValues(alpha: 0.5)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      )
+                    ],
                   ),
-                  child: Column(
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Type: ${title.toUpperCase()}', style: TextStyle(color: AppState.instance.colors.red, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      Text('Expected phoneme: $expected', style: TextStyle(color: AppState.instance.colors.text)),
-                      Text('You recited: $predicted', style: TextStyle(color: AppState.instance.colors.text)),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: iconColor.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(icon, color: iconColor, size: 24),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(title, style: TextStyle(color: c.text, fontWeight: FontWeight.bold, fontSize: 16)),
+                            const SizedBox(height: 8),
+                            Text(explanation, style: TextStyle(color: c.muted, fontSize: 14, height: 1.5)),
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: c.surface,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: c.border.withValues(alpha: 0.3)),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                children: [
+                                  Column(
+                                    children: [
+                                      Text('Expected', style: TextStyle(color: c.muted, fontSize: 12)),
+                                      Text(expected, style: TextStyle(color: c.green, fontSize: 26, fontWeight: FontWeight.bold, fontFamily: 'HafsSmart')),
+                                    ],
+                                  ),
+                                  Container(width: 1, height: 40, color: c.border.withValues(alpha: 0.3)),
+                                  Column(
+                                    children: [
+                                      Text('You Said', style: TextStyle(color: c.muted, fontSize: 12)),
+                                      Text(predicted, style: TextStyle(color: c.red, fontSize: 26, fontWeight: FontWeight.bold, fontFamily: 'HafsSmart')),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 );
@@ -286,20 +433,20 @@ class _VerseRowState extends State<VerseRow> {
       }
 
       final recognizer = TapGestureRecognizer()..onTap = () {
+        if (widget.isAutoScrolling) return;
+        
         if (!isActive) {
           widget.onTap?.call();
         }
         
         // Show the word error regardless of previous active state since we just activated it
         // and errors are now persisted across ayah activations.
-        if (ctrl.isWordRed(ayah, cIdx) || ctrl.isWordYellow(ayah, cIdx)) {
+        if (ctrl.isWordYellow(ayah, cIdx)) {
           _showWordError(ayah, cIdx, words[i]);
         }
       };
       _recognizers.add(recognizer);
 
-      final bool isClickableError = (color == Colors.orange || color == c.red);
-      
       spans.add(
         TextSpan(
           text: words[i],
@@ -309,9 +456,6 @@ class _VerseRowState extends State<VerseRow> {
             height: 2.0,
             wordSpacing: 6.0,
             color: color,
-            decoration: isClickableError ? TextDecoration.underline : TextDecoration.none,
-            decorationStyle: TextDecorationStyle.dotted,
-            decorationColor: color.withValues(alpha: 0.6),
           ),
           recognizer: recognizer,
         ),
@@ -352,7 +496,7 @@ class _VerseRowState extends State<VerseRow> {
     _cachedSpans ??= _buildSpans(words, isActive, app, c);
 
     return GestureDetector(
-      onTap: widget.onTap,
+      onTap: widget.isAutoScrolling ? null : widget.onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeOutCubic,

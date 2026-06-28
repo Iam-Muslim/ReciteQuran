@@ -183,7 +183,7 @@ class AaredMaddRule extends MaddRule {
   AaredMaddRule({super.tag})
       : super(
           name: const LangName(ar: "المد العارض للسكون", en: "Aared Madd"),
-          goldenLen: 4,
+          goldenLen: 2,
         );
 }
 
@@ -196,7 +196,7 @@ class LeenMaddRule extends MaddRule {
   LeenMaddRule({super.tag})
       : super(
           name: const LangName(ar: "مد اللين", en: "Leen Madd"),
-          goldenLen: 4,
+          goldenLen: 2,
         );
 
   @override
