@@ -55,8 +55,9 @@ jobs:
           # Install the Hugging Face CLI (Python is pre-installed on GitHub runners)
           pip install -U "huggingface_hub[cli]"
           
-          # Use the CLI to download the actual LFS file directly into the folder
-          huggingface-cli download Muno459/zipformer_p-quran quran_phoneme_zipformer.int8.onnx --local-dir assets/model
+          # Use the new 'hf' tool to download the actual LFS file directly into the folder
+          hf download Muno459/zipformer_p-quran quran_phoneme_zipformer.int8.onnx --local-dir assets/model
+          
       # --- BUILD STEP ---
       # Generates separate, lightweight APKs per architecture using the updated build.gradle.kts
       - name: Build Split APKs
