@@ -79,6 +79,10 @@ android {
             pickFirsts.add("**/libc++_shared.so")
         }
     }
+
+    androidResources {
+        noCompress += listOf("onnx", "txt", "json", "npy")
+    }
 }
 
 flutter {

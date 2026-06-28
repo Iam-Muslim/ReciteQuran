@@ -50,6 +50,7 @@ class _VerseRowState extends State<VerseRow> {
     super.initState();
     _ayahArabicDigits = _toArabicDigits(widget.verse.ayah);
     widget.controller.activeAyah.addListener(_onActiveAyahChanged);
+    widget.controller.globalRevision.addListener(_onStateChanged);
     AppState.instance.addListener(_onStateChanged);
     _updateSubscription();
   }
@@ -59,11 +60,13 @@ class _VerseRowState extends State<VerseRow> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.activeAyah.removeListener(_onActiveAyahChanged);
+      oldWidget.controller.globalRevision.removeListener(_onStateChanged);
       if (_isListeningToController) {
         oldWidget.controller.removeListener(_onStateChanged);
       }
       
       widget.controller.activeAyah.addListener(_onActiveAyahChanged);
+      widget.controller.globalRevision.addListener(_onStateChanged);
       _isListeningToController = false;
       _updateSubscription();
       _invalidate();
@@ -85,6 +88,7 @@ class _VerseRowState extends State<VerseRow> {
   @override
   void dispose() {
     widget.controller.activeAyah.removeListener(_onActiveAyahChanged);
+    widget.controller.globalRevision.removeListener(_onStateChanged);
     if (_isListeningToController) {
       widget.controller.removeListener(_onStateChanged);
     }
@@ -218,12 +222,20 @@ class _VerseRowState extends State<VerseRow> {
       builder: (context) {
         final c = AppState.instance.colors;
         final app = AppState.instance;
+        final isAr = app.isArabic;
 
-        return Padding(
-          padding: const EdgeInsets.only(left: 24, right: 24, top: 24, bottom: 48),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        return ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.5,
+          ),
+          child: Directionality(
+            textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 24, right: 24, top: 24, bottom: 48),
+                child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Handle bar
               Center(
@@ -260,7 +272,7 @@ class _VerseRowState extends State<VerseRow> {
               ),
               const SizedBox(height: 24),
               
-              Text('Error Details', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: c.text)),
+              Text(isAr ? 'تفاصيل الخطأ' : 'Error Details', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: c.text)),
               const SizedBox(height: 16),
               
               ...errors.map((e) {
@@ -287,24 +299,32 @@ class _VerseRowState extends State<VerseRow> {
                 Color iconColor;
 
                 if (e.errorType.toString().contains('tajweed')) {
-                  title = 'Tajweed Rule Violation';
+                  title = isAr ? 'مخالفة حكم تجويد' : 'Tajweed Rule Violation';
                   icon = Icons.menu_book_rounded;
                   iconColor = Colors.orange;
-                  String ruleName = e.expectedRule?.name.en ?? 'Tajweed rule';
+                  String ruleName = isAr 
+                      ? (e.expectedRule?.name.ar ?? 'حكم تجويد')
+                      : (e.expectedRule?.name.en ?? 'Tajweed rule');
                   if (ruleName.isEmpty && e.expectedRule?.name.ar != null) {
                       ruleName = e.expectedRule!.name.ar!;
                   }
-                  explanation = 'You recited "$predicted", but you should have recited it with "$ruleName" as "$expected" in the expected way.';
+                  explanation = isAr
+                      ? 'قرأت "$predicted"، ولكن كان يجب أن تقرأها بحكم "$ruleName" كـ "$expected" بالطريقة الصحيحة.'
+                      : 'You recited "$predicted", but you should have recited it with "$ruleName" as "$expected" in the expected way.';
                 } else if (e.errorType.toString().contains('tashkeel')) {
-                  title = 'Harakat (Vowel) Error';
+                  title = isAr ? 'خطأ في الحركات' : 'Harakat (Vowel) Error';
                   icon = Icons.spellcheck_rounded;
                   iconColor = Colors.blue;
-                  explanation = 'You pronounced the vowels as "$predicted", but the expected pronunciation is "$expected".';
+                  explanation = isAr
+                      ? 'نطقت الحركة كـ "$predicted"، ولكن النطق الصحيح هو "$expected".'
+                      : 'You pronounced the vowels as "$predicted", but the expected pronunciation is "$expected".';
                 } else {
-                  title = 'Pronunciation Error';
+                  title = isAr ? 'خطأ في النطق' : 'Pronunciation Error';
                   icon = Icons.record_voice_over_rounded;
                   iconColor = c.red;
-                  explanation = 'You said "$predicted", but you should have recited "$expected".';
+                  explanation = isAr
+                      ? 'قلت "$predicted"، ولكن كان يجب أن تقرأ "$expected".'
+                      : 'You said "$predicted", but you should have recited "$expected".';
                 }
 
                 // Add hints for removed special phonetic markers so the user understands the context
@@ -314,11 +334,11 @@ class _VerseRowState extends State<VerseRow> {
                 bool hasQalqalahMarker = e.expectedPh.contains('ڇ') || e.expectedPh.contains('\u0687');
                 
                 String specialHint = '';
-                if (hasSakt) specialHint += '\n• Requires a Sakt (short breathless pause).';
-                if (hasImala) specialHint += '\n• Requires Imala (inclining the vowel).';
-                if (hasTasheel) specialHint += '\n• Requires Tasheel (softening of the Hamza).';
+                if (hasSakt) specialHint += isAr ? '\n• يتطلب سكتة (توقف قصير بدون تنفس).' : '\n• Requires a Sakt (short breathless pause).';
+                if (hasImala) specialHint += isAr ? '\n• يتطلب إمالة (إمالة الفتحة نحو الكسرة).' : '\n• Requires Imala (inclining the vowel).';
+                if (hasTasheel) specialHint += isAr ? '\n• يتطلب تسهيل (تليين الهمزة).' : '\n• Requires Tasheel (softening of the Hamza).';
                 if (hasQalqalahMarker && !e.errorType.toString().contains('tajweed')) {
-                  specialHint += '\n• Requires Qalqalah (echoing sound).';
+                  specialHint += isAr ? '\n• يتطلب قلقلة (صدى للصوت).' : '\n• Requires Qalqalah (echoing sound).';
                 }
 
                 if (specialHint.isNotEmpty) {
@@ -372,14 +392,14 @@ class _VerseRowState extends State<VerseRow> {
                                 children: [
                                   Column(
                                     children: [
-                                      Text('Expected', style: TextStyle(color: c.muted, fontSize: 12)),
+                                      Text(isAr ? 'المتوقع' : 'Expected', style: TextStyle(color: c.muted, fontSize: 12)),
                                       Text(expected, style: TextStyle(color: c.green, fontSize: 26, fontWeight: FontWeight.bold, fontFamily: 'HafsSmart')),
                                     ],
                                   ),
                                   Container(width: 1, height: 40, color: c.border.withValues(alpha: 0.3)),
                                   Column(
                                     children: [
-                                      Text('You Said', style: TextStyle(color: c.muted, fontSize: 12)),
+                                      Text(isAr ? 'قلت' : 'You Said', style: TextStyle(color: c.muted, fontSize: 12)),
                                       Text(predicted, style: TextStyle(color: c.red, fontSize: 26, fontWeight: FontWeight.bold, fontFamily: 'HafsSmart')),
                                     ],
                                   ),
@@ -394,6 +414,9 @@ class _VerseRowState extends State<VerseRow> {
                 );
               }),
             ],
+          ),
+        ),
+            ),
           ),
         );
       }

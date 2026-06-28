@@ -102,6 +102,9 @@ class HighlightingController extends ChangeNotifier {
 
   // ── Debug ─────────────────────────────────────────────────────────────────
   final ValueNotifier<String> debugRecognizedText = ValueNotifier('');
+  
+  /// Global update notifier for events that should affect all verses (e.g. clearing highlights)
+  final ValueNotifier<int> globalRevision = ValueNotifier(0);
 
   // ── Per-ayah word tracker (quran-transcript PhoneticWordTracker) ──────────
   PhoneticWordTracker? _wordTracker;
@@ -197,6 +200,7 @@ class HighlightingController extends ChangeNotifier {
     _redWordsByVerse.clear();
     _yellowWordsByVerse.clear();
     _errorsByVerse.clear();
+    globalRevision.value++;
     notifyListeners();
   }
 
@@ -206,6 +210,7 @@ class HighlightingController extends ChangeNotifier {
     _redWordsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
     _yellowWordsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
     _errorsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
+    globalRevision.value++;
     notifyListeners();
   }
 
@@ -263,6 +268,8 @@ class HighlightingController extends ChangeNotifier {
     if (_pendingClearAyah != null) {
       clearHighlightsFromAyah(_pendingClearAyah!);
       _pendingClearAyah = null;
+    } else if (activeAyah.value != null) {
+      clearHighlightsFromAyah(activeAyah.value!);
     }
     _wordTracker?.clearActiveAudio();
     _engine.resetBuffer();

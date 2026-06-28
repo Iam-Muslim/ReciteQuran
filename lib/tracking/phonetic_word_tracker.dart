@@ -143,6 +143,13 @@ class PhoneticWordTracker {
       }
     }
 
+    Set<int> targetJStarts = {0};
+    for (int j in wordStarts) {
+      if (j < n && rPhoneToWord[j] == expectedWord) {
+        targetJStarts.add(j);
+      }
+    }
+
     int K = maxWraps;
     double wrapPenalty = 3.5;
     double wrapSpanWeight = 0.1;
@@ -187,12 +194,14 @@ class PhoneticWordTracker {
 
     for (int i = 1; i <= m; i++) {
       for (int k = 0; k <= K; k++) {
-        if (k == 0 && wordStarts.contains(0)) {
-          dp[i][k][0] = 0.0; // Free skip of audio prefix for the first expected word
-          startArr[i][k][0] = 0;
-          iStartArr[i][k][0] = i;
-          maxJArr[i][k][0] = 0;
-          minWArr[i][k][0] = minWArr[i - 1][k][0];
+        if (k == 0) {
+          if (wordStarts.contains(0) && targetJStarts.contains(0)) {
+            dp[i][k][0] = 0.0; // Free skip of audio prefix for start of window
+            startArr[i][k][0] = 0;
+            iStartArr[i][k][0] = i;
+            maxJArr[i][k][0] = 0;
+            minWArr[i][k][0] = minWArr[i - 1][k][0];
+          }
         }
 
         for (int j = 1; j <= n; j++) {
@@ -225,6 +234,14 @@ class PhoneticWordTracker {
               maxJArr[i][k][j] = max(maxJArr[i][k][j - 1], j);
               minWArr[i][k][j] = min(minWArr[i][k][j - 1], wJ);
             }
+          }
+
+          if (k == 0 && wordStarts.contains(j) && rPhoneToWord[j] == expectedWord) {
+             dp[i][k][j] = 0.0;
+             startArr[i][k][j] = j;
+             iStartArr[i][k][j] = i;
+             maxJArr[i][k][j] = j;
+             minWArr[i][k][j] = rPhoneToWord[j];
           }
         }
       }
@@ -498,8 +515,10 @@ class PhoneticWordTracker {
             _isFirstMatch = false;
 
             for (int w = startWord; w <= endWord; w++) {
-              statuses[w] = WordMatchStatus.correct;
-              errors[w] = [];
+              if (w >= _wordCursor) {
+                statuses[w] = WordMatchStatus.correct;
+                errors[w] = [];
+              }
             }
 
             // No slicing: P represents the full segment, mirroring qua_sdk.

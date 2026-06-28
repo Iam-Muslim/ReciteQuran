@@ -19,6 +19,8 @@
 library;
 
 import 'dart:io';
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:in_app_update/in_app_update.dart';
@@ -34,19 +36,33 @@ import 'ui/tracking_screen.dart';
 import 'tracking/voice_search_controller.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  // Transparent system bars for immersive experience
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      systemNavigationBarColor: Colors.transparent,
-    ),
-  );
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    if (kReleaseMode) {
+      debugPrint = (String? message, {int? wrapWidth}) {};
+    }
 
-  await AppState.instance.load();
-  runApp(const QuranApp());
+    // Transparent system bars for immersive experience
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
+      ),
+    );
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
+    await AppState.instance.load();
+    runApp(const QuranApp());
+  }, (error, stack) {
+    debugPrint('Uncaught Error: $error');
+  }, zoneSpecification: ZoneSpecification(
+    print: (Zone self, ZoneDelegate parent, Zone zone, String line) {
+      if (!kReleaseMode) {
+        parent.print(zone, line);
+      }
+    },
+  ));
 }
 
 /// Root widget — rebuilds MaterialApp when theme/language changes.
