@@ -117,17 +117,18 @@ class QuranNormalizer {
 
   // ── Residual characters (harakat, tanween, sukun, etc.) ───────────────────
   // These are "modifier" characters that attach to a base consonant.
-  // Unicode ranges covered:
-  //   U+064B–U+0652 = tanween fath/damm/kasr + fatha/damma/kasra + shadda/sukun
-  //   U+0670        = small alef (alef khinjariyya)
-  //   U+0687, U+0619, U+065C, U+0653–U+0655 = additional Quran-specific marks
-  //   U+06DF–U+06E8 = extended Arabic presentation marks
+  //   U+064E, U+064F, U+0650 = fatha, damma, kasra
+  //   U+0687 = qalqalah (small jeem)
+  //   U+065E = fatha momala (imala sign)
+  //   U+06E3 = sakt (small seen above)
+  //   U+0619 = dama mokhtalasa
   static final String _residualsStr =
-      r'\u064B-\u0652\u0670\u0687\u0619\u065C\u0653\u0654\u0655\u06DF\u06E0\u06E2\u06E5\u06E6\u06E7\u06E8';
+      r'\u064E\u064F\u0650\u0687\u065E\u06E3\u0619';
 
-  // ── Regex: one non-residual char + optional trailing residuals ─────────────
-  // This matches Python's: re.findall(r'[^residuals][residuals]*', text)
-  static final RegExp _chunkRegex = RegExp('([^$_residualsStr][$_residualsStr]*)');
+  // ── Regex: identical non-residual chars + optional trailing residuals ─────────────
+  // This matches Python's: `(?:core_chars+)[residuals]?`
+  // We use backreference `\2` to group identical consecutive base characters.
+  static final RegExp _chunkRegex = RegExp('(([^$_residualsStr])\\2*[$_residualsStr]*)');
 
   /// Splits a continuous Arabic phonetic string into individual phoneme groups.
   ///

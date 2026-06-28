@@ -165,20 +165,21 @@ Sherpa-ONNX runs the `quran_phoneme_zipformer.int8.onnx` model inside a **Dart I
 - **CTC (Connectionist Temporal Classification):** A decoding strategy that aligns audio frames to characters WITHOUT needing explicit segmentation
 - **INT8 Quantized:** The model weights are stored in 8-bit integers instead of 32-bit floats. ~4x smaller, ~2x faster, tiny accuracy loss.
 
-### CTC Frame Noise — The Critical Concept
+### Length-Aware Phonetic Encoding — The Critical Concept
 
 > **This is the most important thing to understand for contributors.**
 
-The model does NOT output clean text. It outputs one "best character" per audio frame. If a user speaks `بِسمِ` slowly:
+The advanced Zipformer model is trained to be **Tajweed and Madd aware**. It does NOT output clean text. It outputs frame-level phonetic alignments where **time duration is encoded as repeated characters**. 
+
+If a user speaks `بِسمِ` slowly and holds the Madd, the model outputs raw frames like:
 
 ```
-Model frames: [ بِ ][ بِ ][ بِ ][ سـ ][ سـ ][ مـ ][ مِ ][ مِ ][ مِ ][ مِ ]
-Raw output:   "بِبِبِسسممِمِمِمِ"
+Raw output: "بسسسممللااهرررحمننرحييم"
 ```
 
-The model emits consecutive duplicate characters because it's processing each frame individually. This is "CTC frame stutter."
+Unlike traditional ASR systems that collapse these duplicates, this project **preserves the raw repeated output entirely**. The reference text in `ordered_quran_phonemes.json` is perfectly aligned to expect these exact repetitions.
 
-**The fix used in this project (CTC Self-Loop):** When comparing the streaming output against reference text, a repeated character (`chunk[i] == chunk[i-1]`) costs `0` instead of `1`. This makes the DP algorithm effortlessly absorb duplicate frames without misaligning word boundaries.
+**The DP Solution:** When comparing the streaming output against reference text, the 3D Wraparound DP matrix compares the raw length-encoded audio stream against the raw length-encoded expected text. The `k` (wraparound) dimension helps absorb any minor acoustic stutters without penalizing them as hard errors.
 
 ### Communication Flow
 
@@ -256,13 +257,12 @@ The bridge between the ASR engine and the UI. It:
 
 When an Ayah finishes (all words matched or skipped), `explainAyahError` runs a **global alignment** of the entire predicted string against the entire expected `aya_phoneme` string.
 
-### Step 1: CTC Collapse Filter
+### Step 1: Raw Frame Extraction
 
-Before alignment, both strings are processed through `_applyCtcCollapse`:
-- Consecutive identical chunks are collapsed: `[ بِ, بِ, بِ ]` → `[ بِ ]`
-- Vowel/length characters that repeat are *concatenated* not collapsed: `[ ا, ا, ا ]` → `[ ااا ]` (so we can measure how long you held the sound)
+Before alignment, both strings are chunked into atomic phonetic units (a base consonant + its harakat) using `QuranNormalizer.chunkPhonemes`. 
+Critically, **no CTC collapse filter is applied**. The raw length and timing data of the model is preserved exactly as spoken.
 
-**Why?** Without this, a slow speaker would fail the Madd (length) check because their extra frames look like insertions.
+**Why?** The model uses repeated characters to denote the length of sounds (like `نننن` for a 2-beat Ghunnah or `اااا` for a Madd). Collapsing these would destroy the timing data needed to validate Tajweed rules.
 
 ### Step 2: Levenshtein Alignment on Phoneme Groups
 
@@ -288,9 +288,9 @@ Each error is mapped back to a word index using the `refGroupToWord` list built 
 [Tajweed] Ayah complete. Running global explainAyahError.
 [ErrorExplainer] === START GLOBAL TAJWEED EVALUATION ===
 [ErrorExplainer] Raw Expected: "بِسمِللَااهِررَحمَاانِررَحِۦۦۦۦم"
-[ErrorExplainer] Raw Predicted: "بسمللاهرحمانرحيم"
-[ErrorExplainer] CTC Collapsed Reference Groups: [بِ, س, مِ, ل, لَ, ا, ا, هِ, ...]
-[ErrorExplainer] CTC Collapsed Predicted Groups: [ب, س, م, ل, ل, ا, ه, ...]
+[ErrorExplainer] Raw Predicted: "بسسسممللااهرررحمننرحييم"
+[ErrorExplainer] Reference Groups: [بِ, س, مِ, ل, لَ, ا, ا, هِ, ...]
+[ErrorExplainer] Predicted Groups: [ب, س, س, س, م, م, ل, ل, ا, ه, ...]
 [ErrorExplainer] Output Errors By Word Index:
 [ErrorExplainer]   -> Word 2: [ErrorCategory.tashkeel]
 [ErrorExplainer] === END GLOBAL TAJWEED EVALUATION ===

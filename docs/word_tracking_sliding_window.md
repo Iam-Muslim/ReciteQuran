@@ -45,7 +45,7 @@ Instead of computing an expensive matrix over the entire Ayah, `PhoneticWordTrac
 For the current expected word:
 1. It runs the **QUA SDK 3D Wraparound DP Matrix** (`_alignWraparound3D`) against the `activeChunk`.
 2. The matrix is constrained by precomputed `wordStarts` and `wordEnds`. It is mathematically impossible for the DP to finish a match in the middle of a syllable.
-3. **Wraparound (k-dimension):** If the user stutters, the DP uses a 3rd dimension to jump backward from `jEnd` to `jStart`, paying a flat `wrapPenalty`. It then explicitly subtracts this penalty from the final Normalized Distance so that stutters score `0.0` distance, rather than triggering a red error.
+3. **Wraparound (k-dimension):** The DP uses a 3rd dimension to absorb acoustic stutters. Because the ASR and JSON now use **raw length-encoded frames** (where holding a sound outputs repeated characters like `سسس`), the DP matrix matches these 1:1. If an actual stutter or mismatch occurs, the matrix wraps backward from `jEnd` to `jStart`, paying a flat `wrapPenalty`, keeping the Normalized Distance from spiking.
 4. **Spatial Prior Weighting:** To handle lookahead and skipping, the DP penalizes matches that are far away from the `expectedWord`. If it finds a perfect match for Word 3 while expecting Word 1, it will accept it, seamlessly skipping Words 1 and 2 and marking them Red.
 
 ### The Last Word Problem (Endpointing)

@@ -380,12 +380,12 @@ class HighlightingController extends ChangeNotifier {
         // 2. Post-Ayah Global Tajweed Checking
         print('[Tajweed] Ayah complete. Running global explainAyahError.');
         print('[Tajweed] --> Sent Expected Ayah (Phonemes): ${targetAyah.textPhoneme}');
-        print('[Tajweed] --> Sent Recited (ASR Accumulated): ${tracker.accumulatedNormText}');
+        print('[Tajweed] --> Sent Recited (ASR Accumulated RAW): ${tracker.accumulatedRawText}');
         print('[Tajweed] --> Sent Expected Words List: ${targetAyah.phonemeWords}');
 
         final errorsByWord = ErrorExplainer.explainAyahError(
           targetAyah.textPhoneme,
-          tracker.accumulatedNormText,
+          tracker.accumulatedRawText,
           targetAyah.phonemeWords,
         );
         

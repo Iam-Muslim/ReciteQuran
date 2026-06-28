@@ -35,38 +35,34 @@ The reciter said the right consonant but with the wrong harakat. Example: `بَ`
 
 ---
 
-## The CTC Collapse Filter — Why It Exists
+## The Raw Length-Encoded Output — Why It Matters
 
-The ASR model outputs audio frames, not clean text. A slow reader produces more frames:
+The advanced Zipformer model is specifically trained to output audio frames representing exact phoneme durations, not just clean text. 
 
 ```
-Fast reader:  "بَ" → model outputs: [بَ]
-Slow reader:  "بَ" → model outputs: [بَ, بَ, بَ, بَ]   ← same sound, more frames
+Normal Text:  "بَ"
+Model Output: "بَبَبَبَ"   ← Length is encoded as repeated frames
 ```
 
-Without the filter, the slow reader's `[بَ, بَ, بَ, بَ]` would look like 3 extra insertions.
+In the past, ASR systems required a "CTC Collapse Filter" to squash these repetitions (`[بَ, بَ] → [بَ]`). **This project explicitly REMOVED the CTC Collapse Filter.**
 
-The filter collapses consecutive identical non-vowel chunks:
-```
-[بَ, بَ, بَ, بَ] → [بَ]    ✓ collapsed
-```
+**Why?** 
+The model's repeated frames are the exact data needed to measure Tajweed holding times (Madd, Ghunnah). 
+- If the expected text requires a 2-beat Ghunnah, it is stored in the reference JSON as `نننن`.
+- If the user only says `ن`, the alignment sees 3 missing frames (`delete` operations).
+- `Ghonnah.count()` reads these operations and immediately flags a Tajweed Error because the duration was too short.
 
-But for vowels (ا, و, ي, ۥ, ۦ), it CONCATENATES them instead:
-```
-[ي, ي, ي, ي] → [يييي]    ✓ kept (length = how long you held the sound)
-```
-
-**This preserves Madd length information while removing stutter noise.**
+By preserving the **raw accumulated phonetic string**, the engine perfectly measures phonological duration directly from the matrix alignment.
 
 ---
 
 ## The Levenshtein Alignment
 
-After CTC collapse, both the reference groups and predicted groups are aligned using the Wagner-Fischer algorithm:
+Because no collapse filter is applied, the strings are chunked into their atomic [Consonant + Harakat] parts using `QuranNormalizer.chunkPhonemes` and aligned frame-by-frame using the Wagner-Fischer algorithm:
 
 ```
-Reference:  [بِ, سـ, مِ, لـ, لَ, اا, هِ]   (from aya_phoneme)
-Predicted:  [بـ, سـ, مِ, لـ, لـ, ا,  هِ]   (from ASR output)
+Reference:  [بِ, سـ, مِ, لـ, لَ, ا, ا, هِ]   (from aya_phoneme JSON)
+Predicted:  [بـ, سـ, سـ, مِ, لـ, لـ, ا, هِ]   (raw from ASR output)
 
 Alignment:
   بِ ↔ بـ  → replace  (harakat differs: kasra vs. none) = tashkeel error
@@ -110,9 +106,9 @@ This allows the system to say: "Word 2 has a Tajweed error" — so only word 2 t
 
 [ErrorExplainer] === START GLOBAL TAJWEED EVALUATION ===
 [ErrorExplainer] Raw Expected: "بِسمِللَااهِررَحمَاانِررَحِۦۦۦۦم"
-[ErrorExplainer] Raw Predicted: "بسمللاهرحمانرحييم"
-[ErrorExplainer] CTC Collapsed Reference Groups: [بِ, س, مِ, ل, لَ, ا, ا, هِ, ر, رَ, ح, مَ, ا, ا, نِ, ر, رَ, حِ, ۦ, ۦ, ۦ, ۦ, م]
-[ErrorExplainer] CTC Collapsed Predicted Groups: [ب, س, م, ل, ل, ا, ه, ر, ح, م, ا, ن, ر, ح, ي, ي, م]
+[ErrorExplainer] Raw Predicted: "بسسسممللااهرررحمننرحييم"
+[ErrorExplainer] Reference Groups: [بِ, س, مِ, ل, لَ, ا, ا, هِ, ر, رَ, ح, مَ, ا, ا, نِ, ر, رَ, حِ, ۦ, ۦ, ۦ, ۦ, م]
+[ErrorExplainer] Predicted Groups: [ب, س, س, س, م, م, ل, ل, ا, ه, ر, ح, م, ا, ن, ر, ح, ي, ي, م]
 
 [ErrorExplainer] Output Errors By Word Index:
 [ErrorExplainer]   -> Word 0: [ErrorCategory.tashkeel]

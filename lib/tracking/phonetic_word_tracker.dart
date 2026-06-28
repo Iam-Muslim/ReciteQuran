@@ -13,16 +13,26 @@ class _DpOutcome {
   final double bestCost;
   final double normDist;
   final int maxJReached;
-  
-  _DpOutcome(this.bestI, this.bestJ, this.jStart, this.bestCost, this.normDist, this.maxJReached);
+
+  _DpOutcome(
+    this.bestI,
+    this.bestJ,
+    this.jStart,
+    this.bestCost,
+    this.normDist,
+    this.maxJReached,
+  );
 }
 
 class PhoneticWordTracker {
   final List<String> expectedPhonemes;
 
   final double matchThreshold;
+  final double relaxedMatchThreshold;
   final int lookAheadWords;
   final int lookBackWords;
+  final int retryLookAheadWords;
+  final int retryLookBackWords;
   final bool isTajweedEnabled;
 
   final List<WordMatchStatus> statuses;
@@ -38,13 +48,17 @@ class PhoneticWordTracker {
   int _asrCursor = 0;
 
   String _accumNorm = '';
+  String _accumRaw = '';
   bool _isFirstMatch = true;
 
   PhoneticWordTracker({
     required this.expectedPhonemes,
     this.matchThreshold = 0.25,
+    this.relaxedMatchThreshold = 0.35,
     this.lookAheadWords = 10,
     this.lookBackWords = 30,
+    this.retryLookAheadWords = 40,
+    this.retryLookBackWords = 30,
     this.isTajweedEnabled = false,
   }) : statuses = List<WordMatchStatus>.filled(
          expectedPhonemes.length,
@@ -52,7 +66,9 @@ class PhoneticWordTracker {
        ),
        errors = List<List<ReciterError>?>.filled(expectedPhonemes.length, null),
        _rawExpected = expectedPhonemes,
-       _normalizedExpected = expectedPhonemes.map(QuranNormalizer.normalizeWithTashkeel).toList(),
+       _normalizedExpected = expectedPhonemes
+           .map(QuranNormalizer.normalizeWithTashkeel)
+           .toList(),
        _flatR = [],
        _rPhoneToWord = [] {
     for (int w = 0; w < _normalizedExpected.length; w++) {
@@ -69,11 +85,21 @@ class PhoneticWordTracker {
 
   double _getSubCost(int c1, int c2) {
     if (c1 == c2) return 0.0;
-    
+
     int minC = c1 < c2 ? c1 : c2;
     int maxC = c1 > c2 ? c1 : c2;
 
-    const alifs = [0x0627, 0x0649, 0x0648, 0x0624, 0x0626, 0x0622, 0x0623, 0x0625, 0x0621];
+    const alifs = [
+      0x0627,
+      0x0649,
+      0x0648,
+      0x0624,
+      0x0626,
+      0x0622,
+      0x0623,
+      0x0625,
+      0x0621,
+    ];
     if (alifs.contains(minC) && alifs.contains(maxC)) return 0.25;
 
     if (minC == 0x0629 && maxC == 0x062A) return 0.25;
@@ -102,7 +128,7 @@ class PhoneticWordTracker {
     int m = P.length;
     int n = R.length;
     final double INF = double.infinity;
-    
+
     if (m == 0 || n == 0) return _DpOutcome(null, null, null, INF, INF, 0);
 
     Set<int> wordStarts = {};
@@ -111,7 +137,8 @@ class PhoneticWordTracker {
       if (j == 0 || (j < n && rPhoneToWord[j] != rPhoneToWord[j - 1])) {
         wordStarts.add(j);
       }
-      if (j == n || (j > 0 && j < n && rPhoneToWord[j] != rPhoneToWord[j - 1])) {
+      if (j == n ||
+          (j > 0 && j < n && rPhoneToWord[j] != rPhoneToWord[j - 1])) {
         wordEnds.add(j);
       }
     }
@@ -121,10 +148,22 @@ class PhoneticWordTracker {
     double wrapSpanWeight = 0.1;
     int BIG_W = 999999;
 
-    var dp = List.generate(m + 1, (_) => List.generate(K + 1, (_) => List.filled(n + 1, INF)));
-    var startArr = List.generate(m + 1, (_) => List.generate(K + 1, (_) => List.filled(n + 1, -1)));
-    var maxJArr = List.generate(m + 1, (_) => List.generate(K + 1, (_) => List.filled(n + 1, -1)));
-    var minWArr = List.generate(m + 1, (_) => List.generate(K + 1, (_) => List.filled(n + 1, BIG_W)));
+    var dp = List.generate(
+      m + 1,
+      (_) => List.generate(K + 1, (_) => List.filled(n + 1, INF)),
+    );
+    var startArr = List.generate(
+      m + 1,
+      (_) => List.generate(K + 1, (_) => List.filled(n + 1, -1)),
+    );
+    var maxJArr = List.generate(
+      m + 1,
+      (_) => List.generate(K + 1, (_) => List.filled(n + 1, -1)),
+    );
+    var minWArr = List.generate(
+      m + 1,
+      (_) => List.generate(K + 1, (_) => List.filled(n + 1, BIG_W)),
+    );
 
     for (int j in wordStarts) {
       dp[0][0][j] = 0.0;
@@ -153,7 +192,9 @@ class PhoneticWordTracker {
         for (int j = 1; j <= n; j++) {
           double delOpt = dp[i - 1][k][j] < INF ? dp[i - 1][k][j] + 1.0 : INF;
           double insOpt = dp[i][k][j - 1] < INF ? dp[i][k][j - 1] + 1.0 : INF;
-          double subOpt = dp[i - 1][k][j - 1] < INF ? dp[i - 1][k][j - 1] + _getSubCost(P[i - 1], R[j - 1]) : INF;
+          double subOpt = dp[i - 1][k][j - 1] < INF
+              ? dp[i - 1][k][j - 1] + _getSubCost(P[i - 1], R[j - 1])
+              : INF;
 
           double best = subOpt;
           if (delOpt < best) best = delOpt;
@@ -183,24 +224,30 @@ class PhoneticWordTracker {
         for (int jEnd in wordEnds) {
           if (dp[i][k][jEnd] >= INF) continue;
           double costAtEnd = dp[i][k][jEnd];
-          
+
           for (int jS in wordStarts) {
             if (jS >= jEnd) continue;
-            
+
             int wordSpan = (rPhoneToWord[jEnd - 1] - rPhoneToWord[jS]).abs();
-            double newCost = costAtEnd + wrapPenalty + (wrapSpanWeight * wordSpan);
-            
+            double newCost =
+                costAtEnd + wrapPenalty + (wrapSpanWeight * wordSpan);
+
             if (newCost < dp[i][k + 1][jS]) {
               dp[i][k + 1][jS] = newCost;
               startArr[i][k + 1][jS] = startArr[i][k][jEnd];
               maxJArr[i][k + 1][jS] = max(maxJArr[i][k][jEnd], jEnd);
-              minWArr[i][k + 1][jS] = min(minWArr[i][k][jEnd], rPhoneToWord[jS]);
+              minWArr[i][k + 1][jS] = min(
+                minWArr[i][k][jEnd],
+                rPhoneToWord[jS],
+              );
             }
           }
         }
 
         for (int j = 1; j <= n; j++) {
-          double insOpt = dp[i][k + 1][j - 1] < INF ? dp[i][k + 1][j - 1] + 1.0 : INF;
+          double insOpt = dp[i][k + 1][j - 1] < INF
+              ? dp[i][k + 1][j - 1] + 1.0
+              : INF;
           if (insOpt < dp[i][k + 1][j]) {
             dp[i][k + 1][j] = insOpt;
             startArr[i][k + 1][j] = startArr[i][k + 1][j - 1];
@@ -221,21 +268,22 @@ class PhoneticWordTracker {
         double dist = dp[m][k][j];
         int jS = startArr[m][k][j];
         if (jS < 0) continue;
-        
+
         int mj = maxJArr[m][k][j];
         int refLen = max(mj, j) - jS;
         if (refLen <= 0) continue;
         int denom = max(m, refLen);
         if (denom < 1) denom = 1;
 
-        double pc = dist - (k * wrapPenalty); // matching qua_sdk additive default
+        double pc =
+            dist - (k * wrapPenalty); // matching qua_sdk additive default
         double nd = pc / denom;
 
         int sw = jS < n ? rPhoneToWord[jS] : rPhoneToWord[j - 1];
         int mw = minWArr[m][k][j];
         int effSw = mw < BIG_W ? min(sw, mw) : sw;
         double prior = priorWeight * (effSw - expectedWord).abs();
-        
+
         double score = nd + prior;
 
         if (score < bestScore) {
@@ -250,7 +298,14 @@ class PhoneticWordTracker {
       }
     }
 
-    return _DpOutcome(bestI, bestJ, bestJStart, bestCostVal, bestNorm, bestMaxJ);
+    return _DpOutcome(
+      bestI,
+      bestJ,
+      bestJStart,
+      bestCostVal,
+      bestNorm,
+      bestMaxJ,
+    );
   }
 
   bool feed(String asrText, {bool isEndpoint = false}) {
@@ -260,8 +315,10 @@ class PhoneticWordTracker {
 
     if (normNew.length < _accumNorm.length) {
       _accumNorm = KmpStitcher.mergeText(_accumNorm, normNew);
+      _accumRaw = KmpStitcher.mergeText(_accumRaw, asrText);
     } else {
       _accumNorm = normNew;
+      _accumRaw = asrText;
     }
     String activeChunk = _accumNorm.substring(_asrCursor);
 
@@ -279,64 +336,184 @@ class PhoneticWordTracker {
       int estWords = max(1, (P.length / 5.0).round());
       int winStart = max(0, _wordCursor - lookBackWords);
       int maxLookahead = lookAheadWords;
-      int winEnd = min(expectedPhonemes.length, _wordCursor + estWords + maxLookahead);
+      int winEnd = min(
+        expectedPhonemes.length,
+        _wordCursor + estWords + maxLookahead,
+      );
 
       if (winStart < expectedPhonemes.length) {
+        List<int> R = [];
+        List<int> rPhoneToWordLocal = [];
 
-      List<int> R = [];
-      List<int> rPhoneToWordLocal = [];
-
-      for (int i = 0; i < _rPhoneToWord.length; i++) {
-        if (_rPhoneToWord[i] >= winStart && _rPhoneToWord[i] < winEnd) {
-          R.add(_flatR[i]);
-          rPhoneToWordLocal.add(_rPhoneToWord[i]);
-        }
-      }
-
-      if (R.isNotEmpty) {
-
-      double priorWeight = 0.005;
-      int maxWraps = 1;
-      
-      print('[Tracker] ----- NEW DP EVALUATION -----');
-      print('[Tracker] Cursor: $_wordCursor | Window: $winStart to ${winEnd - 1}');
-      print('[Tracker] Audio (P): ${String.fromCharCodes(P)}');
-      print('[Tracker] Expected (R): ${String.fromCharCodes(R)}');
-
-      _DpOutcome match = _alignWraparound3D(P, R, rPhoneToWordLocal, _wordCursor, priorWeight, maxWraps);
-
-      print('[Tracker] DP Outcome: bestI=${match.bestI}, bestJ=${match.bestJ}, normDist=${match.normDist.toStringAsFixed(3)} (Threshold: $matchThreshold)');
-
-      if (match.bestI != null && match.bestJ != null && match.normDist <= matchThreshold) {
-        
-        int startWord = rPhoneToWordLocal[match.jStart!];
-        int endWord = rPhoneToWordLocal[match.bestJ! - 1];
-        if (match.maxJReached > match.bestJ!) {
-          endWord = rPhoneToWordLocal[match.maxJReached - 1];
-        }
-        
-        print('[Tracker] -> COMMIT: Matched words $startWord to $endWord');
-
-        if (!_isFirstMatch && startWord > _wordCursor) {
-          print('[Tracker] -> SKIP DETECTED: words $_wordCursor to ${startWord - 1} missing.');
-          for (int skipped = _wordCursor; skipped < startWord; skipped++) {
-            statuses[skipped] = WordMatchStatus.skipped;
-            errors[skipped] = [
-              ReciterError(
-                errorType: ErrorCategory.normal,
-                speechErrorType: SpeechErrorType.delete,
-                expectedPh: _rawExpected[skipped],
-                predictedPh: '',
-              ),
-            ];
+        for (int i = 0; i < _rPhoneToWord.length; i++) {
+          if (_rPhoneToWord[i] >= winStart && _rPhoneToWord[i] < winEnd) {
+            R.add(_flatR[i]);
+            rPhoneToWordLocal.add(_rPhoneToWord[i]);
           }
         }
-        _isFirstMatch = false;
 
-        for (int w = startWord; w <= endWord; w++) {
-          statuses[w] = WordMatchStatus.correct;
-          errors[w] = [];
-        }
+        if (R.isNotEmpty) {
+          double priorWeight = 0.005;
+          int maxWraps = 1;
+
+          print('[Tracker] ----- NEW DP EVALUATION -----');
+          print(
+            '[Tracker] Cursor: $_wordCursor | Window: $winStart to ${winEnd - 1}',
+          );
+          print('[Tracker] Audio (P): ${String.fromCharCodes(P)}');
+          print('[Tracker] Expected (R): ${String.fromCharCodes(R)}');
+
+          _DpOutcome match = _alignWraparound3D(
+            P,
+            R,
+            rPhoneToWordLocal,
+            _wordCursor,
+            priorWeight,
+            maxWraps,
+          );
+
+          print(
+            '[Tracker] DP Outcome: bestI=${match.bestI}, bestJ=${match.bestJ}, normDist=${match.normDist.toStringAsFixed(3)} (Threshold: $matchThreshold)',
+          );
+
+          bool isMatchSuccessful =
+              match.bestI != null &&
+              match.bestJ != null &&
+              match.normDist <= matchThreshold;
+
+          bool isStuck = isEndpoint || P.length > 15;
+
+          if (!isMatchSuccessful && isStuck) {
+            print(
+              '[Tracker] -> FAIL: Initial match failed (isEndpoint=$isEndpoint, P.length=${P.length}). Triggering Relaxed Retry.',
+            );
+            int retryWinStart = max(0, _wordCursor - retryLookBackWords);
+            int retryWinEnd = min(
+              expectedPhonemes.length,
+              _wordCursor + estWords + retryLookAheadWords,
+            );
+
+            List<int> retryR = [];
+            List<int> retryRPhoneToWordLocal = [];
+            for (int i = 0; i < _rPhoneToWord.length; i++) {
+              if (_rPhoneToWord[i] >= retryWinStart &&
+                  _rPhoneToWord[i] < retryWinEnd) {
+                retryR.add(_flatR[i]);
+                retryRPhoneToWordLocal.add(_rPhoneToWord[i]);
+              }
+            }
+
+            if (retryR.isNotEmpty) {
+              match = _alignWraparound3D(
+                P,
+                retryR,
+                retryRPhoneToWordLocal,
+                _wordCursor,
+                priorWeight,
+                maxWraps,
+              );
+
+              if (match.bestI != null &&
+                  match.bestJ != null &&
+                  match.normDist <= relaxedMatchThreshold) {
+                print(
+                  '[Tracker] -> RETRY SUCCESS: normDist=${match.normDist.toStringAsFixed(3)} (Threshold: $relaxedMatchThreshold)',
+                );
+                R = retryR;
+                rPhoneToWordLocal = retryRPhoneToWordLocal;
+                isMatchSuccessful = true;
+              } else {
+                print(
+                  '[Tracker] -> RETRY FAIL: Score too high or missing bounds even with relaxed checking.',
+                );
+              }
+            }
+          } else if (!isMatchSuccessful) {
+            // Just a partial failure in streaming; wait for more audio
+          }
+
+          if (isMatchSuccessful) {
+            int startWord = rPhoneToWordLocal[match.jStart!];
+            int endWord = rPhoneToWordLocal[match.bestJ! - 1];
+            if (match.maxJReached > match.bestJ!) {
+              endWord = rPhoneToWordLocal[match.maxJReached - 1];
+            }
+
+            bool isLastWord = endWord == expectedPhonemes.length - 1;
+            bool hasExactTail = false;
+
+            if (isLastWord && P.isNotEmpty && R.isNotEmpty) {
+              int lastWordStartIdx = R.length - 1;
+              while (lastWordStartIdx > 0 &&
+                  rPhoneToWordLocal[lastWordStartIdx - 1] == endWord) {
+                lastWordStartIdx--;
+              }
+
+              int lastWordLength = R.length - lastWordStartIdx;
+              int tailLen = min(3, lastWordLength);
+              List<int> expectedTail = R.sublist(R.length - tailLen);
+
+              // Lookback increased to 15 to handle deep Madd (e.g. 10+ repeated vowels like ييييييي)
+              int lookback = min(expectedTail.length + 15, P.length);
+              int pIdx = P.length - 1;
+              int matchCount = 0;
+
+              for (int i = expectedTail.length - 1; i >= 0; i--) {
+                int expectedChar = expectedTail[i];
+                bool found = false;
+                while (pIdx >= P.length - lookback && pIdx >= 0) {
+                  if (_getSubCost(P[pIdx], expectedChar) < 0.5) {
+                    found = true;
+                    pIdx--;
+                    matchCount++;
+                    break;
+                  }
+                  pIdx--;
+                }
+                if (!found) break;
+              }
+
+              if (matchCount == expectedTail.length) {
+                hasExactTail = true;
+              }
+            }
+
+            bool forceCommit = isEndpoint || P.length > R.length + 12;
+
+            if (isLastWord && !hasExactTail && !forceCommit) {
+              print(
+                '[Tracker] -> DELAY: Waiting for full final word sequence or timeout.',
+              );
+              endWord--;
+              if (endWord < startWord) {
+                return false;
+              }
+            }
+
+            print('[Tracker] -> COMMIT: Matched words $startWord to $endWord');
+
+            if (!_isFirstMatch && startWord > _wordCursor) {
+              print(
+                '[Tracker] -> SKIP DETECTED: words $_wordCursor to ${startWord - 1} missing.',
+              );
+              for (int skipped = _wordCursor; skipped < startWord; skipped++) {
+                statuses[skipped] = WordMatchStatus.skipped;
+                errors[skipped] = [
+                  ReciterError(
+                    errorType: ErrorCategory.normal,
+                    speechErrorType: SpeechErrorType.delete,
+                    expectedPh: _rawExpected[skipped],
+                    predictedPh: '',
+                  ),
+                ];
+              }
+            }
+            _isFirstMatch = false;
+
+            for (int w = startWord; w <= endWord; w++) {
+              statuses[w] = WordMatchStatus.correct;
+              errors[w] = [];
+            }
 
             // No slicing: P represents the full segment, mirroring qua_sdk.
             // We only update the word cursor so the UI updates and the lookahead advances.
@@ -344,8 +521,6 @@ class PhoneticWordTracker {
               _wordCursor = endWord + 1;
               changed = true;
             }
-          } else {
-            print('[Tracker] -> FAIL: Score too high or missing bounds.');
           }
         }
       }
@@ -354,7 +529,10 @@ class PhoneticWordTracker {
     return changed;
   }
 
+  List<List<ReciterError>?> get errorsList => errors;
+
   String get accumulatedNormText => _accumNorm;
+  String get accumulatedRawText => _accumRaw;
 
   void clearActiveAudio() {
     if (_asrCursor <= _accumNorm.length) {
@@ -405,7 +583,7 @@ class KmpStitcher {
     String tail = baseText.substring(baseText.length - maxOverlap);
 
     List<int> pi = computePrefixFunction(nextText);
-    int state = 0; 
+    int state = 0;
 
     for (int i = 0; i < tail.length; i++) {
       int charCode = tail.codeUnitAt(i);

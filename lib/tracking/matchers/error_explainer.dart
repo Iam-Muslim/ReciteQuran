@@ -121,34 +121,7 @@ class ErrorExplainer {
     return alignments.reversed.toList();
   }
 
-  static List<String> _applyCtcCollapse(List<String> rawChunks) {
-    if (rawChunks.isEmpty) return [];
-    List<String> collapsed = [];
-    String lastChunk = '';
-    
-    // Characters that denote length/vowels in our phonetic system
-    final vowels = {'ا', 'و', 'ي', 'ۥ', 'ۦ', 'ى', 'ں', 'م', 'ن'};
-    
-    for (var chunk in rawChunks) {
-      if (chunk.isEmpty) continue;
-      
-      if (chunk == lastChunk) {
-        String baseChar = chunk[0];
-        // If it's a pure vowel/length character, we append to measure total length
-        if (vowels.contains(baseChar) && chunk.length == 1) {
-          collapsed[collapsed.length - 1] += baseChar;
-        } 
-        // Else: It's a repeated consonant with the same harakat (e.g. شَ شَ), squash it (do nothing)
-      } else {
-        collapsed.add(chunk);
-        lastChunk = chunk;
-      }
-    }
-    return collapsed;
-  }
-
   /// Explains errors between a full expected Ayah and a full predicted Ayah string.
-  /// Works at the global level and uses CTC collapse to prevent frame-noise false positives.
   static Map<int, List<ReciterError>> explainAyahError(
     String expectedAyahPh,
     String predictedAyahPh,
@@ -170,13 +143,13 @@ class ErrorExplainer {
     expectedAyahPh = expectedAyahPh.replaceAll(' ', '');
     predictedAyahPh = predictedAyahPh.replaceAll(' ', '');
 
-    final refRawChunks = QuranNormalizer.chunkPhonemes(expectedAyahPh);
-    final predRawChunks = QuranNormalizer.chunkPhonemes(predictedAyahPh);
+    final refGroups = QuranNormalizer.chunkPhonemes(expectedAyahPh);
+    final predGroups = QuranNormalizer.chunkPhonemes(predictedAyahPh);
 
     // Map each raw chunk to its word index
-    List<int> rawChunkToWord = [];
+    List<int> refGroupToWord = [];
     int charCursor = 0;
-    for (var chunk in refRawChunks) {
+    for (var chunk in refGroups) {
       int wIdx = 0;
       for (int i = 0; i < phonemeWords.length; i++) {
         if (charCursor >= wordBoundaries[i] && charCursor < wordBoundaries[i+1]) {
@@ -184,37 +157,12 @@ class ErrorExplainer {
           break;
         }
       }
-      rawChunkToWord.add(wIdx);
+      refGroupToWord.add(wIdx);
       charCursor += chunk.length;
     }
 
-    // 2. Apply CTC Collapse while preserving mappings
-    List<String> refGroups = [];
-    List<int> refGroupToWord = [];
-    String lastRefChunk = '';
-    
-    final vowels = {'ا', 'و', 'ي', 'ۥ', 'ۦ', 'ى', 'ں', 'م', 'ن'};
-    
-    for (int i = 0; i < refRawChunks.length; i++) {
-      var chunk = refRawChunks[i];
-      if (chunk.isEmpty) continue;
-      
-      if (chunk == lastRefChunk) {
-        String baseChar = chunk[0];
-        if (vowels.contains(baseChar) && chunk.length == 1) {
-          refGroups[refGroups.length - 1] += baseChar;
-        }
-      } else {
-        refGroups.add(chunk);
-        refGroupToWord.add(rawChunkToWord[i]);
-        lastRefChunk = chunk;
-      }
-    }
-    
-    final predGroups = _applyCtcCollapse(predRawChunks);
-
-    print('[ErrorExplainer] CTC Collapsed Reference Groups: $refGroups');
-    print('[ErrorExplainer] CTC Collapsed Predicted Groups: $predGroups');
+    print('[ErrorExplainer] Reference Groups: $refGroups');
+    print('[ErrorExplainer] Predicted Groups: $predGroups');
 
     // 3. Align Groups
     final alignments = _alignPhonemeGroups(refGroups, predGroups);
