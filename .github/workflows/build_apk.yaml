@@ -47,18 +47,13 @@ jobs:
         run: flutter pub get
 
       # --- DOWNLOAD ONNX MODEL ---
-      # This creates the directory structure and fetches the asset from the remote release
+      # This creates the directory structure and fetches the asset from Hugging Face
       - name: Create assets directory
         run: mkdir -p assets/model
 
-      - name: Download ONNX Model
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download ONNX Model from Hugging Face
         run: |
-          gh release download v0.1.0 \
-            --repo yazinsai/offline-tarteel \
-            --pattern "fastconformer_ar_ctc_q8.onnx" \
-            --dir assets/model
+          curl -L -o assets/model/quran_phoneme_zipformer.int8.onnx https://huggingface.co/Muno459/zipformer_p-quran/resolve/main/quran_phoneme_zipformer.int8.onnx
 
       # --- BUILD STEP ---
       # Generates separate, lightweight APKs per architecture using the updated build.gradle.kts
