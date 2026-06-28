@@ -192,12 +192,6 @@ class _VerseRowState extends State<VerseRow> {
     if (widget.controller.isWordRed(widget.verse.ayah, cIdx)) return c.red;
     if (widget.controller.isWordYellow(widget.verse.ayah, cIdx)) return Colors.orange; // Tajweed/Tashkeel warning color
     
-    final activeMatch = widget.controller.currentMatchedVerse;
-    if (activeMatch != null && activeMatch.verse.surah == widget.verse.surah && activeMatch.verse.ayah == widget.verse.ayah) {
-      if (widget.controller.activeWordIndex == cIdx) {
-        return c.currentWord;
-      }
-    }
 
     return c.text;
   }

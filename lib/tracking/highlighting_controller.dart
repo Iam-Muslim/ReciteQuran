@@ -106,7 +106,7 @@ class HighlightingController extends ChangeNotifier {
   // ── Per-ayah word tracker (quran-transcript PhoneticWordTracker) ──────────
   PhoneticWordTracker? _wordTracker;
 
-  bool _ignoreUntilBufferReset = false;
+  int _lastResetTime = 0;
   int? _pendingClearAyah;
 
   HighlightingController({
@@ -216,9 +216,9 @@ class HighlightingController extends ChangeNotifier {
     if (verse != null) {
       _currentMatch = VerseMatch(verse: verse, score: 1.0);
       activeAyah.value = ayah;
-      _ignoreUntilBufferReset = true;
       _resetWordTracker(verse);
       _engine.resetBuffer();
+      _lastResetTime = DateTime.now().millisecondsSinceEpoch;
       _pendingClearAyah = ayah;
       onAyahChanged?.call();
       notifyListeners();
@@ -247,6 +247,7 @@ class HighlightingController extends ChangeNotifier {
       _resetWordTracker(_currentMatch!.verse);
     }
     _engine.resetBuffer();
+    _lastResetTime = DateTime.now().millisecondsSinceEpoch;
     onAyahChanged?.call();
     notifyListeners();
   }
@@ -263,6 +264,9 @@ class HighlightingController extends ChangeNotifier {
       clearHighlightsFromAyah(_pendingClearAyah!);
       _pendingClearAyah = null;
     }
+    _wordTracker?.clearActiveAudio();
+    _engine.resetBuffer();
+    _lastResetTime = DateTime.now().millisecondsSinceEpoch;
     notifyListeners();
   }
 
@@ -285,8 +289,9 @@ class HighlightingController extends ChangeNotifier {
     _state = TrackerState.tracking;
     _currentMatch = VerseMatch(verse: verse, score: 1.0);
     activeAyah.value = verse.ayah;
-    _ignoreUntilBufferReset = true;
     _resetWordTracker(verse);
+    _engine.resetBuffer();
+    _lastResetTime = DateTime.now().millisecondsSinceEpoch;
     notifyListeners();
   }
 
@@ -297,10 +302,6 @@ class HighlightingController extends ChangeNotifier {
     _wordTracker = PhoneticWordTracker(
       expectedPhonemes: verse.phonemeWords,
       isTajweedEnabled: AppState.instance.currentMode == AppMode.tajweed,
-      strictTracking: AppState.instance.matchingDifficulty == MatchingDifficulty.hard,
-      matchThreshold: 0.5, // quran-transcript default acceptance_ratio
-      lookAheadWords: 4,
-      isLookaheadEnabled: AppState.instance.isLookaheadEnabled,
     );
   }
 
@@ -315,13 +316,9 @@ class HighlightingController extends ChangeNotifier {
     final String asrText = result.text.trim();
     debugRecognizedText.value = asrText;
 
-    if (_ignoreUntilBufferReset) {
-      // If the engine hasn't processed the resetBuffer() call yet, ignore old long streams
-      if (asrText.length < 5 || asrText.isEmpty) {
-        _ignoreUntilBufferReset = false;
-      } else {
-        return;
-      }
+    if (result.startTime < _lastResetTime) {
+      // Drop stale results from before the ASR was reset
+      return;
     }
 
     if (asrText.isEmpty) return;
@@ -413,8 +410,6 @@ class HighlightingController extends ChangeNotifier {
       final nextVerse = repository.getNextVerse(_targetSurah, targetAyah.ayah);
       if (nextVerse != null) {
         forceActiveAyah(nextVerse);
-        // Reset ASR buffer so the next ayah starts fresh
-        _engine.resetBuffer();
       } else {
         // End of surah
         finalize();

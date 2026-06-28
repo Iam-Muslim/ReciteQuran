@@ -12,8 +12,9 @@ class _DpOutcome {
   final int? jStart;
   final double bestCost;
   final double normDist;
+  final int maxJReached;
   
-  _DpOutcome(this.bestI, this.bestJ, this.jStart, this.bestCost, this.normDist);
+  _DpOutcome(this.bestI, this.bestJ, this.jStart, this.bestCost, this.normDist, this.maxJReached);
 }
 
 class PhoneticWordTracker {
@@ -22,15 +23,13 @@ class PhoneticWordTracker {
   final double matchThreshold;
   final int lookAheadWords;
   final int lookBackWords;
-  final bool strictTracking;
   final bool isTajweedEnabled;
-  final bool isLookaheadEnabled;
 
   final List<WordMatchStatus> statuses;
   final List<List<ReciterError>?> errors;
 
   final List<String> _rawExpected;
-  final List<String> _bareExpectedWithoutAl;
+  final List<String> _normalizedExpected;
 
   final List<int> _flatR;
   final List<int> _rPhoneToWord;
@@ -43,23 +42,21 @@ class PhoneticWordTracker {
 
   PhoneticWordTracker({
     required this.expectedPhonemes,
-    this.matchThreshold = 0.65,
-    this.lookAheadWords = 3,
-    this.lookBackWords = 1,
-    this.strictTracking = false,
+    this.matchThreshold = 0.25,
+    this.lookAheadWords = 10,
+    this.lookBackWords = 30,
     this.isTajweedEnabled = false,
-    this.isLookaheadEnabled = true,
   }) : statuses = List<WordMatchStatus>.filled(
          expectedPhonemes.length,
          WordMatchStatus.pending,
        ),
        errors = List<List<ReciterError>?>.filled(expectedPhonemes.length, null),
        _rawExpected = expectedPhonemes,
-       _bareExpectedWithoutAl = expectedPhonemes.map(QuranNormalizer.normalizeWithTashkeel).map(QuranNormalizer.normalizeBare).toList(),
+       _normalizedExpected = expectedPhonemes.map(QuranNormalizer.normalizeWithTashkeel).toList(),
        _flatR = [],
        _rPhoneToWord = [] {
-    for (int w = 0; w < _bareExpectedWithoutAl.length; w++) {
-      String word = _bareExpectedWithoutAl[w];
+    for (int w = 0; w < _normalizedExpected.length; w++) {
+      String word = _normalizedExpected[w];
       for (int i = 0; i < word.length; i++) {
         _flatR.add(word.codeUnitAt(i));
         _rPhoneToWord.add(w);
@@ -106,7 +103,7 @@ class PhoneticWordTracker {
     int n = R.length;
     final double INF = double.infinity;
     
-    if (m == 0 || n == 0) return _DpOutcome(null, null, null, INF, INF);
+    if (m == 0 || n == 0) return _DpOutcome(null, null, null, INF, INF, 0);
 
     Set<int> wordStarts = {};
     Set<int> wordEnds = {};
@@ -120,16 +117,20 @@ class PhoneticWordTracker {
     }
 
     int K = maxWraps;
-    double wrapPenalty = 2.0;
+    double wrapPenalty = 3.5;
+    double wrapSpanWeight = 0.1;
+    int BIG_W = 999999;
 
     var dp = List.generate(m + 1, (_) => List.generate(K + 1, (_) => List.filled(n + 1, INF)));
     var startArr = List.generate(m + 1, (_) => List.generate(K + 1, (_) => List.filled(n + 1, -1)));
     var maxJArr = List.generate(m + 1, (_) => List.generate(K + 1, (_) => List.filled(n + 1, -1)));
+    var minWArr = List.generate(m + 1, (_) => List.generate(K + 1, (_) => List.filled(n + 1, BIG_W)));
 
     for (int j in wordStarts) {
       dp[0][0][j] = 0.0;
       startArr[0][0][j] = j;
       maxJArr[0][0][j] = j;
+      minWArr[0][0][j] = j < n ? rPhoneToWord[j] : BIG_W;
     }
 
     double bestScore = INF;
@@ -138,6 +139,7 @@ class PhoneticWordTracker {
     int? bestJStart;
     double bestCostVal = INF;
     double bestNorm = INF;
+    int bestMaxJ = 0;
 
     for (int i = 1; i <= m; i++) {
       for (int k = 0; k <= K; k++) {
@@ -145,6 +147,7 @@ class PhoneticWordTracker {
           dp[i][k][0] = i * 1.0;
           startArr[i][k][0] = 0;
           maxJArr[i][k][0] = 0;
+          minWArr[i][k][0] = minWArr[i - 1][k][0];
         }
 
         for (int j = 1; j <= n; j++) {
@@ -158,15 +161,19 @@ class PhoneticWordTracker {
 
           if (best < INF) {
             dp[i][k][j] = best;
+            int wJ = j > 0 ? rPhoneToWord[j - 1] : BIG_W;
             if (best == subOpt) {
               startArr[i][k][j] = startArr[i - 1][k][j - 1];
               maxJArr[i][k][j] = max(maxJArr[i - 1][k][j - 1], j);
+              minWArr[i][k][j] = min(minWArr[i - 1][k][j - 1], wJ);
             } else if (best == delOpt) {
               startArr[i][k][j] = startArr[i - 1][k][j];
               maxJArr[i][k][j] = maxJArr[i - 1][k][j];
+              minWArr[i][k][j] = minWArr[i - 1][k][j];
             } else {
               startArr[i][k][j] = startArr[i][k][j - 1];
               maxJArr[i][k][j] = max(maxJArr[i][k][j - 1], j);
+              minWArr[i][k][j] = min(minWArr[i][k][j - 1], wJ);
             }
           }
         }
@@ -181,12 +188,13 @@ class PhoneticWordTracker {
             if (jS >= jEnd) continue;
             
             int wordSpan = (rPhoneToWord[jEnd - 1] - rPhoneToWord[jS]).abs();
-            double newCost = costAtEnd + wrapPenalty + (0.1 * wordSpan);
+            double newCost = costAtEnd + wrapPenalty + (wrapSpanWeight * wordSpan);
             
             if (newCost < dp[i][k + 1][jS]) {
               dp[i][k + 1][jS] = newCost;
               startArr[i][k + 1][jS] = startArr[i][k][jEnd];
               maxJArr[i][k + 1][jS] = max(maxJArr[i][k][jEnd], jEnd);
+              minWArr[i][k + 1][jS] = min(minWArr[i][k][jEnd], rPhoneToWord[jS]);
             }
           }
         }
@@ -197,56 +205,52 @@ class PhoneticWordTracker {
             dp[i][k + 1][j] = insOpt;
             startArr[i][k + 1][j] = startArr[i][k + 1][j - 1];
             maxJArr[i][k + 1][j] = max(maxJArr[i][k + 1][j - 1], j);
+            int wJ = j > 0 ? rPhoneToWord[j - 1] : BIG_W;
+            minWArr[i][k + 1][j] = min(minWArr[i][k + 1][j - 1], wJ);
           }
         }
       }
+    } // End of i loop
 
-      for (int k = 0; k <= K; k++) {
-        for (int j = 1; j <= n; j++) {
-          if (!wordEnds.contains(j)) continue;
-          if (dp[i][k][j] >= INF) continue;
+    // Best-match selection
+    for (int k = 0; k <= K; k++) {
+      for (int j = 1; j <= n; j++) {
+        if (!wordEnds.contains(j)) continue;
+        if (dp[m][k][j] >= INF) continue;
 
-          double dist = dp[i][k][j];
-          int jS = startArr[i][k][j];
-          if (jS < 0) continue;
-          
-          int mj = maxJArr[i][k][j];
-          int refLen = max(mj, j) - jS;
-          if (refLen <= 0) continue;
-          
-          int denom = max(i, refLen);
-          if (denom < 1) denom = 1;
+        double dist = dp[m][k][j];
+        int jS = startArr[m][k][j];
+        if (jS < 0) continue;
+        
+        int mj = maxJArr[m][k][j];
+        int refLen = max(mj, j) - jS;
+        if (refLen <= 0) continue;
+        int denom = max(m, refLen);
+        if (denom < 1) denom = 1;
 
-          double pc = dist - (k * wrapPenalty);
-          double nd = pc / denom;
+        double pc = dist - (k * wrapPenalty); // matching qua_sdk additive default
+        double nd = pc / denom;
 
-          if (strictTracking && nd > 0.0) continue;
+        int sw = jS < n ? rPhoneToWord[jS] : rPhoneToWord[j - 1];
+        int mw = minWArr[m][k][j];
+        int effSw = mw < BIG_W ? min(sw, mw) : sw;
+        double prior = priorWeight * (effSw - expectedWord).abs();
+        
+        double score = nd + prior;
 
-          int sw = jS < n ? rPhoneToWord[jS] : rPhoneToWord[j - 1];
-          double prior = priorWeight * (sw - expectedWord).abs();
-          double score = nd + prior + (k * 0.01);
-
-          if (score < bestScore) {
-            bestScore = score;
-            bestI = i;
-            bestJ = j;
-            bestJStart = jS;
-            bestCostVal = dist;
-            bestNorm = nd;
-          } else if (score == bestScore) {
-            if (i > (bestI ?? 0)) {
-               bestI = i;
-               bestJ = j;
-               bestJStart = jS;
-               bestCostVal = dist;
-               bestNorm = nd;
-            }
-          }
+        if (score < bestScore) {
+          bestScore = score;
+          bestI = m;
+          bestJ = j;
+          bestJStart = jS;
+          bestCostVal = dist;
+          bestNorm = nd;
+          bestMaxJ = mj;
         }
       }
     }
 
-    return _DpOutcome(bestI, bestJ, bestJStart, bestCostVal, bestNorm);
+    return _DpOutcome(bestI, bestJ, bestJStart, bestCostVal, bestNorm, bestMaxJ);
   }
 
   bool feed(String asrText, {bool isEndpoint = false}) {
@@ -267,30 +271,17 @@ class PhoneticWordTracker {
       activeChunk = _accumNorm.substring(_asrCursor);
     }
 
-    Int32List bareToRawIndex = Int32List(activeChunk.length);
-    Int32List bareChars = Int32List(activeChunk.length);
-    int bareLen = 0;
-    
-    for (int i = 0; i < activeChunk.length; i++) {
-      int code = activeChunk.codeUnitAt(i);
-      if (code != 0x064E && code != 0x064F && code != 0x0650) {
-        bareChars[bareLen] = code;
-        bareToRawIndex[bareLen] = i;
-        bareLen++;
-      }
-    }
-    
-    List<int> P = List<int>.generate(bareLen, (i) => bareChars[i]);
+    List<int> P = activeChunk.codeUnits.toList();
 
     bool changed = false;
 
-    while (_wordCursor < expectedPhonemes.length && P.isNotEmpty) {
+    if (_wordCursor < expectedPhonemes.length && P.isNotEmpty) {
       int estWords = max(1, (P.length / 5.0).round());
       int winStart = max(0, _wordCursor - lookBackWords);
-      int maxLookahead = isLookaheadEnabled ? lookAheadWords : 0;
+      int maxLookahead = lookAheadWords;
       int winEnd = min(expectedPhonemes.length, _wordCursor + estWords + maxLookahead);
 
-      if (winStart >= expectedPhonemes.length) break;
+      if (winStart < expectedPhonemes.length) {
 
       List<int> R = [];
       List<int> rPhoneToWordLocal = [];
@@ -302,10 +293,10 @@ class PhoneticWordTracker {
         }
       }
 
-      if (R.isEmpty) break;
+      if (R.isNotEmpty) {
 
-      double priorWeight = 0.15;
-      int maxWraps = P.length >= 8 ? 1 : 0;
+      double priorWeight = 0.005;
+      int maxWraps = 1;
       
       print('[Tracker] ----- NEW DP EVALUATION -----');
       print('[Tracker] Cursor: $_wordCursor | Window: $winStart to ${winEnd - 1}');
@@ -318,13 +309,11 @@ class PhoneticWordTracker {
 
       if (match.bestI != null && match.bestJ != null && match.normDist <= matchThreshold) {
         
-        if (match.bestI == P.length && match.normDist > 0.0 && !isEndpoint) {
-           print('[Tracker] -> Wait: Match reached end of active chunk but normDist > 0. User still speaking.');
-           break;
-        }
-
         int startWord = rPhoneToWordLocal[match.jStart!];
         int endWord = rPhoneToWordLocal[match.bestJ! - 1];
+        if (match.maxJReached > match.bestJ!) {
+          endWord = rPhoneToWordLocal[match.maxJReached - 1];
+        }
         
         print('[Tracker] -> COMMIT: Matched words $startWord to $endWord');
 
@@ -349,38 +338,16 @@ class PhoneticWordTracker {
           errors[w] = [];
         }
 
-        int bestBareL = match.bestI!;
-        int rawEnd = bareToRawIndex[bestBareL - 1];
-        
-        while (rawEnd + 1 < activeChunk.length) {
-          int nextCode = activeChunk.codeUnitAt(rawEnd + 1);
-          if (nextCode == 0x064E || nextCode == 0x064F || nextCode == 0x0650) {
-            rawEnd++;
+            // No slicing: P represents the full segment, mirroring qua_sdk.
+            // We only update the word cursor so the UI updates and the lookahead advances.
+            if (endWord + 1 > _wordCursor) {
+              _wordCursor = endWord + 1;
+              changed = true;
+            }
           } else {
-            break;
+            print('[Tracker] -> FAIL: Score too high or missing bounds.');
           }
         }
-        
-        _asrCursor += rawEnd + 1;
-        _wordCursor = endWord + 1;
-
-        activeChunk = _accumNorm.substring(_asrCursor);
-        
-        bareLen = 0;
-        for (int i = 0; i < activeChunk.length; i++) {
-          int code = activeChunk.codeUnitAt(i);
-          if (code != 0x064E && code != 0x064F && code != 0x0650) {
-            bareChars[bareLen] = code;
-            bareToRawIndex[bareLen] = i;
-            bareLen++;
-          }
-        }
-        P = List<int>.generate(bareLen, (i) => bareChars[i]);
-
-        changed = true;
-      } else {
-        print('[Tracker] -> FAIL: Score too high or missing bounds.');
-        break;
       }
     }
 
@@ -388,6 +355,12 @@ class PhoneticWordTracker {
   }
 
   String get accumulatedNormText => _accumNorm;
+
+  void clearActiveAudio() {
+    if (_asrCursor <= _accumNorm.length) {
+      _accumNorm = _accumNorm.substring(0, _asrCursor);
+    }
+  }
 
   void reset() {
     _wordCursor = 0;

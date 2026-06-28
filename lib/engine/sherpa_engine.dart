@@ -23,7 +23,8 @@ import 'package:sherpa_onnx/sherpa_onnx.dart';
 class TranscriptionResult {
   final String text;
   final bool isFinal;
-  TranscriptionResult({required this.text, this.isFinal = false});
+  final int startTime;
+  TranscriptionResult({required this.text, this.isFinal = false, this.startTime = 0});
 }
 
 enum _EngineCommand { init, recognize, reset, destroy }
@@ -139,6 +140,7 @@ class SherpaEngine {
           TranscriptionResult(
             text: message['text'] as String,
             isFinal: message['isFinal'] as bool,
+            startTime: message['startTime'] as int,
           ),
         );
       }

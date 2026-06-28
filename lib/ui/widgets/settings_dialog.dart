@@ -120,56 +120,9 @@ class SettingsDialog extends StatelessWidget {
                             ),
                             const SizedBox(height: 8),
 
-                            // 4. ── Lookahead ─────────────────────────────────────────
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              child: _SettingCard(
-                                title: isAr ? 'التخطي التلقائي (Lookahead)' : 'Auto Skip (Lookahead)',
-                                icon: Icons.fast_forward_rounded,
-                                c: c,
-                                child: _SegmentedSelector(
-                                  labels: isAr
-                                      ? ['تفعيل', 'إيقاف']
-                                      : ['On', 'Off'],
-                                  selected: app.isLookaheadEnabled ? 0 : 1,
-                                  c: c,
-                                  onSelected: (i) {
-                                    if ((i == 0 && !app.isLookaheadEnabled) || (i == 1 && app.isLookaheadEnabled)) {
-                                      app.toggleLookahead();
-                                    }
-                                  },
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
 
-                            // 5. ── Matching Difficulty ─────────────────────────────────
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              child: _SettingCard(
-                                title: isAr ? 'مستوى التطابق' : 'Matching Level',
-                                icon: Icons.troubleshoot_rounded,
-                                c: c,
-                                child: _SegmentedSelector(
-                                  labels: isAr
-                                      ? ['سهل', 'دقيق']
-                                      : ['Easy', 'Strict'],
-                                  selected: app.matchingDifficulty == MatchingDifficulty.easy ? 0 : 1,
-                                  c: c,
-                                  onSelected: (i) {
-                                    if ((i == 0 && app.matchingDifficulty != MatchingDifficulty.easy) ||
-                                        (i == 1 && app.matchingDifficulty != MatchingDifficulty.hard)) {
-                                      app.toggleMatchingDifficulty();
-                                    }
-                                  },
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
+
+
 
                             // 6. ── Theme ────────────────────────────────────────────
                             Padding(
