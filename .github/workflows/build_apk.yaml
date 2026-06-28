@@ -1,0 +1,94 @@
+name: Build and Release APKs
+
+on:
+  # Triggers when you push a version tag (e.g., git tag v1.0.0 && git push origin v1.0.0)
+  push:
+    tags:
+      - 'v*'
+  # Allows manual triggering from the Actions tab with a custom version name and display title
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Strict Tag Name (NO SPACES! e.g., v2.0.0)'
+        required: true
+        default: 'v2.0.0'
+      release_title:
+        description: 'Display Title (Can include spaces/Arabic! e.g., الحمد لله رب العالمين)'
+        required: true
+        default: 'الحمد لله رب العالمين'
+
+# Required to allow GitHub Actions to create a Release and upload assets
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and Publish Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # --- DOWNLOAD ONNX MODEL ---
+      # This creates the directory structure and fetches the asset from the remote release
+      - name: Create assets directory
+        run: mkdir -p assets/model
+
+      - name: Download ONNX Model
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download v0.1.0 \
+            --repo yazinsai/offline-tarteel \
+            --pattern "fastconformer_ar_ctc_q8.onnx" \
+            --dir assets/model
+
+      # --- BUILD STEP ---
+      # Generates separate, lightweight APKs per architecture using the updated build.gradle.kts
+      - name: Build Split APKs
+        run: flutter build apk --release --split-per-abi
+
+      # --- NEW STEP: RENAME THE APKS ---
+      # Renames the generic Flutter output files to professional ReciteQuran names
+      - name: Rename APKs
+        run: |
+          mv build/app/outputs/flutter-apk/app-arm64-v8a-release.apk build/app/outputs/flutter-apk/ReciteQuran-arm64-v8a.apk
+          mv build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk build/app/outputs/flutter-apk/ReciteQuran-armeabi-v7a.apk
+          mv build/app/outputs/flutter-apk/app-x86_64-release.apk build/app/outputs/flutter-apk/ReciteQuran-x86_64.apk
+
+      # --- RELEASE STEP ---
+      # Automatically pushes the generated split APK architectural binaries to the Releases tab
+      - name: Create GitHub Release and Upload APKs
+        uses: softprops/action-gh-release@v2
+        with:
+          # Uses the strict tag name for the underlying Git reference
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.version_tag }}
+          
+          # Uses your custom input text for the public title headline
+          name: ${{ github.ref_type == 'tag' && github.ref_name || github.event.inputs.release_title }}
+          
+          draft: false
+          prerelease: false
+          
+          # Uploads the newly renamed custom files
+          files: |
+            build/app/outputs/flutter-apk/ReciteQuran-arm64-v8a.apk
+            build/app/outputs/flutter-apk/ReciteQuran-armeabi-v7a.apk
+            build/app/outputs/flutter-apk/ReciteQuran-x86_64.apk
