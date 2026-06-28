@@ -312,10 +312,6 @@ class HighlightingController extends ChangeNotifier {
     );
   }
 
-  /// Called on every ASR emission from SherpaEngine.
-  ///
-  /// The [result.text] is the ACCUMULATING phonetic stream — e.g.:
-  ///   "بِسمِللَ" → "بِسمِللَااهِ" → "بِسمِللَااهِررَحمَاا"
   void _onResult(TranscriptionResult result) {
     if (_state == TrackerState.discovery) return;
     if (_currentMatch == null || _wordTracker == null) return;
@@ -324,13 +320,11 @@ class HighlightingController extends ChangeNotifier {
     debugRecognizedText.value = asrText;
 
     if (result.startTime < _lastResetTime) {
-      // Drop stale results from before the ASR was reset
       return;
     }
 
     if (asrText.isEmpty) return;
 
-    // Safety: prevent unbounded accumulation crashing the Levenshtein calc
     if (asrText.length > 400) {
       _engine.resetBuffer();
       return;
@@ -339,39 +333,38 @@ class HighlightingController extends ChangeNotifier {
     final tracker = _wordTracker!;
     final targetAyah = _currentMatch!.verse;
 
-    // Feed the accumulated stream to the word tracker
     final changed = tracker.feed(asrText, isEndpoint: result.isFinal);
 
     if (!changed) return;
 
-    // Sync tracker statuses → highlight maps
-    bool anyUpdate = false;
-    for (int i = 0; i < tracker.statuses.length; i++) {
-      final status = tracker.statuses[i];
-      final ayahNum = targetAyah.ayah;
+      // Sync tracker statuses → highlight maps
+      bool anyUpdate = false;
+      for (int i = 0; i < tracker.statuses.length; i++) {
+        final status = tracker.statuses[i];
+        final ayahNum = targetAyah.ayah;
 
-      switch (status) {
-        case WordMatchStatus.correct:
-          if (!(_greenWordsByVerse[ayahNum]?.contains(i) ?? false)) {
-            (_greenWordsByVerse[ayahNum] ??= {}).add(i);
-            _redWordsByVerse[ayahNum]?.remove(i);
-            _yellowWordsByVerse[ayahNum]?.remove(i);
-            anyUpdate = true;
-          }
-        case WordMatchStatus.wrong:
-        case WordMatchStatus.skipped:
-          if (!(_redWordsByVerse[ayahNum]?.contains(i) ?? false)) {
-            (_redWordsByVerse[ayahNum] ??= {}).add(i);
-            _greenWordsByVerse[ayahNum]?.remove(i);
-            _yellowWordsByVerse[ayahNum]?.remove(i);
-            anyUpdate = true;
-          }
-        case WordMatchStatus.pending:
-          break;
+        switch (status) {
+          case WordMatchStatus.correct:
+            if (!(_greenWordsByVerse[ayahNum]?.contains(i) ?? false)) {
+              (_greenWordsByVerse[ayahNum] ??= {}).add(i);
+              _redWordsByVerse[ayahNum]?.remove(i);
+              _yellowWordsByVerse[ayahNum]?.remove(i);
+              anyUpdate = true;
+            }
+          case WordMatchStatus.wrong:
+          case WordMatchStatus.skipped:
+            if (!(_redWordsByVerse[ayahNum]?.contains(i) ?? false)) {
+              (_redWordsByVerse[ayahNum] ??= {}).add(i);
+              _greenWordsByVerse[ayahNum]?.remove(i);
+              _yellowWordsByVerse[ayahNum]?.remove(i);
+              anyUpdate = true;
+            }
+          case WordMatchStatus.pending:
+            break;
+        }
       }
-    }
 
-    if (!anyUpdate && !tracker.isComplete) return;
+      if (!anyUpdate && !tracker.isComplete) return;
 
     // Check if the ayah is fully resolved (all words matched/wrong)
     if (tracker.isComplete) {
