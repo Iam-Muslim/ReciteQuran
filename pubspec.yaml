@@ -36,6 +36,7 @@ flutter:
   assets:
     - assets/model/quran_phoneme_zipformer.int8.onnx
     - assets/model/tokens.txt
+    - assets/model/silero_vad.onnx
     - assets/model/ordered_quran_phonemes.json
     - assets/model/ph_index.npy
     - assets/model/ref_norm_ph.txt

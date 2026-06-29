@@ -1,8 +1,10 @@
 import 'dart:async';
-import 'dart:math' as math;
+import 'dart:io';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:sherpa_onnx/sherpa_onnx.dart';
 
 class AudioProcessor {
   // ── Audio format constants ─────────────────────────────────────────────────
@@ -11,50 +13,72 @@ class AudioProcessor {
   static const int bytesPerSample = 2; // 16-bit PCM
   static const int bytesPerSec = sampleRate * numChannels * bytesPerSample;
 
-  /// The VAD processes audio in exactly 20ms frames.
-  static const int frameMs = 20;
-  static const int frameBytes = (bytesPerSec * frameMs) ~/ 1000;
-
-  // ── Pre-roll Configuration ───────────────────────────────────────────────
-  static const int preRollMs = 600;
-  static const int maxPreRollFrames = preRollMs ~/ frameMs;
-
-  // ── Silence / End of phrase ──────────────────────────────────────────────
-  static const int maxSilenceMs = 800;
-  static const int maxSilenceFrames = maxSilenceMs ~/ frameMs;
-
-  // ── Streaming Chunk Configuration ────────────────────────────────────────
-  /// For streaming models, we emit fixed non-overlapping chunks.
-  /// 160ms chunks dramatically reduce latency vs 640ms.
   static const int chunkMs = 160;
   static const int chunkBytes = (bytesPerSec * chunkMs) ~/ 1000;
 
-  // ── Internal state ────────────────────────────────────────────────────────
   Uint8List _frameBuffer = Uint8List(0);
-  final List<Uint8List> _preRollBuffer = [];
 
-  // Used to buffer incoming frames until they reach chunkBytes
-  final List<Uint8List> _speechChunks = [];
-  int _speechLength = 0;
-
-  int _silenceFramesCount = 0;
-  bool _isSpeaking = false;
+  // ── VAD State ──────────────────────────────────────────────────────────
+  VoiceActivityDetector? _vad;
+  bool _vadWasDetected = false;
+  
+  // Pre-roll keeps audio BEFORE the VAD becomes confident, ensuring consonant attacks aren't lost
+  final List<Uint8List> _preRollBufferList = [];
+  static const int maxPreRollFrames = 4; // 640ms pre-roll
 
   AudioRecorder? _recorder;
   StreamSubscription<Uint8List>? _subscription;
 
-  // ── VAD State ─────────────────────────────────────────────────────────────
-  double _noiseFloor = 50.0;
-  double _vadThresholdRms = 200.0;
-  static const double kAlpha = 0.05;
-  static const double kSnrThreshold = 2.0;
+  Future<String> _extractAsset(String assetPath) async {
+    final Directory docDir = await getApplicationDocumentsDirectory();
+    final String prefix = 'v2_silero_';
+    final File file = File('${docDir.path}/$prefix${assetPath.split('/').last}');
 
-  /// Start recording and trigger VAD/chunking pipeline.
+    if (await file.exists()) {
+      return file.path;
+    }
+
+    final ByteData data = await rootBundle.load(assetPath);
+    final Uint8List bytes = data.buffer.asUint8List(
+      data.offsetInBytes,
+      data.lengthInBytes,
+    );
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
+  }
+
+  Future<void> _initVad() async {
+    if (_vad != null) return;
+    initBindings(); // from sherpa_onnx
+    
+    final String modelPath = await _extractAsset('assets/model/silero_vad.onnx');
+    
+    final config = VadModelConfig(
+      sileroVad: SileroVadModelConfig(
+        model: modelPath,
+        minSilenceDuration: 2.5, // 2.5s hold: The ultimate fix for long Quranic Madds
+        minSpeechDuration: 0.25,
+      ),
+      sampleRate: sampleRate,
+      numThreads: 1,
+    );
+
+    _vad = VoiceActivityDetector(
+      config: config, 
+      bufferSizeInSeconds: 10.0,
+    );
+  }
+
+  /// Start recording and streaming raw PCM continuously.
   Future<void> start({
     required void Function(Uint8List chunk, bool isFinal) onChunk,
-    void Function()? onVadOff,
   }) async {
     await stopAndGetAudio();
+    await _initVad();
+
+    _vad?.reset();
+    _vadWasDetected = false;
+    _preRollBufferList.clear();
 
     _recorder = AudioRecorder();
 
@@ -70,9 +94,14 @@ class AudioProcessor {
     );
 
     _subscription = recordStream.listen((Uint8List rawData) {
+      // Ensure 16-bit alignment for downstream operations
+      if (rawData.offsetInBytes % 2 != 0) {
+        rawData = Uint8List.fromList(rawData);
+      }
+      
       Uint8List allBytes;
       if (_frameBuffer.isEmpty) {
-        allBytes = Uint8List.fromList(rawData);
+        allBytes = rawData;
       } else {
         allBytes = Uint8List(_frameBuffer.length + rawData.length);
         allBytes.setAll(0, _frameBuffer);
@@ -80,17 +109,52 @@ class AudioProcessor {
       }
 
       int offset = 0;
-      while (allBytes.length - offset >= frameBytes) {
-        final frame = Uint8List.view(
+      // We process strictly in chunkBytes (160ms) blocks
+      while (allBytes.length - offset >= chunkBytes) {
+        final chunk = Uint8List.view(
           allBytes.buffer,
           allBytes.offsetInBytes + offset,
-          frameBytes,
+          chunkBytes,
         );
-        offset += frameBytes;
+        offset += chunkBytes;
 
-        _processFrame(frame, onChunk, onVadOff);
+        final chunkCopy = Uint8List.fromList(chunk);
+        
+        // Feed chunk to VAD
+        final int16 = chunkCopy.buffer.asInt16List(chunkCopy.offsetInBytes, chunkCopy.lengthInBytes ~/ 2);
+        final samples = Float32List(int16.length);
+        for (int i = 0; i < int16.length; i++) {
+          samples[i] = int16[i] / 32768.0;
+        }
+        
+        _vad!.acceptWaveform(samples);
+        bool isDetected = _vad!.isDetected();
+
+        if (isDetected) {
+          if (!_vadWasDetected) {
+            _vadWasDetected = true;
+            // Flush pre-roll
+            for (var pr in _preRollBufferList) {
+              onChunk(pr, false);
+            }
+            _preRollBufferList.clear();
+          }
+          onChunk(chunkCopy, false);
+        } else {
+          if (_vadWasDetected) {
+             // Silence duration exceeded the 2.5s threshold
+             onChunk(Uint8List(0), true);
+             _vadWasDetected = false;
+          }
+          // Not detected: maintain pre-roll to catch the onset when speech starts
+          _preRollBufferList.add(chunkCopy);
+          if (_preRollBufferList.length > maxPreRollFrames) {
+            _preRollBufferList.removeAt(0);
+          }
+        }
       }
 
+      // Keep the remainder for the next stream event
       if (offset < allBytes.length) {
         _frameBuffer = Uint8List.fromList(
           Uint8List.view(allBytes.buffer, allBytes.offsetInBytes + offset),
@@ -101,121 +165,8 @@ class AudioProcessor {
     });
   }
 
-  void _processFrame(
-    Uint8List frame,
-    void Function(Uint8List chunk, bool isFinal) onChunk,
-    void Function()? onVadOff,
-  ) {
-    bool hasSpeech = _isVoiceActive(frame);
-
-    if (!_isSpeaking) {
-      if (hasSpeech) {
-        _isSpeaking = true;
-        _silenceFramesCount = 0;
-
-        if (kDebugMode) {
-          debugPrint(
-            '[AUDIO] 🎤 VAD ON (Recovered ${_preRollBuffer.length} pre-roll frames)',
-          );
-        }
-
-        for (final p in _preRollBuffer) {
-          _speechChunks.add(p);
-          _speechLength += p.length;
-        }
-        _preRollBuffer.clear();
-
-        _speechChunks.add(Uint8List.fromList(frame));
-        _speechLength += frame.length;
-      } else {
-        _preRollBuffer.add(Uint8List.fromList(frame));
-        if (_preRollBuffer.length > maxPreRollFrames) {
-          _preRollBuffer.removeAt(0);
-        }
-      }
-    } else {
-      if (hasSpeech) {
-        _silenceFramesCount = 0;
-      } else {
-        _silenceFramesCount++;
-      }
-
-      _speechChunks.add(Uint8List.fromList(frame));
-      _speechLength += frame.length;
-
-      // Emit chunk if it reaches the 240ms size
-      if (_speechLength >= chunkBytes) {
-        _emitChunk(onChunk, isFinal: false);
-      }
-
-      bool silenceTimeout = _silenceFramesCount >= maxSilenceFrames;
-      if (silenceTimeout) {
-        if (kDebugMode) {
-          debugPrint('[AUDIO] 🔇 VAD OFF');
-        }
-
-        if (_speechLength > 0) {
-          _emitChunk(onChunk, isFinal: false);
-        }
-
-        _speechChunks.clear();
-        _speechLength = 0;
-        _isSpeaking = false;
-        _silenceFramesCount = 0;
-        
-        if (onVadOff != null) {
-          onVadOff();
-        }
-      }
-    }
-  }
-
-  void _emitChunk(
-    void Function(Uint8List chunk, bool isFinal) onChunk, {
-    required bool isFinal,
-  }) {
-    if (_speechLength == 0) return;
-
-    Uint8List window = Uint8List(_speechLength);
-    int innerOffset = 0;
-    for (final chunk in _speechChunks) {
-      window.setAll(innerOffset, chunk);
-      innerOffset += chunk.length;
-    }
-
-    onChunk(window, isFinal);
-
-    _speechChunks.clear();
-    _speechLength = 0;
-  }
-
-  bool _isVoiceActive(Uint8List frame) {
-    Int16List pcm = frame.buffer.asInt16List(
-      frame.offsetInBytes,
-      frame.lengthInBytes ~/ 2,
-    );
-    double sumSquares = 0;
-    // Stride of 4 reduces CPU loop iterations by 75% with negligible accuracy loss
-    int count = 0;
-    for (int i = 0; i < pcm.length; i += 4) {
-      double s = pcm[i].toDouble();
-      sumSquares += s * s;
-      count++;
-    }
-    double rms = math.sqrt(sumSquares / count);
-    rms = math.max(rms, 1.0);
-
-    if (!_isSpeaking) {
-      _noiseFloor = (1.0 - kAlpha) * _noiseFloor + kAlpha * rms;
-    }
-    _vadThresholdRms = _noiseFloor * kSnrThreshold;
-    return rms > _vadThresholdRms;
-  }
-
   void clearBuffer() {
-    _speechChunks.clear();
-    _preRollBuffer.clear();
-    _speechLength = 0;
+    // Left for compatibility with Orhcestrator
   }
 
   Future<void> stopAndGetAudio() async {
@@ -227,13 +178,8 @@ class AudioProcessor {
     _recorder = null;
 
     _frameBuffer = Uint8List(0);
-    _preRollBuffer.clear();
-    _speechChunks.clear();
-    _speechLength = 0;
-    _isSpeaking = false;
-    _silenceFramesCount = 0;
-
-    _noiseFloor = 50.0;
-    _vadThresholdRms = 200.0;
+    _vadWasDetected = false;
+    _preRollBufferList.clear();
+    _vad?.reset();
   }
 }

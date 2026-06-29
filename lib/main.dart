@@ -133,6 +133,9 @@ class _OrchestratorState extends State<_Orchestrator> {
         if (rtResult != null) {
           // Unique match found! Bypass VAD and jump immediately.
           _stopVoiceSearch(precalculatedResult: rtResult);
+        } else if (res.isFinal && _voiceSearchAsrText.trim().isNotEmpty) {
+          debugPrint('[VoiceSearch] Auto-stopping search due to Sherpa Endpoint (silence detected)');
+          _stopVoiceSearch();
         }
       }
     });
@@ -174,6 +177,9 @@ class _OrchestratorState extends State<_Orchestrator> {
       final service = QuranMetadataService();
       _repo = QuranRepository(service);
       await _repo!.loadSurahAsync(1);
+
+      if (mounted) setState(() => _initStatus = 'Loading Voice Search Index…');
+      await _voiceSearchCtrl.preloadIndex();
 
       _ctrl = HighlightingController(
         engine: _engine,
@@ -292,12 +298,6 @@ class _OrchestratorState extends State<_Orchestrator> {
 
       _audio.start(
         onChunk: (chunk, isFinal) => _engine.transcribe(chunk, isFinal: isFinal),
-        onVadOff: () {
-          if (_isVoiceSearching && mounted && _voiceSearchAsrText.trim().isNotEmpty) {
-            debugPrint('[VoiceSearch] Auto-stopping search due to VAD OFF (silence detected)');
-            _stopVoiceSearch();
-          }
-        },
       ).catchError((e) {
         debugPrint('❌ AUDIO ERROR in Voice Search: $e');
         if (mounted) setState(() => _isVoiceSearching = false);

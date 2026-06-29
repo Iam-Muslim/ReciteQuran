@@ -41,7 +41,7 @@ class VoiceSearchController {
 
   /// Loads the phonetic index from bundled assets the first time it's needed.
   /// Subsequent calls are no-ops (index stays in memory for the session).
-  Future<void> _loadIndexIfNeeded() async {
+  Future<void> preloadIndex() async {
     if (_search != null || _isIndexLoading) return;
     _isIndexLoading = true;
     try {
@@ -63,7 +63,7 @@ class VoiceSearchController {
   /// Pre-loads the index (no-op if already loaded) and resets the ASR buffer
   /// so no old audio bleeds into the search.
   Future<void> startSearch() async {
-    await _loadIndexIfNeeded();
+    await preloadIndex();
     engine.resetBuffer();
   }
 

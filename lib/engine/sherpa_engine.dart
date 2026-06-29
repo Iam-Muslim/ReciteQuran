@@ -53,7 +53,9 @@ class SherpaEngine {
 
   Future<String> _extractAsset(String assetPath) async {
     final Directory docDir = await getApplicationDocumentsDirectory();
-    final File file = File('${docDir.path}/${assetPath.split('/').last}');
+    // Prefix with version to force re-extraction on updates
+    final String prefix = 'v2_zipformer_';
+    final File file = File('${docDir.path}/$prefix${assetPath.split('/').last}');
 
     if (await file.exists()) {
       return file.path;
@@ -217,15 +219,17 @@ class SherpaEngine {
                     model: paths['modelPath']!,
                   ),
                   tokens: paths['tokensPath']!,
-                  numThreads: 2, // Reduced from 4 for mobile thermal efficiency
+                  // As per sherpa-onnx documentation examples, single-thread is often faster 
+                  // due to reduced context switching overhead on lightweight Zipformer models.
+                  numThreads: 1, 
                   modelType: 'zipformer2_ctc',
-                  // Use cpu instead of xnnpack to prevent INT8 quantization NaN bugs
+                  // Use xnnpack on Android for massive hardware acceleration over pure CPU
                   provider: Platform.isAndroid ? 'xnnpack' : 'coreml',
                   debug: kDebugMode,
                 ),
-                // Endpoint detection disabled — VAD is handled externally
-                // by AudioProcessor which emits 640ms isFinal=true chunks.
+                // We use Silero VAD externally to control endpoints, so native endpointing is disabled.
                 enableEndpoint: false,
+                rule1MinTrailingSilence: 2.4,
               ),
             );
             stream = recognizer!.createStream();
@@ -239,7 +243,10 @@ class SherpaEngine {
 
           final payload = message.payload as Map<String, dynamic>;
           final transferable = payload['chunk'] as TransferableTypedData;
-          final rawBytes = transferable.materialize().asUint8List();
+          final rawBytesTemp = transferable.materialize().asUint8List();
+          final rawBytes = rawBytesTemp.offsetInBytes % 2 != 0 
+              ? Uint8List.fromList(rawBytesTemp) 
+              : rawBytesTemp;
           final isFinal = payload['isFinal'] as bool;
           final startTime = payload['startTime'] as int;
 
@@ -250,14 +257,12 @@ class SherpaEngine {
             );
             final audio = Float32List(int16.length);
 
-            // Software gain + clip to [-1, 1] optimized
-            const double gain = 1.5;
+            // Strictly 1.0 gain to prevent clipping loud Quranic Madds/Tafkheem. 
+            // The model expects purely unaltered normalized float values [-1.0, 1.0].
+            const double gain = 1.0;
             const double scale = gain / 32768.0;
-            // Unroll loop slightly and use faster min/max
             for (int i = 0; i < int16.length; i++) {
-              audio[i] =
-                  int16[i] *
-                  scale; // Let native audio buffer handle extreme clipping if necessary
+              audio[i] = int16[i] * scale;
             }
 
             stream!.acceptWaveform(sampleRate: 16000, samples: audio);
@@ -267,18 +272,26 @@ class SherpaEngine {
             recognizer!.decode(stream!);
           }
           final partial = recognizer!.getResult(stream!);
-          mainSendPort.send({
-            'text': partial.text,
-            'isFinal': false,
-            'startTime': startTime,
-          });
+          bool endpointDetected = recognizer!.isEndpoint(stream!);
 
-          if (isFinal) {
-            stream!.inputFinished();
+          // If endpoint isn't detected and it's not manually finalized, send partial.
+          if (!endpointDetected && !isFinal) {
+            mainSendPort.send({
+              'text': partial.text,
+              'isFinal': false,
+              'startTime': startTime,
+            });
+          }
+
+          if (isFinal || endpointDetected) {
+            if (isFinal) {
+              stream!.inputFinished();
+            }
             while (recognizer!.isReady(stream!)) {
               recognizer!.decode(stream!);
             }
             final final_ = recognizer!.getResult(stream!);
+            
             mainSendPort.send({
               'text': final_.text,
               'isFinal': true,

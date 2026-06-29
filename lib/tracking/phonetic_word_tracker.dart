@@ -47,6 +47,8 @@ class PhoneticWordTracker {
   int _wordCursor = 0;
   int _asrCursor = 0;
 
+  String _historyNorm = '';
+  String _historyRaw = '';
   String _accumNorm = '';
   String _accumRaw = '';
   bool _isFirstMatch = true;
@@ -343,13 +345,10 @@ class PhoneticWordTracker {
 
     String normNew = QuranNormalizer.normalizeWithTashkeel(asrText);
 
-    if (normNew.length < _accumNorm.length) {
-      _accumNorm = KmpStitcher.mergeText(_accumNorm, normNew);
-      _accumRaw = KmpStitcher.mergeText(_accumRaw, asrText);
-    } else {
-      _accumNorm = normNew;
-      _accumRaw = asrText;
-    }
+    // Concatenate the finalized history with the current active ASR segment
+    _accumNorm = _historyNorm + normNew;
+    _accumRaw = _historyRaw + asrText;
+
     String activeChunk = _accumNorm.substring(_asrCursor);
 
     if (activeChunk.length > 250) {
@@ -554,6 +553,13 @@ class PhoneticWordTracker {
       }
     }
 
+    // If this chunk finalized the ASR segment, commit it to history
+    // so the next fresh segment appends properly without losing state.
+    if (isEndpoint) {
+      _historyNorm += normNew;
+      _historyRaw += asrText;
+    }
+
     return changed;
   }
 
@@ -571,6 +577,8 @@ class PhoneticWordTracker {
   void reset() {
     _wordCursor = 0;
     _asrCursor = 0;
+    _historyNorm = '';
+    _historyRaw = '';
     _accumNorm = '';
     _isFirstMatch = true;
 

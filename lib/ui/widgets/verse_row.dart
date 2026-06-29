@@ -476,8 +476,8 @@ class _VerseRowState extends State<VerseRow> {
           style: TextStyle(
             fontFamily: 'HafsSmart',
             fontSize: app.fontSize,
-            height: 2.0,
-            wordSpacing: 6.0,
+            height: 2.5,
+            wordSpacing: 12.0,
             color: color,
           ),
           recognizer: recognizer,
@@ -492,7 +492,7 @@ class _VerseRowState extends State<VerseRow> {
             style: TextStyle(
               fontFamily: 'HafsSmart',
               fontSize: app.fontSize,
-              height: 1.8,
+              height: 2.5,
             ),
           ),
         );
