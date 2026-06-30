@@ -52,7 +52,7 @@ class SherpaEngine {
       _outputController.stream;
 
   Future<String> _extractAsset(String assetPath) async {
-    final Directory docDir = await getApplicationDocumentsDirectory();
+    final Directory docDir = await getApplicationSupportDirectory();
     // Prefix with version to force re-extraction on updates
     final String prefix = 'v2_zipformer_';
     final File file = File('${docDir.path}/$prefix${assetPath.split('/').last}');
@@ -211,6 +211,10 @@ class SherpaEngine {
         case _EngineCommand.init:
           final paths = message.payload as Map<String, String>;
           try {
+            if (!File(paths['modelPath']!).existsSync() || !File(paths['tokensPath']!).existsSync()) {
+              throw Exception('CRITICAL: ONNX model files missing on disk.');
+            }
+            
             recognizer = OnlineRecognizer(
               OnlineRecognizerConfig(
                 feat: FeatureConfig(sampleRate: 16000, featureDim: 80),

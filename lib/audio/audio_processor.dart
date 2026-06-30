@@ -21,7 +21,7 @@ class AudioProcessor {
   // ── VAD State ──────────────────────────────────────────────────────────
   VoiceActivityDetector? _vad;
   bool _vadWasDetected = false;
-  
+
   // Pre-roll keeps audio BEFORE the VAD becomes confident, ensuring consonant attacks aren't lost
   final List<Uint8List> _preRollBufferList = [];
   static const int maxPreRollFrames = 4; // 640ms pre-roll
@@ -30,9 +30,11 @@ class AudioProcessor {
   StreamSubscription<Uint8List>? _subscription;
 
   Future<String> _extractAsset(String assetPath) async {
-    final Directory docDir = await getApplicationDocumentsDirectory();
+    final Directory docDir = await getApplicationSupportDirectory();
     final String prefix = 'v2_silero_';
-    final File file = File('${docDir.path}/$prefix${assetPath.split('/').last}');
+    final File file = File(
+      '${docDir.path}/$prefix${assetPath.split('/').last}',
+    );
 
     if (await file.exists()) {
       return file.path;
@@ -50,23 +52,28 @@ class AudioProcessor {
   Future<void> _initVad() async {
     if (_vad != null) return;
     initBindings(); // from sherpa_onnx
-    
-    final String modelPath = await _extractAsset('assets/model/silero_vad.onnx');
-    
+
+    final String modelPath = await _extractAsset(
+      'assets/model/silero_vad.onnx',
+    );
+
+    if (!File(modelPath).existsSync()) {
+      throw Exception('CRITICAL: Silero VAD model missing on disk.');
+    }
+
     final config = VadModelConfig(
       sileroVad: SileroVadModelConfig(
         model: modelPath,
-        minSilenceDuration: 2.5, // 2.5s hold: The ultimate fix for long Quranic Madds
+        threshold:
+            0.1, // Lowered from default 0.5 to keep long vowels (يييي) classified as speech
+        minSilenceDuration: 2.5, // 2.5s hold: fix for long Quranic Madds
         minSpeechDuration: 0.25,
       ),
       sampleRate: sampleRate,
       numThreads: 1,
     );
 
-    _vad = VoiceActivityDetector(
-      config: config, 
-      bufferSizeInSeconds: 10.0,
-    );
+    _vad = VoiceActivityDetector(config: config, bufferSizeInSeconds: 10.0);
   }
 
   /// Start recording and streaming raw PCM continuously.
@@ -98,7 +105,7 @@ class AudioProcessor {
       if (rawData.offsetInBytes % 2 != 0) {
         rawData = Uint8List.fromList(rawData);
       }
-      
+
       Uint8List allBytes;
       if (_frameBuffer.isEmpty) {
         allBytes = rawData;
@@ -119,14 +126,17 @@ class AudioProcessor {
         offset += chunkBytes;
 
         final chunkCopy = Uint8List.fromList(chunk);
-        
+
         // Feed chunk to VAD
-        final int16 = chunkCopy.buffer.asInt16List(chunkCopy.offsetInBytes, chunkCopy.lengthInBytes ~/ 2);
+        final int16 = chunkCopy.buffer.asInt16List(
+          chunkCopy.offsetInBytes,
+          chunkCopy.lengthInBytes ~/ 2,
+        );
         final samples = Float32List(int16.length);
         for (int i = 0; i < int16.length; i++) {
           samples[i] = int16[i] / 32768.0;
         }
-        
+
         _vad!.acceptWaveform(samples);
         bool isDetected = _vad!.isDetected();
 
@@ -142,9 +152,9 @@ class AudioProcessor {
           onChunk(chunkCopy, false);
         } else {
           if (_vadWasDetected) {
-             // Silence duration exceeded the 2.5s threshold
-             onChunk(Uint8List(0), true);
-             _vadWasDetected = false;
+            // Silence duration exceeded the 2.5s threshold
+            onChunk(Uint8List(0), true);
+            _vadWasDetected = false;
           }
           // Not detected: maintain pre-roll to catch the onset when speech starts
           _preRollBufferList.add(chunkCopy);
