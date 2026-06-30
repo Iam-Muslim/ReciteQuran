@@ -15,7 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import '../../state/app_state.dart';
 import '../../data/quran_data.dart';
-import '../../tracking/highlighting_controller.dart';
+import '../../tracking/word/highlighting_controller.dart';
 
 class VerseRow extends StatefulWidget {
   final QuranVerse verse;
@@ -230,192 +230,197 @@ class _VerseRowState extends State<VerseRow> {
           ),
           child: Directionality(
             textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 24, right: 24, top: 24, bottom: 48),
-                child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Handle bar
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: c.muted.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(2),
+            child: Scrollbar(
+              thumbVisibility: true,
+              thickness: 4,
+              radius: const Radius.circular(4),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 24, right: 24, top: 24, bottom: 48),
+                  child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Handle bar
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: c.muted.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 24),
-              
-              // The Uthmani Word
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 20),
-                decoration: BoxDecoration(
-                  color: c.gold.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: c.gold.withValues(alpha: 0.2)),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  word,
-                  textDirection: TextDirection.rtl,
-                  style: TextStyle(
-                    fontFamily: 'HafsSmart',
-                    fontSize: app.fontSize * 1.2,
-                    color: c.text,
-                    height: 1.5,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              
-              Text(isAr ? 'تفاصيل الخطأ' : 'Error Details', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: c.text)),
-              const SizedBox(height: 16),
-              
-              ...errors.map((e) {
-                String cleanPhoneticString(String input) {
-                  return input
-                      .replaceAll('\u06e5', 'و') // Small waw -> waw
-                      .replaceAll('\u06e6', 'ي') // Small yaa -> yaa
-                      .replaceAll('\u06ba', 'ن') // Noon mokhfah -> noon
-                      .replaceAll('\u06fe', 'م') // Meem mokhfah -> meem
-                      .replaceAll('\u0687', '')  // Qalqalah/Waqf marker
-                      .replaceAll('ڇ', '')       // Qalqalah bounce phonetic marker
-                      .replaceAll('ۜ', '')       // Sakt marker
-                      .replaceAll('۪', '')       // Imala marker
-                      .replaceAll('ؙ', '')       // Tasheel/Ishmam marker
-                      .replaceAll('ٲ', 'أ');     // Alif wavy hamza -> Alif
-                }
-
-                final String expected = e.expectedPh.isEmpty ? '(none)' : cleanPhoneticString(e.expectedPh);
-                final String predicted = e.predictedPh.isEmpty ? '(none)' : cleanPhoneticString(e.predictedPh);
+                const SizedBox(height: 24),
                 
-                String explanation = '';
-                String title = '';
-                IconData icon;
-                Color iconColor;
-
-                if (e.errorType.toString().contains('tajweed')) {
-                  title = isAr ? 'مخالفة حكم تجويد' : 'Tajweed Rule Violation';
-                  icon = Icons.menu_book_rounded;
-                  iconColor = Colors.orange;
-                  String ruleName = isAr 
-                      ? (e.expectedRule?.name.ar ?? 'حكم تجويد')
-                      : (e.expectedRule?.name.en ?? 'Tajweed rule');
-                  if (ruleName.isEmpty && e.expectedRule?.name.ar != null) {
-                      ruleName = e.expectedRule!.name.ar!;
-                  }
-                  explanation = isAr
-                      ? 'قرأت "$predicted"، ولكن كان يجب أن تقرأها بحكم "$ruleName" كـ "$expected" بالطريقة الصحيحة.'
-                      : 'You recited "$predicted", but you should have recited it with "$ruleName" as "$expected" in the expected way.';
-                } else if (e.errorType.toString().contains('tashkeel')) {
-                  title = isAr ? 'خطأ في الحركات' : 'Harakat (Vowel) Error';
-                  icon = Icons.spellcheck_rounded;
-                  iconColor = Colors.blue;
-                  explanation = isAr
-                      ? 'نطقت الحركة كـ "$predicted"، ولكن النطق الصحيح هو "$expected".'
-                      : 'You pronounced the vowels as "$predicted", but the expected pronunciation is "$expected".';
-                } else {
-                  title = isAr ? 'خطأ في النطق' : 'Pronunciation Error';
-                  icon = Icons.record_voice_over_rounded;
-                  iconColor = c.red;
-                  explanation = isAr
-                      ? 'قلت "$predicted"، ولكن كان يجب أن تقرأ "$expected".'
-                      : 'You said "$predicted", but you should have recited "$expected".';
-                }
-
-                // Add hints for removed special phonetic markers so the user understands the context
-                bool hasSakt = e.expectedPh.contains('ۜ');
-                bool hasImala = e.expectedPh.contains('۪');
-                bool hasTasheel = e.expectedPh.contains('ؙ');
-                bool hasQalqalahMarker = e.expectedPh.contains('ڇ') || e.expectedPh.contains('\u0687');
-                
-                String specialHint = '';
-                if (hasSakt) specialHint += isAr ? '\n• يتطلب سكتة (توقف قصير بدون تنفس).' : '\n• Requires a Sakt (short breathless pause).';
-                if (hasImala) specialHint += isAr ? '\n• يتطلب إمالة (إمالة الفتحة نحو الكسرة).' : '\n• Requires Imala (inclining the vowel).';
-                if (hasTasheel) specialHint += isAr ? '\n• يتطلب تسهيل (تليين الهمزة).' : '\n• Requires Tasheel (softening of the Hamza).';
-                if (hasQalqalahMarker && !e.errorType.toString().contains('tajweed')) {
-                  specialHint += isAr ? '\n• يتطلب قلقلة (صدى للصوت).' : '\n• Requires Qalqalah (echoing sound).';
-                }
-
-                if (specialHint.isNotEmpty) {
-                  explanation += '\n$specialHint';
-                }
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(16),
+                // The Uthmani Word
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
                   decoration: BoxDecoration(
-                    color: c.surface,
+                    color: c.gold.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: c.border.withValues(alpha: 0.5)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.03),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      )
-                    ],
+                    border: Border.all(color: c.gold.withValues(alpha: 0.2)),
                   ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: iconColor.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(icon, color: iconColor, size: 24),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(title, style: TextStyle(color: c.text, fontWeight: FontWeight.bold, fontSize: 16)),
-                            const SizedBox(height: 8),
-                            Text(explanation, style: TextStyle(color: c.muted, fontSize: 14, height: 1.5)),
-                            const SizedBox(height: 12),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: c.surface,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: c.border.withValues(alpha: 0.3)),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                                children: [
-                                  Column(
-                                    children: [
-                                      Text(isAr ? 'المتوقع' : 'Expected', style: TextStyle(color: c.muted, fontSize: 12)),
-                                      Text(expected, style: TextStyle(color: c.green, fontSize: 26, fontWeight: FontWeight.bold, fontFamily: 'HafsSmart')),
-                                    ],
-                                  ),
-                                  Container(width: 1, height: 40, color: c.border.withValues(alpha: 0.3)),
-                                  Column(
-                                    children: [
-                                      Text(isAr ? 'قلت' : 'You Said', style: TextStyle(color: c.muted, fontSize: 12)),
-                                      Text(predicted, style: TextStyle(color: c.red, fontSize: 26, fontWeight: FontWeight.bold, fontFamily: 'HafsSmart')),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                  alignment: Alignment.center,
+                  child: Text(
+                    word,
+                    textDirection: TextDirection.rtl,
+                    style: TextStyle(
+                      fontFamily: 'HafsSmart',
+                      fontSize: app.fontSize * 1.2,
+                      color: c.text,
+                      height: 1.5,
+                    ),
                   ),
-                );
-              }),
-            ],
+                ),
+                const SizedBox(height: 24),
+                
+                Text(isAr ? 'تفاصيل الخطأ' : 'Error Details', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: c.text)),
+                const SizedBox(height: 16),
+                
+                ...errors.map((e) {
+                  String cleanPhoneticString(String input) {
+                    return input
+                        .replaceAll('\u06e5', 'و') // Small waw -> waw
+                        .replaceAll('\u06e6', 'ي') // Small yaa -> yaa
+                        .replaceAll('\u06ba', 'ن') // Noon mokhfah -> noon
+                        .replaceAll('\u06fe', 'م') // Meem mokhfah -> meem
+                        .replaceAll('\u0687', '')  // Qalqalah/Waqf marker
+                        .replaceAll('ڇ', '')       // Qalqalah bounce phonetic marker
+                        .replaceAll('ۜ', '')       // Sakt marker
+                        .replaceAll('۪', '')       // Imala marker
+                        .replaceAll('ؙ', '')       // Tasheel/Ishmam marker
+                        .replaceAll('ٲ', 'أ');     // Alif wavy hamza -> Alif
+                  }
+
+                  final String expected = e.expectedPh.isEmpty ? '(none)' : cleanPhoneticString(e.expectedPh);
+                  final String predicted = e.predictedPh.isEmpty ? '(none)' : cleanPhoneticString(e.predictedPh);
+                  
+                  String explanation = '';
+                  String title = '';
+                  IconData icon;
+                  Color iconColor;
+
+                  if (e.errorType.toString().contains('tajweed')) {
+                    title = isAr ? 'مخالفة حكم تجويد' : 'Tajweed Rule Violation';
+                    icon = Icons.menu_book_rounded;
+                    iconColor = Colors.orange;
+                    String ruleName = isAr 
+                        ? (e.expectedRule?.name.ar ?? 'حكم تجويد')
+                        : (e.expectedRule?.name.en ?? 'Tajweed rule');
+                    if (ruleName.isEmpty && e.expectedRule?.name.ar != null) {
+                        ruleName = e.expectedRule!.name.ar;
+                    }
+                    explanation = isAr
+                        ? 'قرأت "$predicted"، ولكن كان يجب أن تقرأها بحكم "$ruleName" كـ "$expected" بالطريقة الصحيحة.'
+                        : 'You recited "$predicted", but you should have recited it with "$ruleName" as "$expected" in the expected way.';
+                  } else if (e.errorType.toString().contains('tashkeel')) {
+                    title = isAr ? 'خطأ في الحركات' : 'Harakat (Vowel) Error';
+                    icon = Icons.spellcheck_rounded;
+                    iconColor = Colors.blue;
+                    explanation = isAr
+                        ? 'نطقت الحركة كـ "$predicted"، ولكن النطق الصحيح هو "$expected".'
+                        : 'You pronounced the vowels as "$predicted", but the expected pronunciation is "$expected".';
+                  } else {
+                    title = isAr ? 'خطأ في النطق' : 'Pronunciation Error';
+                    icon = Icons.record_voice_over_rounded;
+                    iconColor = c.red;
+                    explanation = isAr
+                        ? 'قلت "$predicted"، ولكن كان يجب أن تقرأ "$expected".'
+                        : 'You said "$predicted", but you should have recited "$expected".';
+                  }
+
+                  // Add hints for removed special phonetic markers so the user understands the context
+                  bool hasSakt = e.expectedPh.contains('ۜ');
+                  bool hasImala = e.expectedPh.contains('۪');
+                  bool hasTasheel = e.expectedPh.contains('ؙ');
+                  bool hasQalqalahMarker = e.expectedPh.contains('ڇ') || e.expectedPh.contains('\u0687');
+                  
+                  String specialHint = '';
+                  if (hasSakt) specialHint += isAr ? '\n• يتطلب سكتة (توقف قصير بدون تنفس).' : '\n• Requires a Sakt (short breathless pause).';
+                  if (hasImala) specialHint += isAr ? '\n• يتطلب إمالة (إمالة الفتحة نحو الكسرة).' : '\n• Requires Imala (inclining the vowel).';
+                  if (hasTasheel) specialHint += isAr ? '\n• يتطلب تسهيل (تليين الهمزة).' : '\n• Requires Tasheel (softening of the Hamza).';
+                  if (hasQalqalahMarker && !e.errorType.toString().contains('tajweed')) {
+                    specialHint += isAr ? '\n• يتطلب قلقلة (صدى للصوت).' : '\n• Requires Qalqalah (echoing sound).';
+                  }
+
+                  if (specialHint.isNotEmpty) {
+                    explanation += '\n$specialHint';
+                  }
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: c.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: c.border.withValues(alpha: 0.5)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        )
+                      ],
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: iconColor.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(icon, color: iconColor, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(title, style: TextStyle(color: c.text, fontWeight: FontWeight.bold, fontSize: 15)),
+                              const SizedBox(height: 4),
+                              Text(explanation, style: TextStyle(color: c.muted, fontSize: 13, height: 1.4)),
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: c.surface,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: c.border.withValues(alpha: 0.3)),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                  children: [
+                                    Column(
+                                      children: [
+                                        Text(isAr ? 'المتوقع' : 'Expected', style: TextStyle(color: c.muted, fontSize: 11)),
+                                        Text(expected, style: TextStyle(color: c.green, fontSize: 22, fontWeight: FontWeight.bold, fontFamily: 'HafsSmart')),
+                                      ],
+                                    ),
+                                    Container(width: 1, height: 32, color: c.border.withValues(alpha: 0.3)),
+                                    Column(
+                                      children: [
+                                        Text(isAr ? 'قلت' : 'You Said', style: TextStyle(color: c.muted, fontSize: 11)),
+                                        Text(predicted, style: TextStyle(color: c.red, fontSize: 22, fontWeight: FontWeight.bold, fontFamily: 'HafsSmart')),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ),
           ),
-        ),
+              ),
             ),
           ),
         );
@@ -441,7 +446,7 @@ class _VerseRowState extends State<VerseRow> {
       final isActiveWord = isActive && ctrl.activeWordIndex == cIdx;
       final isRead =
           cIdx >= 0 &&
-          (ctrl.isWordGreen(ayah, cIdx) || ctrl.isWordRed(ayah, cIdx) || ctrl.isWordYellow(ayah, cIdx) || isActiveWord);
+          (ctrl.isWordGreen(ayah, cIdx) || ctrl.isWordRed(ayah, cIdx) || ctrl.isWordYellow(ayah, cIdx));
 
       // Zero-GPU blur: unrecited words match background color (invisible).
       // Words "materialize" instantly when highlighted green/red.
@@ -577,3 +582,6 @@ class _VerseRowState extends State<VerseRow> {
     );
   }
 }
+
+
+

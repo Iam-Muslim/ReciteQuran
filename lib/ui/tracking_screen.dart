@@ -1,11 +1,10 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
 import '../state/app_state.dart';
-import '../tracking/highlighting_controller.dart';
+import '../tracking/word/highlighting_controller.dart';
 import 'widgets/mic_bar.dart';
 import 'widgets/verse_row.dart';
 import 'widgets/surah_picker.dart';
@@ -677,3 +676,6 @@ class _TrackingScreenState extends State<TrackingScreen>
     );
   }
 }
+
+
+

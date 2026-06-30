@@ -29,11 +29,11 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'state/app_state.dart';
 import 'engine/sherpa_engine.dart';
-import 'tracking/highlighting_controller.dart';
+import 'tracking/word/highlighting_controller.dart';
 import 'audio/audio_processor.dart';
 import 'data/quran_data.dart';
 import 'ui/tracking_screen.dart';
-import 'tracking/voice_search_controller.dart';
+import 'tracking/ayah_search/voice_search_controller.dart';
 
 void main() async {
   runZonedGuarded(() async {
@@ -448,3 +448,4 @@ class _OrchestratorState extends State<_Orchestrator> {
     );
   }
 }
+

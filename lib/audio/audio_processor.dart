@@ -67,7 +67,8 @@ class AudioProcessor {
         threshold:
             0.1, // Lowered from default 0.5 to keep long vowels (يييي) classified as speech
         minSilenceDuration: 2.5, // 2.5s hold: fix for long Quranic Madds
-        minSpeechDuration: 0.25,
+        minSpeechDuration: 0.15,
+        maxSpeechDuration: 20.0,
       ),
       sampleRate: sampleRate,
       numThreads: 1,

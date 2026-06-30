@@ -1,4 +1,4 @@
-// lib/tracking/voice_search_controller.dart
+// lib/tracking/ayah_search/voice_search_controller.dart
 //
 // VoiceSearchController — "Recite to Navigate" feature.
 //
@@ -15,9 +15,9 @@
 //
 // See also: docs/voice_navigation.md
 
-import 'package:the_great_quran/tracking/quran_normalizer.dart';
-import '../engine/sherpa_engine.dart';
-import 'matchers/phonetic_search.dart';
+import 'package:the_great_quran/tracking/word/quran_normalizer.dart';
+import '../../engine/sherpa_engine.dart';
+import 'phonetic_search.dart';
 
 class AnchorResult {
   final int surah;
@@ -154,3 +154,5 @@ class VoiceSearchController {
     return result;
   }
 }
+
+

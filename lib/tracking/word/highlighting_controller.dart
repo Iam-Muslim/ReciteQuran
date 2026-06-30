@@ -1,4 +1,4 @@
-// lib/tracking/highlighting_controller.dart
+// lib/tracking/word/highlighting_controller.dart
 //
 // HighlightingController — bridges ASR engine output to per-word highlighting.
 //
@@ -20,12 +20,12 @@
 //   - Advancing to the next ayah is automatic when all words are resolved.
 //   - The user selects the start surah+ayah; tracker proceeds sequentially.
 
+import 'dart:math';
 import 'package:flutter/foundation.dart';
-import '../state/app_state.dart';
-import '../engine/sherpa_engine.dart';
-import '../data/quran_data.dart';
-import 'phonetic_word_tracker.dart';
-import 'matchers/error_explainer.dart';
+import '../../engine/sherpa_engine.dart';
+import '../../data/quran_data.dart';
+import '../tajweed/error_explainer.dart';
+import 'phoneme_alignment_isolate.dart';
 
 // ── State machine ────────────────────────────────────────────────────────────
 
@@ -84,6 +84,7 @@ class HighlightingController extends ChangeNotifier {
   final SherpaEngine _engine;
   final QuranRepository repository;
   final VoidCallback? onAyahChanged;
+  final bool isTajweed;
 
   TrackerState _state = TrackerState.discovery;
   VerseMatch? _currentMatch;
@@ -102,23 +103,95 @@ class HighlightingController extends ChangeNotifier {
 
   // ── Debug ─────────────────────────────────────────────────────────────────
   final ValueNotifier<String> debugRecognizedText = ValueNotifier('');
-  
-  /// Global update notifier for events that should affect all verses (e.g. clearing highlights)
+
   final ValueNotifier<int> globalRevision = ValueNotifier(0);
 
-  // ── Per-ayah word tracker (quran-transcript PhoneticWordTracker) ──────────
-  PhoneticWordTracker? _wordTracker;
+  final PhonemeAlignmentIsolate _alignmentIsolate = PhonemeAlignmentIsolate();
+  bool _isolateStarted = false;
 
   int _lastResetTime = 0;
+  String _lastProcessedText = '';
   int? _pendingClearAyah;
 
   HighlightingController({
     required this.repository,
     required SherpaEngine engine,
     this.onAyahChanged,
+    this.isTajweed = true,
   }) : _engine = engine {
+    _initIsolate();
     _engine.transcriptionStream.listen(_onResult);
     reset();
+  }
+
+  Future<void> _initIsolate() async {
+    await _alignmentIsolate.start();
+    _isolateStarted = true;
+    _alignmentIsolate.wordStream.listen(_onIsolateWordMatched);
+    _alignmentIsolate.ayahCompletedStream.listen(_onAyahCompleted);
+    
+    if (_currentMatch != null) {
+      _alignmentIsolate.setAyah(
+        _currentMatch!.verse.textPhoneme, 
+        _calculateBoundaries(_currentMatch!.verse.phonemeWords),
+        isTajweed: isTajweed,
+      );
+    }
+  }
+
+  void _onIsolateWordMatched(int wordId) {
+    if (_currentMatch == null) return;
+    final targetAyah = _currentMatch!.verse;
+    final ayahNum = targetAyah.ayah;
+
+    if (!(_greenWordsByVerse[ayahNum]?.contains(wordId) ?? false) &&
+        !(_redWordsByVerse[ayahNum]?.contains(wordId) ?? false) &&
+        !(_yellowWordsByVerse[ayahNum]?.contains(wordId) ?? false)) {
+      
+      (_greenWordsByVerse[ayahNum] ??= {}).add(wordId);
+      
+      // If this was the last word of the Ayah, automatically advance to the next Ayah!
+      if (wordId == targetAyah.phonemeWords.length - 1) {
+        _completedAyahs.add(ayahNum);
+        
+        final nextVerse = repository.getNextVerse(targetAyah.surah, targetAyah.ayah);
+        if (nextVerse != null) {
+          // Delay very slightly to let the UI paint the last word green before jumping
+          Future.delayed(const Duration(milliseconds: 150), () {
+             forceActiveAyah(nextVerse);
+          });
+        } else {
+          finalize();
+        }
+      }
+      
+      notifyListeners();
+    }
+  }
+
+  void _onAyahCompleted(String rawAsr) {
+    if (_currentMatch == null) return;
+    print('[HighlightingController] Ayah completed with raw ASR: $rawAsr');
+    
+    if (isTajweed) {
+      final targetAyah = _currentMatch!.verse;
+      final errors = ErrorExplainer.explainAyahError(
+        targetAyah.textPhoneme,
+        rawAsr,
+        targetAyah.phonemeWords,
+      );
+      
+      if (errors.isNotEmpty) {
+        _errorsByVerse[targetAyah.ayah] = errors;
+        
+        for (int wordId in errors.keys) {
+           _greenWordsByVerse[targetAyah.ayah]?.remove(wordId);
+           (_yellowWordsByVerse[targetAyah.ayah] ??= {}).add(wordId);
+        }
+        
+        notifyListeners();
+      }
+    }
   }
 
   // ── Public accessors ──────────────────────────────────────────────────────
@@ -130,8 +203,7 @@ class HighlightingController extends ChangeNotifier {
   bool get softWarningActive => false;
 
   int? get activeWordIndex {
-    if (_state == TrackerState.discovery) return null;
-    return _wordTracker?.cursor;
+    return null; // Tracking is now fully async in isolate
   }
 
   // ── Word color queries ────────────────────────────────────────────────────
@@ -167,17 +239,7 @@ class HighlightingController extends ChangeNotifier {
   /// Get errors for a word if any
   List<ReciterError>? getWordErrors(int ayah, int wordIndex) {
     int pIdx = _mapToPhonemeIndex(ayah, wordIndex);
-    
-    // If it's the active ayah and the tracker is still running, check the real-time tracker first
-    if (activeAyah.value == ayah && _wordTracker != null) {
-      if (pIdx >= 0 && pIdx < _wordTracker!.errors.length) {
-        final realtimeErrors = _wordTracker!.errors[pIdx];
-        if (realtimeErrors != null && realtimeErrors.isNotEmpty) {
-          return realtimeErrors;
-        }
-      }
-    }
-    
+
     // Fallback to persisted errors (from post-ayah processing or baseline copy)
     return _errorsByVerse[ayah]?[pIdx];
   }
@@ -188,7 +250,6 @@ class HighlightingController extends ChangeNotifier {
     _targetSurah = surah;
     _currentMatch = null;
     activeAyah.value = null;
-    _wordTracker = null;
     clearHighlights();
     await repository.loadSurahAsync(surah);
     reset();
@@ -221,13 +282,28 @@ class HighlightingController extends ChangeNotifier {
     if (verse != null) {
       _currentMatch = VerseMatch(verse: verse, score: 1.0);
       activeAyah.value = ayah;
-      _resetWordTracker(verse);
+      
+      if (_isolateStarted) {
+        _alignmentIsolate.setAyah(verse.textPhoneme, _calculateBoundaries(verse.phonemeWords), isTajweed: isTajweed, forceClear: true);
+      }
+
       _engine.resetBuffer();
       _lastResetTime = DateTime.now().millisecondsSinceEpoch;
       _pendingClearAyah = ayah;
       onAyahChanged?.call();
       notifyListeners();
     }
+  }
+
+  List<int> _calculateBoundaries(List<String> words) {
+    List<int> bounds = [];
+    int cursor = 0;
+    for (String w in words) {
+      bounds.add(cursor);
+      cursor += w.replaceAll(' ', '').length;
+    }
+    bounds.add(cursor); // The end boundary
+    return bounds;
   }
 
   // ── Audio pipeline ────────────────────────────────────────────────────────
@@ -248,10 +324,11 @@ class HighlightingController extends ChangeNotifier {
           : null;
     }
     activeAyah.value = _currentMatch?.verse.ayah;
-    if (_currentMatch != null) {
-      _resetWordTracker(_currentMatch!.verse);
+    if (_currentMatch != null && _isolateStarted) {
+      _alignmentIsolate.setAyah(_currentMatch!.verse.textPhoneme, _calculateBoundaries(_currentMatch!.verse.phonemeWords), isTajweed: isTajweed, forceClear: true);
     }
     _engine.resetBuffer();
+    _lastProcessedText = '';
     _lastResetTime = DateTime.now().millisecondsSinceEpoch;
     onAyahChanged?.call();
     notifyListeners();
@@ -271,8 +348,8 @@ class HighlightingController extends ChangeNotifier {
     } else if (activeAyah.value != null) {
       clearHighlightsFromAyah(activeAyah.value!);
     }
-    _wordTracker?.clearActiveAudio();
     _engine.resetBuffer();
+    _lastProcessedText = '';
     _lastResetTime = DateTime.now().millisecondsSinceEpoch;
     notifyListeners();
   }
@@ -284,6 +361,7 @@ class HighlightingController extends ChangeNotifier {
   void unloadEngine() {
     _state = TrackerState.discovery;
     _engine.destroy();
+    _alignmentIsolate.stop();
     notifyListeners();
   }
 
@@ -296,25 +374,23 @@ class HighlightingController extends ChangeNotifier {
     _state = TrackerState.tracking;
     _currentMatch = VerseMatch(verse: verse, score: 1.0);
     activeAyah.value = verse.ayah;
-    _resetWordTracker(verse);
-    _engine.resetBuffer();
-    _lastResetTime = DateTime.now().millisecondsSinceEpoch;
+    
+    if (_isolateStarted) {
+      _alignmentIsolate.setAyah(verse.textPhoneme, _calculateBoundaries(verse.phonemeWords), isTajweed: isTajweed);
+    }
+
+    // We intentionally DO NOT reset the ASR engine here.
+    // This allows seamless continuous recitation across ayahs without boundary clipping.
     notifyListeners();
   }
 
   // ── Internal ──────────────────────────────────────────────────────────────
 
-  /// Create/reset the PhoneticWordTracker for [verse].
-  void _resetWordTracker(QuranVerse verse) {
-    _wordTracker = PhoneticWordTracker(
-      expectedPhonemes: verse.phonemeWords,
-      isTajweedEnabled: AppState.instance.currentMode == AppMode.tajweed,
-    );
-  }
+
 
   void _onResult(TranscriptionResult result) {
     if (_state == TrackerState.discovery) return;
-    if (_currentMatch == null || _wordTracker == null) return;
+    if (_currentMatch == null) return;
 
     final String asrText = result.text.trim();
     debugRecognizedText.value = asrText;
@@ -323,99 +399,62 @@ class HighlightingController extends ChangeNotifier {
       return;
     }
 
-    if (asrText.isEmpty) return;
-
     if (asrText.length > 400) {
       _engine.resetBuffer();
+      _lastProcessedText = '';
       return;
     }
 
-    final tracker = _wordTracker!;
-    final targetAyah = _currentMatch!.verse;
+    if (asrText.isEmpty) {
+      _lastProcessedText = '';
+      return;
+    }
+    
+    // Detect if the ASR engine started a completely new segment (e.g. after final=true)
+    if (!asrText.startsWith(_lastProcessedText)) {
+       int commonLen = 0;
+       int minLen = min(_lastProcessedText.length, asrText.length);
+       for (int i = 0; i < minLen; i++) {
+         if (_lastProcessedText[i] == asrText[i]) {
+           commonLen++;
+         } else {
+           break;
+         }
+       }
+       
+       // If it shares almost nothing with the old text, it's a new segment, not a tail correction.
+       if (commonLen == 0 || (commonLen < 5 && _lastProcessedText.length > 20)) {
+          _lastProcessedText = '';
+       }
+    }
 
-    final changed = tracker.feed(asrText, isEndpoint: result.isFinal);
-
-    if (!changed) return;
-
-      // Sync tracker statuses → highlight maps
-      bool anyUpdate = false;
-      for (int i = 0; i < tracker.statuses.length; i++) {
-        final status = tracker.statuses[i];
-        final ayahNum = targetAyah.ayah;
-
-        switch (status) {
-          case WordMatchStatus.correct:
-            if (!(_greenWordsByVerse[ayahNum]?.contains(i) ?? false)) {
-              (_greenWordsByVerse[ayahNum] ??= {}).add(i);
-              _redWordsByVerse[ayahNum]?.remove(i);
-              _yellowWordsByVerse[ayahNum]?.remove(i);
-              anyUpdate = true;
-            }
-          case WordMatchStatus.wrong:
-          case WordMatchStatus.skipped:
-            if (!(_redWordsByVerse[ayahNum]?.contains(i) ?? false)) {
-              (_redWordsByVerse[ayahNum] ??= {}).add(i);
-              _greenWordsByVerse[ayahNum]?.remove(i);
-              _yellowWordsByVerse[ayahNum]?.remove(i);
-              anyUpdate = true;
-            }
-          case WordMatchStatus.pending:
-            break;
-        }
-      }
-
-      if (!anyUpdate && !tracker.isComplete) return;
-
-    // Check if the ayah is fully resolved (all words matched/wrong)
-    if (tracker.isComplete) {
-      // 1. Copy all real-time errors (like skipped words) to persistent storage as a baseline
-      for (int i = 0; i < tracker.errors.length; i++) {
-        final errs = tracker.errors[i];
-        if (errs != null && errs.isNotEmpty) {
-          (_errorsByVerse[targetAyah.ayah] ??= {})[i] = List.from(errs);
-        }
-      }
-
-      if (AppState.instance.currentMode == AppMode.tajweed) {
-        // 2. Post-Ayah Global Tajweed Checking
-        print('[Tajweed] Ayah complete. Running global explainAyahError.');
-        print('[Tajweed] --> Sent Expected Ayah (Phonemes): ${targetAyah.textPhoneme}');
-        print('[Tajweed] --> Sent Recited (ASR Accumulated RAW): ${tracker.accumulatedRawText}');
-        print('[Tajweed] --> Sent Expected Words List: ${targetAyah.phonemeWords}');
-
-        final errorsByWord = ErrorExplainer.explainAyahError(
-          targetAyah.textPhoneme,
-          tracker.accumulatedRawText,
-          targetAyah.phonemeWords,
-        );
-        
-        print('[Tajweed] <-- Response (errorsByWord): $errorsByWord');
-
-        // 2. Flip green words to yellow if they have errors
-        errorsByWord.forEach((wIdx, errors) {
-          if (errors.isNotEmpty) {
-            (_errorsByVerse[targetAyah.ayah] ??= {})[wIdx] = errors;
-            if (_greenWordsByVerse[targetAyah.ayah]?.contains(wIdx) ?? false) {
-              (_yellowWordsByVerse[targetAyah.ayah] ??= {}).add(wIdx);
-              _greenWordsByVerse[targetAyah.ayah]?.remove(wIdx);
-              print('[Tajweed] Word $wIdx turned YELLOW due to errors: $errors');
-            }
-          }
-        });
-      }
-
-      _completedAyahs.add(targetAyah.ayah);
-
-      // Advance to next ayah
-      final nextVerse = repository.getNextVerse(_targetSurah, targetAyah.ayah);
-      if (nextVerse != null) {
-        forceActiveAyah(nextVerse);
-      } else {
-        // End of surah
-        finalize();
+    String newText = asrText;
+    if (newText.startsWith(_lastProcessedText)) {
+      newText = newText.substring(_lastProcessedText.length);
+      if (newText.isNotEmpty && _isolateStarted) {
+        _alignmentIsolate.feed(newText);
       }
     } else {
-      notifyListeners();
+      // The ASR rewrote the past (corrected itself).
+      // Find the longest common prefix to know where the rewrite started.
+      int commonLen = 0;
+      int minLen = min(_lastProcessedText.length, asrText.length);
+      for (int i = 0; i < minLen; i++) {
+        if (_lastProcessedText[i] == asrText[i]) {
+          commonLen++;
+        } else {
+          break;
+        }
+      }
+      
+      int backtrackChars = _lastProcessedText.length - commonLen;
+      String newTail = asrText.substring(commonLen);
+      
+      if (_isolateStarted) {
+        _alignmentIsolate.replaceTail(backtrackChars, newTail);
+      }
     }
+    
+    _lastProcessedText = asrText;
   }
 }

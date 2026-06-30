@@ -74,7 +74,6 @@ class PhoneticSearch {
     }
 
     int majorVer = npyData.getUint8(offset++);
-    int minorVer = npyData.getUint8(offset++);
 
     int headerLen;
     if (majorVer == 1) {
@@ -122,7 +121,6 @@ class PhoneticSearch {
     }
 
     int majorVer = npyData.getUint8(offset++);
-    int minorVer = npyData.getUint8(offset++);
 
     int headerLen;
     if (majorVer == 1) {
@@ -144,7 +142,7 @@ class PhoneticSearch {
 
   static const String _coreChars = "ءبتثجحخدذرزسشصضطظعغفقكلمنهوياۥۦ۾ںـٲ";
   static const String _residualChars = "َُِڇؙ۪ۜ";
-  
+
   static final RegExp _chunkRegex = () {
     String coreGroup = _coreChars.split('').map((c) => '$c+').join('|');
     return RegExp('((?:$coreGroup)[$_residualChars]?)');
@@ -153,7 +151,6 @@ class PhoneticSearch {
   /// Normalizes the query by combining consecutive identical core characters
   /// into a single character and stripping residuals.
   String _normalizeQuery(String query) {
-
     StringBuffer normQ = StringBuffer();
     for (var match in _chunkRegex.allMatches(query)) {
       String group = match.group(1)!;

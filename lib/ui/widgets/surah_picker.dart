@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../state/app_state.dart';
-import '../../tracking/highlighting_controller.dart';
+import '../../tracking/word/highlighting_controller.dart';
 import '../../data/quran_data.dart';
 
 class SurahPickerSheet extends StatefulWidget {
@@ -320,3 +320,4 @@ class _SurahPickerSheetState extends State<SurahPickerSheet> {
     );
   }
 }
+
