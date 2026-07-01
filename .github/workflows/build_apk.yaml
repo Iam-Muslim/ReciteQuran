@@ -46,9 +46,12 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-# --- DOWNLOAD ONNX MODEL ---
+      # --- DOWNLOAD ONNX MODELS ---
       - name: Create assets directory
         run: mkdir -p assets/model
+
+      - name: Download Silero VAD Model from GitHub
+        run: curl -L https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx -o assets/model/silero_vad.onnx
 
       - name: Download ONNX Model from Hugging Face
         env:
