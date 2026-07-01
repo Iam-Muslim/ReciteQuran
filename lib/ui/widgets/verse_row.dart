@@ -196,7 +196,7 @@ class _VerseRowState extends State<VerseRow> {
 
     if (widget.controller.isWordGreen(widget.verse.ayah, cIdx)) return c.green;
     if (widget.controller.isWordRed(widget.verse.ayah, cIdx)) return c.red;
-    if (widget.controller.isWordYellow(widget.verse.ayah, cIdx)) return Colors.orange; // Tajweed/Tashkeel warning color
+    if (widget.controller.isWordYellow(widget.verse.ayah, cIdx)) return c.currentWord; // Tajweed/Tashkeel warning color
     
 
     return c.text;
@@ -528,7 +528,7 @@ class _VerseRowState extends State<VerseRow> {
     return GestureDetector(
       onTap: widget.isAutoScrolling ? null : widget.onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 400),
+        duration: const Duration(milliseconds: 200),
         curve: Curves.easeOutCubic,
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),

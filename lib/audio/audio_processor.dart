@@ -13,7 +13,7 @@ class AudioProcessor {
   static const int bytesPerSample = 2; // 16-bit PCM
   static const int bytesPerSec = sampleRate * numChannels * bytesPerSample;
 
-  static const int chunkMs = 160;
+  static const int chunkMs = 60;
   static const int chunkBytes = (bytesPerSec * chunkMs) ~/ 1000;
 
   Uint8List _frameBuffer = Uint8List(0);
@@ -24,7 +24,7 @@ class AudioProcessor {
 
   // Pre-roll keeps audio BEFORE the VAD becomes confident, ensuring consonant attacks aren't lost
   final List<Uint8List> _preRollBufferList = [];
-  static const int maxPreRollFrames = 4; // 640ms pre-roll
+  static const int maxPreRollFrames = 10; // 600ms pre-roll (10 × 60ms)
 
   AudioRecorder? _recorder;
   StreamSubscription<Uint8List>? _subscription;

@@ -260,7 +260,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     // to prevent Flutter from trying to render hundreds of verses in 500ms, which causes lag.
     _scroll.scrollToIndex(
       ayah,
-      duration: const Duration(milliseconds: 150),
+      duration: const Duration(milliseconds: 100),
       preferPosition: AutoScrollPosition.middle,
     );
   }

@@ -529,8 +529,8 @@ void _alignmentWorker(SendPort mainSendPort) {
           wordTotalCounts = tempWordTotalCounts;
         }
 
-        if (selectionScore >= 1.0)
-          break; // Found a perfect, zero-penalty match!
+        if (selectionScore >= 0.85)
+          break; // Found a strong match — no need to keep sliding since prior penalty makes later positions worse
       }
 
       int currentWordTotal = wordTotalCounts[currentWordId] ?? 1;

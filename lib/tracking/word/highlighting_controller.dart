@@ -174,7 +174,7 @@ class HighlightingController extends ChangeNotifier {
         final nextVerse = repository.getNextVerse(targetAyah.surah, targetAyah.ayah);
         if (nextVerse != null) {
           // Delay very slightly to let the UI paint the last word green before jumping
-          Future.delayed(const Duration(milliseconds: 150), () {
+          Future.delayed(const Duration(milliseconds: 50), () {
              forceActiveAyah(nextVerse);
           });
         } else {
@@ -417,7 +417,7 @@ class HighlightingController extends ChangeNotifier {
       return;
     }
 
-    if (asrText.length > 400) {
+    if (asrText.length > 800) {
       _engine.resetBuffer();
       _lastProcessedText = '';
       return;
