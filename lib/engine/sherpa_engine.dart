@@ -24,7 +24,11 @@ class TranscriptionResult {
   final String text;
   final bool isFinal;
   final int startTime;
-  TranscriptionResult({required this.text, this.isFinal = false, this.startTime = 0});
+  TranscriptionResult({
+    required this.text,
+    this.isFinal = false,
+    this.startTime = 0,
+  });
 }
 
 enum _EngineCommand { init, recognize, reset, destroy }
@@ -55,7 +59,9 @@ class SherpaEngine {
     final Directory docDir = await getApplicationSupportDirectory();
     // Prefix with version to force re-extraction on updates
     final String prefix = 'v2_zipformer_';
-    final File file = File('${docDir.path}/$prefix${assetPath.split('/').last}');
+    final File file = File(
+      '${docDir.path}/$prefix${assetPath.split('/').last}',
+    );
 
     if (await file.exists()) {
       return file.path;
@@ -117,7 +123,9 @@ class SherpaEngine {
         _initFuture = null;
         completer.complete();
         for (final pending in _pendingChunks) {
-          final transferable = TransferableTypedData.fromList([pending['chunk'] as Uint8List]);
+          final transferable = TransferableTypedData.fromList([
+            pending['chunk'] as Uint8List,
+          ]);
           _sendPort?.send(
             _IsolateMessage(_EngineCommand.recognize, {
               'chunk': transferable,
@@ -211,10 +219,23 @@ class SherpaEngine {
         case _EngineCommand.init:
           final paths = message.payload as Map<String, String>;
           try {
-            if (!File(paths['modelPath']!).existsSync() || !File(paths['tokensPath']!).existsSync()) {
+            if (!File(paths['modelPath']!).existsSync() ||
+                !File(paths['tokensPath']!).existsSync()) {
               throw Exception('CRITICAL: ONNX model files missing on disk.');
             }
-            
+
+            String providerStr = 'coreml';
+            if (Platform.isAndroid) {
+              providerStr = 'xnnpack';
+              try {
+                final result = Process.runSync('getprop', ['ro.product.cpu.abi']);
+                final abi = result.stdout.toString().trim();
+                if (abi == 'armeabi-v7a') {
+                  providerStr = 'cpu';
+                }
+              } catch (_) {}
+            }
+
             recognizer = OnlineRecognizer(
               OnlineRecognizerConfig(
                 feat: FeatureConfig(sampleRate: 16000, featureDim: 80),
@@ -223,12 +244,9 @@ class SherpaEngine {
                     model: paths['modelPath']!,
                   ),
                   tokens: paths['tokensPath']!,
-                  // As per sherpa-onnx documentation examples, single-thread is often faster 
-                  // due to reduced context switching overhead on lightweight Zipformer models.
-                  numThreads: 1, 
+                  numThreads: 1,
                   modelType: 'zipformer2_ctc',
-                  // Use xnnpack on Android for massive hardware acceleration over pure CPU
-                  provider: Platform.isAndroid ? 'xnnpack' : 'coreml',
+                  provider: providerStr,
                   debug: kDebugMode,
                 ),
                 // We use Silero VAD externally to control endpoints, so native endpointing is disabled.
@@ -248,8 +266,8 @@ class SherpaEngine {
           final payload = message.payload as Map<String, dynamic>;
           final transferable = payload['chunk'] as TransferableTypedData;
           final rawBytesTemp = transferable.materialize().asUint8List();
-          final rawBytes = rawBytesTemp.offsetInBytes % 2 != 0 
-              ? Uint8List.fromList(rawBytesTemp) 
+          final rawBytes = rawBytesTemp.offsetInBytes % 2 != 0
+              ? Uint8List.fromList(rawBytesTemp)
               : rawBytesTemp;
           final isFinal = payload['isFinal'] as bool;
           final startTime = payload['startTime'] as int;
@@ -261,9 +279,9 @@ class SherpaEngine {
             );
             final audio = Float32List(int16.length);
 
-            // Strictly 1.0 gain to prevent clipping loud Quranic Madds/Tafkheem. 
+            // Strictly 1.0 gain to prevent clipping loud Quranic Madds/Tafkheem.
             // The model expects purely unaltered normalized float values [-1.0, 1.0].
-            const double gain = 1.0;
+            const double gain = 3.0;
             const double scale = gain / 32768.0;
             for (int i = 0; i < int16.length; i++) {
               audio[i] = int16[i] * scale;
@@ -295,7 +313,7 @@ class SherpaEngine {
               recognizer!.decode(stream!);
             }
             final final_ = recognizer!.getResult(stream!);
-            
+
             mainSendPort.send({
               'text': final_.text,
               'isFinal': true,

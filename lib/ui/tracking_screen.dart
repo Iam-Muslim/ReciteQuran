@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
@@ -37,7 +38,7 @@ class TrackingScreen extends StatefulWidget {
 }
 
 class _TrackingScreenState extends State<TrackingScreen>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   final AutoScrollController _scroll = AutoScrollController();
   final Map<int, GlobalKey> _keys = {};
   final ValueNotifier<String> _voiceSearchNotifier = ValueNotifier('');
@@ -45,6 +46,7 @@ class _TrackingScreenState extends State<TrackingScreen>
   int? _lastAyah;
   int? _lastSurah;
   bool _isAutoScrolling = false;
+  Ticker? _autoScrollTicker;
 
   @override
   void initState() {
@@ -77,6 +79,7 @@ class _TrackingScreenState extends State<TrackingScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_onControllerUpdate);
+    _autoScrollTicker?.dispose();
     _scroll.dispose();
     _voiceSearchNotifier.dispose();
     WakelockPlus.disable(); // Always disable wakelock when exiting the screen
@@ -126,25 +129,25 @@ class _TrackingScreenState extends State<TrackingScreen>
         return Dialog(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 40),
           child: Container(
             decoration: BoxDecoration(
               color: c.surface,
-              borderRadius: BorderRadius.circular(40),
+              borderRadius: BorderRadius.circular(28),
               border: Border.all(
-                color: c.gold.withValues(alpha: 0.3),
-                width: 1.5,
+                color: c.gold.withValues(alpha: 0.4),
+                width: 1.0,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: c.gold.withValues(alpha: 0.1),
-                  blurRadius: 30,
-                  spreadRadius: 5,
+                  color: c.gold.withValues(alpha: 0.15),
+                  blurRadius: 20,
+                  spreadRadius: 2,
                 ),
               ],
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -155,13 +158,13 @@ class _TrackingScreenState extends State<TrackingScreen>
                       alignment: Alignment.center,
                       children: [
                         Container(
-                          width: 90,
-                          height: 90,
+                          width: 60,
+                          height: 60,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             gradient: RadialGradient(
                               colors: [
-                                Colors.redAccent.withValues(alpha: 0.1),
+                                Colors.redAccent.withValues(alpha: 0.15),
                                 Colors.transparent,
                               ],
                               stops: const [0.5, 1.0],
@@ -169,45 +172,49 @@ class _TrackingScreenState extends State<TrackingScreen>
                           ),
                         ),
                         Container(
-                          padding: const EdgeInsets.all(20),
+                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: c.surfaceHigh,
                             shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.redAccent.withValues(alpha: 0.3),
+                              width: 1.5,
+                            ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.redAccent.withValues(alpha: 0.4),
-                                blurRadius: 20,
-                                spreadRadius: 2,
+                                color: Colors.redAccent.withValues(alpha: 0.3),
+                                blurRadius: 15,
+                                spreadRadius: 1,
                               ),
                             ],
                           ),
                           child: const Icon(
                             Icons.stop_rounded,
                             color: Colors.redAccent,
-                            size: 40,
+                            size: 28,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
                   Text(
                     app.isArabic
-                        ? 'اقرأ آية للانتقال إليها'
-                        : 'Read an Ayah to navigate to it',
+                        ? 'جاري الاستماع...'
+                        : 'Listening...',
                     style: TextStyle(
                       color: c.text,
-                      fontSize: 20,
+                      fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     app.isArabic
-                        ? 'سيقوم النظام بالبحث في كامل المصحف والانتقال مباشرة إلى الآية التي تقرأها'
-                        : 'The system will search the entire Quran and instantly jump to your recitation',
+                        ? 'اقرأ آية ليتم الانتقال إليها مباشرة'
+                        : 'Read an Ayah to jump to it',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: c.muted, fontSize: 14, height: 1.5),
+                    style: TextStyle(color: c.muted, fontSize: 13, height: 1.4),
                   ),
                 ],
               ),
@@ -223,6 +230,13 @@ class _TrackingScreenState extends State<TrackingScreen>
       _lastSurah = widget.controller.targetSurah;
       _keys.clear();
       _lastAyah = null;
+
+      // Jump to top immediately when Surah changes so the new Surah
+      // doesn't inherit the previous Surah's scroll offset (which causes
+      // it to animate wildly from the bottom).
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(0);
+      }
     }
 
     final match = widget.controller.currentMatchedVerse;
@@ -230,16 +244,23 @@ class _TrackingScreenState extends State<TrackingScreen>
       final ayah = match.verse.ayah;
       if (ayah != _lastAyah) {
         _lastAyah = ayah;
-        _forceScrollToAyah(ayah);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _forceScrollToAyah(ayah);
+          }
+        });
       }
     }
   }
 
   void _forceScrollToAyah(int ayah) {
     if (!_scroll.hasClients) return;
+    
+    // If the scroll is a massive jump (e.g. loading a new Surah), make it incredibly fast
+    // to prevent Flutter from trying to render hundreds of verses in 500ms, which causes lag.
     _scroll.scrollToIndex(
       ayah,
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 150),
       preferPosition: AutoScrollPosition.middle,
     );
   }
@@ -248,9 +269,8 @@ class _TrackingScreenState extends State<TrackingScreen>
     if (_isAutoScrolling) {
       setState(() => _isAutoScrolling = false);
       if (_scroll.hasClients) {
-        _scroll.jumpTo(
-          _scroll.position.pixels,
-        ); // Immediately halt the animation
+        // Jumping to the current position cancels the ongoing animation
+        _scroll.jumpTo(_scroll.position.pixels);
       }
       WakelockPlus.disable();
     } else {
@@ -265,34 +285,32 @@ class _TrackingScreenState extends State<TrackingScreen>
   void _startAutoScrollLoop() {
     if (!_isAutoScrolling || !mounted || !_scroll.hasClients) return;
 
+    double baseSpeed = ((AppState.instance.fontSize / 24.0) * 1.5) * (16.0 / 50.0);
+    double speedPerFrame = baseSpeed * AppState.instance.autoScrollSpeed;
+    final double pixelsPerSec = speedPerFrame * 60;
+
     final position = _scroll.position;
-    if (position.pixels < position.maxScrollExtent) {
-      double baseSpeed =
-          ((AppState.instance.fontSize / 24.0) * 1.5) * (16.0 / 50.0);
-      double speedPerFrame = baseSpeed * AppState.instance.autoScrollSpeed;
+    final distance = position.maxScrollExtent - position.pixels;
 
-      // Calculate duration in milliseconds. 60 frames = 1 second.
-      // Pixels per second = speedPerFrame * 60
-      final double pixelsPerSec = speedPerFrame * 60;
-      final double remainingScroll = position.maxScrollExtent - position.pixels;
-      final double durationSec = remainingScroll / pixelsPerSec;
-
-      _scroll
-          .animateTo(
-            position.maxScrollExtent,
-            duration: Duration(milliseconds: (durationSec * 1000).toInt()),
-            curve: Curves.linear,
-          )
-          .then((_) {
-            if (mounted && _isAutoScrolling) {
-              setState(() => _isAutoScrolling = false);
-              WakelockPlus.disable();
-            }
-          });
-    } else {
+    if (distance <= 0) {
       setState(() => _isAutoScrolling = false);
       WakelockPlus.disable();
+      return;
     }
+
+    final durationSeconds = distance / pixelsPerSec;
+
+    // Use native Flutter ScrollActivity for perfectly smooth, tear-free linear scrolling.
+    _scroll.animateTo(
+      position.maxScrollExtent,
+      duration: Duration(milliseconds: (durationSeconds * 1000).toInt()),
+      curve: Curves.linear,
+    ).then((_) {
+      if (mounted && _isAutoScrolling) {
+        setState(() => _isAutoScrolling = false);
+        WakelockPlus.disable();
+      }
+    });
   }
 
   void _showSurahPicker() {
@@ -546,11 +564,12 @@ class _TrackingScreenState extends State<TrackingScreen>
               label: app.isArabic ? 'تجويد' : 'Tajweed',
               color: app.currentMode == AppMode.tajweed ? c.green : c.text,
               onTap: () {
-                app.setMode(
-                  app.currentMode == AppMode.tajweed
-                      ? AppMode.wordChecker
-                      : AppMode.tajweed,
-                );
+                final newMode = app.currentMode == AppMode.tajweed
+                    ? AppMode.wordChecker
+                    : AppMode.tajweed;
+                app.setMode(newMode);
+                widget.controller.setTajweedMode(newMode == AppMode.tajweed);
+
                 ScaffoldMessenger.of(context).clearSnackBars();
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -631,8 +650,6 @@ class _TrackingScreenState extends State<TrackingScreen>
               ? const NeverScrollableScrollPhysics()
               : const BouncingScrollPhysics(),
           padding: EdgeInsets.zero, // Padding is 0, list is truly full-screen
-          cacheExtent:
-              2500.0, // Pre-build verses to handle inaccurate jump estimations
           itemCount:
               displayVerses.length + 2, // +2 for top and bottom padding items
           itemBuilder: (_, i) {
@@ -676,6 +693,3 @@ class _TrackingScreenState extends State<TrackingScreen>
     );
   }
 }
-
-
-

@@ -83,20 +83,6 @@ The index is built offline and stored in two assets:
 1. `assets/model/ph_index.txt`: A single continuous string containing the stripped phonetic representation of the entire Quran (~350 KB).
 2. `assets/model/ph_index.npy`: A binary NumPy array mapping every character index in the `.txt` file back to its Surah, Ayah, Word, and Uthmani character indices (~2.4 MB).
 
-### Loading at Runtime
-
-The index is loaded **lazily** — only when the user first long-presses the button. Loading takes a fraction of a second. After the first load, it stays in memory for the rest of the session.
-
-```dart
-// In VoiceSearchController:
-Future<void> _loadIndexIfNeeded() async {
-    _search = PhoneticSearch();
-    await _search!.load(); // lazy load
-}
-```
-
----
-
 ## Accuracy Notes
 
 - **Short verses (1-2 words):** May return multiple matches across the Quran (like Bismillah). The system currently returns the first best match found.

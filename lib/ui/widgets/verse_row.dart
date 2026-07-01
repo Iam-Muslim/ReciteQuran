@@ -72,7 +72,9 @@ class _VerseRowState extends State<VerseRow> {
       _invalidate();
     }
     if (oldWidget.isAutoScrolling != widget.isAutoScrolling) {
-      _invalidate();
+      if (AppState.instance.isBlurMode) {
+        _invalidate();
+      }
     }
   }
 
@@ -179,7 +181,7 @@ class _VerseRowState extends State<VerseRow> {
 
     // AppState properties — triggers rebuild on any UI setting change
     hash = hash * 31 + (app.isBlurMode ? 1 : 0);
-    hash = hash * 31 + (widget.isAutoScrolling ? 1 : 0);
+    hash = hash * 31 + (app.isBlurMode && widget.isAutoScrolling ? 1 : 0);
     hash = hash * 31 + app.fontSize.hashCode;
     hash = hash * 31 + 0;
     hash = hash * 31 + app.theme.index;

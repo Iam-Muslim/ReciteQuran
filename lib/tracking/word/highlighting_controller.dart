@@ -84,7 +84,16 @@ class HighlightingController extends ChangeNotifier {
   final SherpaEngine _engine;
   final QuranRepository repository;
   final VoidCallback? onAyahChanged;
-  final bool isTajweed;
+  bool isTajweed;
+
+  void setTajweedMode(bool active) {
+    if (isTajweed == active) return;
+    isTajweed = active;
+    if (_isolateStarted) {
+      _alignmentIsolate.setTajweedMode(active);
+    }
+    notifyListeners();
+  }
 
   TrackerState _state = TrackerState.discovery;
   VerseMatch? _currentMatch;
@@ -111,6 +120,7 @@ class HighlightingController extends ChangeNotifier {
 
   int _lastResetTime = 0;
   String _lastProcessedText = '';
+  bool _expectingNewSegment = false;
   int? _pendingClearAyah;
 
   HighlightingController({
@@ -139,16 +149,23 @@ class HighlightingController extends ChangeNotifier {
     }
   }
 
-  void _onIsolateWordMatched(int wordId) {
+  void _onIsolateWordMatched(Map<String, dynamic> event) {
     if (_currentMatch == null) return;
     final targetAyah = _currentMatch!.verse;
     final ayahNum = targetAyah.ayah;
+
+    int wordId = event['word_id'] as int;
+    bool isRed = event['is_red'] as bool? ?? false;
 
     if (!(_greenWordsByVerse[ayahNum]?.contains(wordId) ?? false) &&
         !(_redWordsByVerse[ayahNum]?.contains(wordId) ?? false) &&
         !(_yellowWordsByVerse[ayahNum]?.contains(wordId) ?? false)) {
       
-      (_greenWordsByVerse[ayahNum] ??= {}).add(wordId);
+      if (isRed) {
+        (_redWordsByVerse[ayahNum] ??= {}).add(wordId);
+      } else {
+        (_greenWordsByVerse[ayahNum] ??= {}).add(wordId);
+      }
       
       // If this was the last word of the Ayah, automatically advance to the next Ayah!
       if (wordId == targetAyah.phonemeWords.length - 1) {
@@ -329,6 +346,7 @@ class HighlightingController extends ChangeNotifier {
     }
     _engine.resetBuffer();
     _lastProcessedText = '';
+    _expectingNewSegment = false;
     _lastResetTime = DateTime.now().millisecondsSinceEpoch;
     onAyahChanged?.call();
     notifyListeners();
@@ -407,7 +425,15 @@ class HighlightingController extends ChangeNotifier {
 
     if (asrText.isEmpty) {
       _lastProcessedText = '';
+      if (result.isFinal) {
+        _expectingNewSegment = true;
+      }
       return;
+    }
+    
+    if (_expectingNewSegment) {
+      _lastProcessedText = '';
+      _expectingNewSegment = false;
     }
     
     // Detect if the ASR engine started a completely new segment (e.g. after final=true)
@@ -456,5 +482,9 @@ class HighlightingController extends ChangeNotifier {
     }
     
     _lastProcessedText = asrText;
+    
+    if (result.isFinal) {
+      _expectingNewSegment = true;
+    }
   }
 }

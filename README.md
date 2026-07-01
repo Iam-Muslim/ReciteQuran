@@ -44,7 +44,7 @@ It runs **entirely on-device**, with no internet connection needed. An Arabic AS
 10. [Directory Structure](#directory-structure)
 11. [Known Limitations & Open Tasks](#known-limitations--open-tasks)
 
-Docs .md files may not be updated according to the latest project version
+Read the new `docs/phonetic_matching_architecture.md` for a comprehensive, up-to-date dive into how the system works.
 ---
 
 ## How the Architecture Works
@@ -60,7 +60,7 @@ SherpaEngine (Isolate — ONNX model inference)
     ↓
 HighlightingController (word-matching brain)
     ↓
-PhoneticWordTracker (per-ayah DP alignment)
+PhonemeAlignmentIsolate (per-ayah DP alignment)
     ↓
 UI (TrackingScreen → VerseRow → word highlighting)
 ```
@@ -69,7 +69,7 @@ Each arrow is a Dart `Stream`. No step blocks the UI thread.
 
 ### Phase 1: Real-Time Green/Red Highlighting
 
-As you speak each word, `PhoneticWordTracker` uses a **streaming Levenshtein DP** to find where in the reference phoneme list your voice currently is. When it passes a word boundary, the word turns:
+As you speak each word, `PhonemeAlignmentIsolate` uses a **streaming Levenshtein DP** to find where in the reference phoneme list your voice currently is. When it passes a word boundary, the word turns:
 - **Green** → you said it correctly
 - **Red** → you skipped or mispronounced it
 
@@ -227,9 +227,9 @@ Input:    "ٱلرَّحْمَـٰنِ"
 Output:   "الرحمن"
 ```
 
-### `lib/tracking/phonetic_word_tracker.dart`
+### `lib/tracking/word/phoneme_alignment_isolate.dart`
 
-**This is the core real-time word matching engine.** It is a **100% mathematical port of the QUA SDK's 3D Wraparound DP**, adapted for a real-time sliding window.
+**This is the core real-time word matching engine.** It runs in a background Isolate (so it doesn't freeze the UI) and uses dynamic programming adapted for a real-time sliding window.
 
 **The concept (explained simply):**
 Instead of naive substring searches, it runs a 3-Dimensional Dynamic Programming matrix over the incoming audio chunk (`P`) and the dynamically estimated expected window (`R`).
@@ -368,7 +368,8 @@ lib/
 │   └── app_state.dart                # Singleton settings (theme, lang, font size, mode)
 ├── tracking/
 │   ├── highlighting_controller.dart  # Brain: routes ASR → word tracker → UI
-│   ├── phonetic_word_tracker.dart    # Streaming Levenshtein DP per-ayah
+│   ├── word/
+│   │   └── phoneme_alignment_isolate.dart # Streaming Levenshtein DP per-ayah (Isolate)
 │   ├── quran_normalizer.dart         # Normalize Arabic text for comparison
 │   ├── voice_search_controller.dart  # Global Quran search via recitation
 │   └── matchers/

@@ -11,6 +11,7 @@ dependencies:
   diff_match_patch: ^0.4.1
   flutter:
     sdk: flutter
+  flutter_displaymode: ^0.7.0
   in_app_update: ^4.2.5
   package_info_plus: ^10.1.0
   path_provider: ^2.1.5

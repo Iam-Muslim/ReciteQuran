@@ -67,10 +67,13 @@ class VoiceSearchController {
     engine.resetBuffer();
   }
 
+  bool _isSearching = false;
+  String? _queuedText;
+
   /// Called continuously as new partial text is streamed from the ASR.
   /// If the engine finds exactly ONE unique Ayah that matches the input,
   /// it returns the [AnchorResult] immediately (bypassing VAD silence wait).
-  AnchorResult? processRealtime(String partialText) {
+  Future<AnchorResult?> processRealtime(String partialText) async {
     if (_search == null) return null;
 
     String normText = QuranNormalizer.normalizeWithTashkeel(partialText);
@@ -79,32 +82,54 @@ class VoiceSearchController {
     // as it will match thousands of verses and is too ambiguous.
     if (normText.length < 8) return null;
 
-    final results = _search!.search(normText, errorRatio: 0.18);
-    if (results.isEmpty) return null;
-
-    // We only want to jump if we are 100% confident. 
-    // Confidence = there is exactly 1 unique Ayah in the entire Quran 
-    // that matches the spoken words so far.
-    final uniqueAyahs = <String>{};
-    for (var r in results) {
-      uniqueAyahs.add('${r.start.surahIdx}-${r.start.ayahIdx}');
-    }
-
-    if (uniqueAyahs.length == 1) {
-      // Perfect unique match found!
-      results.sort((a, b) => a.distance.compareTo(b.distance));
-      final bestMatch = results.first;
-      
-      print('[VoiceSearch] ⚡ REALTIME UNIQUE MATCH FOUND! Surah ${bestMatch.start.surahIdx}, Ayah ${bestMatch.start.ayahIdx}');
-      
-      return AnchorResult(
-        surah: bestMatch.start.surahIdx,
-        ayah: bestMatch.start.ayahIdx,
-      );
+    if (_isSearching) {
+      _queuedText = normText;
+      return null;
     }
     
-    // More than 1 match means it's still ambiguous. Wait for the user to speak more.
-    return null;
+    _isSearching = true;
+    AnchorResult? finalResult;
+
+    try {
+      String textToSearch = normText;
+      
+      while (true) {
+        final results = await _search!.searchIsolated(textToSearch, errorRatio: 0.18);
+        
+        if (results.isNotEmpty) {
+          final uniqueAyahs = <String>{};
+          for (var r in results) {
+            uniqueAyahs.add('${r.start.surahIdx}-${r.start.ayahIdx}');
+          }
+
+          if (uniqueAyahs.length == 1) {
+            // Perfect unique match found!
+            results.sort((a, b) => a.distance.compareTo(b.distance));
+            final bestMatch = results.first;
+            
+            print('[VoiceSearch] ⚡ REALTIME UNIQUE MATCH FOUND! Surah ${bestMatch.start.surahIdx}, Ayah ${bestMatch.start.ayahIdx}');
+            
+            finalResult = AnchorResult(
+              surah: bestMatch.start.surahIdx,
+              ayah: bestMatch.start.ayahIdx,
+            );
+            break;
+          }
+        }
+
+        // If another update came in while we were searching, process it now
+        if (_queuedText != null) {
+          textToSearch = _queuedText!;
+          _queuedText = null;
+        } else {
+          break; // No more updates waiting
+        }
+      }
+    } finally {
+      _isSearching = false;
+    }
+    
+    return finalResult;
   }
 
   /// Called when the user releases the long-press, OR when VAD silence is detected.
@@ -116,7 +141,7 @@ class VoiceSearchController {
   ///   - The index failed to load
   ///   - The input text is empty / too short
   ///   - No Ayah got enough votes
-  AnchorResult? stopSearch(String finalAsrText) {
+  Future<AnchorResult?> stopSearch(String finalAsrText) async {
     if (_search == null) {
       print('[VoiceSearch] Search failed: index not loaded.');
       return null;
@@ -133,7 +158,7 @@ class VoiceSearchController {
     }
 
     // Run PhoneticSearch (allow ~18% error ratio to account for ASR misrecognitions)
-    final results = _search!.search(normText, errorRatio: 0.18);
+    final results = await _search!.searchIsolated(normText, errorRatio: 0.18);
 
     if (results.isEmpty) {
       print('[VoiceSearch] No match found.');

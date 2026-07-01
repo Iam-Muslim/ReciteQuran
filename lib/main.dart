@@ -26,6 +26,7 @@ import 'package:flutter/services.dart';
 import 'package:in_app_update/in_app_update.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:flutter_displaymode/flutter_displaymode.dart';
 
 import 'state/app_state.dart';
 import 'engine/sherpa_engine.dart';
@@ -36,33 +37,46 @@ import 'ui/tracking_screen.dart';
 import 'tracking/ayah_search/voice_search_controller.dart';
 
 void main() async {
-  runZonedGuarded(() async {
-    WidgetsFlutterBinding.ensureInitialized();
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
 
-    if (kReleaseMode) {
-      debugPrint = (String? message, {int? wrapWidth}) {};
-    }
-
-    // Transparent system bars for immersive experience
-    SystemChrome.setSystemUIOverlayStyle(
-      const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        systemNavigationBarColor: Colors.transparent,
-      ),
-    );
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-
-    await AppState.instance.load();
-    runApp(const QuranApp());
-  }, (error, stack) {
-    debugPrint('Uncaught Error: $error');
-  }, zoneSpecification: ZoneSpecification(
-    print: (Zone self, ZoneDelegate parent, Zone zone, String line) {
-      if (!kReleaseMode) {
-        parent.print(zone, line);
+      if (kReleaseMode) {
+        debugPrint = (String? message, {int? wrapWidth}) {};
       }
+
+      // Transparent system bars for immersive experience
+      SystemChrome.setSystemUIOverlayStyle(
+        const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          systemNavigationBarColor: Colors.transparent,
+        ),
+      );
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
+      // Request highest possible refresh rate (e.g., 120Hz) on Android
+      if (Platform.isAndroid) {
+        try {
+          await FlutterDisplayMode.setHighRefreshRate();
+        } catch (e) {
+          debugPrint('Failed to set high refresh rate: $e');
+        }
+      }
+
+      await AppState.instance.load();
+      runApp(const QuranApp());
     },
-  ));
+    (error, stack) {
+      debugPrint('Uncaught Error: $error');
+    },
+    zoneSpecification: ZoneSpecification(
+      print: (Zone self, ZoneDelegate parent, Zone zone, String line) {
+        if (!kReleaseMode) {
+          parent.print(zone, line);
+        }
+      },
+    ),
+  );
 }
 
 /// Root widget — rebuilds MaterialApp when theme/language changes.
@@ -115,12 +129,13 @@ class _OrchestratorState extends State<_Orchestrator> {
   bool _isLoadingEngine = false;
   bool _isVoiceSearching = false;
   String _voiceSearchAsrText = '';
+  Timer? _voiceSearchSilenceTimer;
 
   @override
   void initState() {
     super.initState();
     _voiceSearchCtrl = VoiceSearchController(engine: _engine);
-    
+
     // Global subscription for Voice Search text
     _engine.transcriptionStream.listen((res) {
       if (_isVoiceSearching && mounted) {
@@ -129,14 +144,17 @@ class _OrchestratorState extends State<_Orchestrator> {
         });
 
         // REAL-TIME SEARCH EVALUATION
-        final rtResult = _voiceSearchCtrl.processRealtime(res.text);
-        if (rtResult != null) {
-          // Unique match found! Bypass VAD and jump immediately.
-          _stopVoiceSearch(precalculatedResult: rtResult);
-        } else if (res.isFinal && _voiceSearchAsrText.trim().isNotEmpty) {
-          debugPrint('[VoiceSearch] Auto-stopping search due to Sherpa Endpoint (silence detected)');
-          _stopVoiceSearch();
-        }
+        _voiceSearchCtrl.processRealtime(res.text).then((rtResult) {
+          if (rtResult != null) {
+            // Unique match found! Bypass VAD and jump immediately.
+            _stopVoiceSearch(precalculatedResult: rtResult);
+          } else if (res.isFinal && _voiceSearchAsrText.trim().isNotEmpty) {
+            debugPrint(
+              '[VoiceSearch] Auto-stopping search due to Sherpa Endpoint (silence detected)',
+            );
+            _stopVoiceSearch();
+          }
+        });
       }
     });
 
@@ -158,6 +176,7 @@ class _OrchestratorState extends State<_Orchestrator> {
 
   @override
   void dispose() {
+    _voiceSearchSilenceTimer?.cancel();
     _ctrl?.dispose();
     super.dispose();
   }
@@ -184,6 +203,7 @@ class _OrchestratorState extends State<_Orchestrator> {
       _ctrl = HighlightingController(
         engine: _engine,
         repository: _repo!,
+        isTajweed: AppState.instance.currentMode == AppMode.tajweed,
         // Flush stale audio on ayah transitions to prevent cross-ayah
         // ghosting (old words matching new ayah's text).
         onAyahChanged: () {
@@ -226,7 +246,7 @@ class _OrchestratorState extends State<_Orchestrator> {
         // Ensure engine is ready (may still be initializing in background)
         if (!_engine.isInitialized) {
           // Trigger initialize just in case, but DON'T await
-          _engine.initialize(); 
+          _engine.initialize();
         }
 
         await WakelockPlus.enable();
@@ -263,7 +283,7 @@ class _OrchestratorState extends State<_Orchestrator> {
   /// Toggles global voice search across the Quran
   Future<void> _toggleVoiceSearch() async {
     if (_isToggling) return;
-    
+
     if (_isVoiceSearching) {
       await _stopVoiceSearch();
     } else {
@@ -280,7 +300,7 @@ class _OrchestratorState extends State<_Orchestrator> {
 
     try {
       if (!_engine.isInitialized) {
-        _engine.initialize(); 
+        _engine.initialize();
       }
 
       // Suspend highlighting controller so it doesn't consume/reset the engine buffer!
@@ -288,7 +308,7 @@ class _OrchestratorState extends State<_Orchestrator> {
 
       await _voiceSearchCtrl.startSearch();
       await WakelockPlus.enable();
-      
+
       if (mounted) {
         setState(() {
           _isVoiceSearching = true;
@@ -296,15 +316,38 @@ class _OrchestratorState extends State<_Orchestrator> {
         });
       }
 
-      _audio.start(
-        onChunk: (chunk, isFinal) => _engine.transcribe(chunk, isFinal: isFinal),
-      ).catchError((e) {
-        debugPrint('❌ AUDIO ERROR in Voice Search: $e');
-        if (mounted) setState(() => _isVoiceSearching = false);
-      });
-      
-      // Note: transcriptionStream listen is now handled in initState to prevent duplicates.
+      _voiceSearchSilenceTimer?.cancel();
 
+      _audio
+          .start(
+            onChunk: (chunk, isFinal) {
+              _engine.transcribe(chunk, isFinal: isFinal);
+
+              if (_isVoiceSearching && !isFinal) {
+                _voiceSearchSilenceTimer?.cancel();
+                _voiceSearchSilenceTimer = Timer(
+                  const Duration(milliseconds: 800),
+                  () {
+                    if (_isVoiceSearching &&
+                        _voiceSearchAsrText.trim().isNotEmpty) {
+                      debugPrint(
+                        '[VoiceSearch] 800ms silence detected. Forcing search stop.',
+                      );
+                      // Send an empty final chunk to force Sherpa to emit isFinal=true,
+                      // which will subsequently trigger the actual stop logic in transcriptionStream.listen
+                      _engine.transcribe(Uint8List(0), isFinal: true);
+                    }
+                  },
+                );
+              }
+            },
+          )
+          .catchError((e) {
+            debugPrint('❌ AUDIO ERROR in Voice Search: $e');
+            if (mounted) setState(() => _isVoiceSearching = false);
+          });
+
+      // Note: transcriptionStream listen is now handled in initState to prevent duplicates.
     } catch (e) {
       debugPrint('❌ VOICE SEARCH START ERROR: $e');
       if (mounted) setState(() => _isVoiceSearching = false);
@@ -318,6 +361,7 @@ class _OrchestratorState extends State<_Orchestrator> {
     _isToggling = true;
 
     try {
+      _voiceSearchSilenceTimer?.cancel();
       await _audio.stopAndGetAudio();
       _engine.resetBuffer();
       await WakelockPlus.disable();
@@ -328,17 +372,22 @@ class _OrchestratorState extends State<_Orchestrator> {
         });
       }
 
-      final result = precalculatedResult ?? _voiceSearchCtrl.stopSearch(_voiceSearchAsrText);
+      AnchorResult? result = precalculatedResult;
+      if (result == null) {
+        result = await _voiceSearchCtrl.stopSearch(_voiceSearchAsrText);
+      }
       if (result != null && _ctrl != null) {
         // Automatically navigate to the found Ayah!
         await _ctrl!.setTargetSurah(result.surah);
         _ctrl!.setManualAyah(result.surah, result.ayah);
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).clearSnackBars();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('تم الانتقال إلى سورة ${result.surah} آية ${result.ayah}'),
+              content: Text(
+                'تم الانتقال إلى سورة ${result.surah} آية ${result.ayah}',
+              ),
               duration: const Duration(seconds: 3),
               behavior: SnackBarBehavior.floating,
               backgroundColor: AppState.instance.colors.gold,
@@ -348,7 +397,7 @@ class _OrchestratorState extends State<_Orchestrator> {
       } else {
         // Fallback: resume previous state if no Ayah was found
         _ctrl?.resumeTracking();
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -358,7 +407,6 @@ class _OrchestratorState extends State<_Orchestrator> {
           );
         }
       }
-
     } catch (e) {
       debugPrint('❌ VOICE SEARCH STOP ERROR: $e');
     } finally {
@@ -448,4 +496,3 @@ class _OrchestratorState extends State<_Orchestrator> {
     );
   }
 }
-

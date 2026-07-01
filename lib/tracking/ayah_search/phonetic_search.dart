@@ -1,8 +1,21 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/services.dart';
 
 import 'fuzzy_search.dart';
+
+class _SearchArgs {
+  final String normQuery;
+  final String refPhNorm;
+  final int maxEdits;
+  _SearchArgs(this.normQuery, this.refPhNorm, this.maxEdits);
+}
+
+List<FuzzyMatch> _runSearchIsolated(_SearchArgs args) {
+  return findNearMatches(args.normQuery, args.refPhNorm, args.maxEdits);
+}
+
 
 class PhonemesSearchSpan {
   final int surahIdx;
@@ -74,6 +87,7 @@ class PhoneticSearch {
     }
 
     int majorVer = npyData.getUint8(offset++);
+    int minorVer = npyData.getUint8(offset++);
 
     int headerLen;
     if (majorVer == 1) {
@@ -93,7 +107,15 @@ class PhoneticSearch {
     // In Dart, we can just create a Uint16List view over the remaining buffer.
     int remainingBytes = npyData.lengthInBytes - offset;
     int numElements = remainingBytes ~/ 2;
-    _indexArray = Uint16List.view(npyData.buffer, offset, numElements);
+    
+    int byteOffset = npyData.offsetInBytes + offset;
+    if (byteOffset % 2 != 0) {
+      Uint8List unaligned = npyData.buffer.asUint8List(byteOffset, remainingBytes);
+      Uint8List aligned = Uint8List.fromList(unaligned);
+      _indexArray = aligned.buffer.asUint16List();
+    } else {
+      _indexArray = npyData.buffer.asUint16List(byteOffset, numElements);
+    }
 
     // Check consistency
     int numRows = _indexArray.length ~/ 7;
@@ -121,6 +143,7 @@ class PhoneticSearch {
     }
 
     int majorVer = npyData.getUint8(offset++);
+    int minorVer = npyData.getUint8(offset++);
 
     int headerLen;
     if (majorVer == 1) {
@@ -136,7 +159,15 @@ class PhoneticSearch {
     offset += headerLen;
     int remainingBytes = npyData.lengthInBytes - offset;
     int numElements = remainingBytes ~/ 2;
-    _indexArray = Uint16List.view(npyData.buffer, offset, numElements);
+    
+    int byteOffset = npyData.offsetInBytes + offset;
+    if (byteOffset % 2 != 0) {
+      Uint8List unaligned = npyData.buffer.asUint8List(byteOffset, remainingBytes);
+      Uint8List aligned = Uint8List.fromList(unaligned);
+      _indexArray = aligned.buffer.asUint16List();
+    } else {
+      _indexArray = npyData.buffer.asUint16List(byteOffset, numElements);
+    }
     _isLoaded = true;
   }
 
@@ -202,6 +233,41 @@ class PhoneticSearch {
 
     // Use our fuzzy_search algorithm
     List<FuzzyMatch> outs = findNearMatches(normQuery, _refPhNorm, maxEdits);
+
+    if (outs.isEmpty) {
+      return [];
+    }
+
+    List<PhonemesSearchResult> results = [];
+    for (var out in outs) {
+      results.add(
+        PhonemesSearchResult(
+          start: _refIdxToSpan(out.start, isEnd: false),
+          end: _refIdxToSpan(out.end - 1, isEnd: true),
+          distance: out.dist,
+        ),
+      );
+    }
+
+    // Sort by distance (best matches first) to align with python reference implementation
+    results.sort((a, b) => a.distance.compareTo(b.distance));
+
+    return results;
+  }
+
+  /// Searches for the query asynchronously on a background isolate to prevent UI freezes.
+  Future<List<PhonemesSearchResult>> searchIsolated(String query, {double errorRatio = 0.1}) async {
+    if (!_isLoaded) {
+      throw Exception("PhoneticSearch must be loaded before searching");
+    }
+
+    String normQuery = _normalizeQuery(query);
+    if (normQuery.isEmpty) return [];
+
+    int maxEdits = (normQuery.length * errorRatio).toInt();
+
+    // Use our fuzzy_search algorithm on a background isolate
+    List<FuzzyMatch> outs = await Isolate.run(() => _runSearchIsolated(_SearchArgs(normQuery, _refPhNorm, maxEdits)));
 
     if (outs.isEmpty) {
       return [];

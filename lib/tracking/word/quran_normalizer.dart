@@ -101,19 +101,8 @@ class QuranNormalizer {
     );
   }
 
-  /// Strip ALL harakat and phonetic residual marks (like small yaa ۦ and small waw ۥ)
-  /// Used to get the pure bare consonant skeleton for real-time sliding window matching.
-  static final RegExp _bareResidualsRegex = RegExp('[$_residualsStr]');
   static final RegExp _whitespaceRegex = RegExp(r'\s+');
   static final RegExp _tashkeelRegex = RegExp('[$_tashkeelChars]');
-
-  static String normalizeBare(String text) {
-    String s = text.replaceAll(_bareResidualsRegex, '');
-    s = s.replaceAll(_alefMaksura, _alef);
-    s = s.replaceAll(_hamzatWasl, _alef);
-    s = s.replaceAll(_whitespaceRegex, '');
-    return s;
-  }
 
   // ── Residual characters (harakat, tanween, sukun, etc.) ───────────────────
   // These are "modifier" characters that attach to a base consonant.
