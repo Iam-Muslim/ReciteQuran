@@ -57,8 +57,14 @@ class ErrorExplainer {
     int m = predGroups.length;
 
     // Precompute first characters to avoid string operations inside the hot loop
-    List<String> refChars = List.generate(n, (i) => refGroups[i].isNotEmpty ? refGroups[i][0] : '');
-    List<String> predChars = List.generate(m, (i) => predGroups[i].isNotEmpty ? predGroups[i][0] : '');
+    List<String> refChars = List.generate(
+      n,
+      (i) => refGroups[i].isNotEmpty ? refGroups[i][0] : '',
+    );
+    List<String> predChars = List.generate(
+      m,
+      (i) => predGroups[i].isNotEmpty ? predGroups[i][0] : '',
+    );
 
     // Create distance matrix
     List<List<int>> dp = List.generate(n + 1, (_) => List.filled(m + 1, 0));
@@ -69,11 +75,11 @@ class ErrorExplainer {
     for (int i = 1; i <= n; i++) {
       for (int j = 1; j <= m; j++) {
         int cost = (refChars[i - 1] == predChars[j - 1]) ? 0 : 1;
-        
+
         int del = dp[i - 1][j] + 1;
         int ins = dp[i][j - 1] + 1;
         int sub = dp[i - 1][j - 1] + cost;
-        
+
         dp[i][j] = min(del, min(ins, sub));
       }
     }
@@ -125,203 +131,222 @@ class ErrorExplainer {
     return alignments.reversed.toList();
   }
 
-  /// Explains errors between a full expected Ayah and a full predicted Ayah string.
   static Map<int, List<ReciterError>> explainAyahError(
-    String expectedAyahPh,
-    String predictedAyahPh,
     List<String> phonemeWords,
-    List<double> predictedDurations,
+    List<String> predictedWordsPh,
+    List<List<double>> predictedWordDurations,
   ) {
-    print('\n[ErrorExplainer] === START GLOBAL TAJWEED EVALUATION ===');
-    print('[ErrorExplainer] Raw Expected: "$expectedAyahPh"');
-    print('[ErrorExplainer] Raw Predicted: "$predictedAyahPh"');
-
-    // 1. Build character-to-word index mapping
-    List<int> wordBoundaries = [0];
-    String spacelessExpected = '';
-    for (String w in phonemeWords) {
-      spacelessExpected += w.replaceAll(' ', '');
-      wordBoundaries.add(spacelessExpected.length);
-    }
-    
-    // In case expectedAyahPh has spaces, we strip them to match phonemeWords
-    expectedAyahPh = expectedAyahPh.replaceAll(' ', '');
-    predictedAyahPh = predictedAyahPh.replaceAll(' ', '');
-
-    final refGroups = QuranNormalizer.chunkPhonemes(expectedAyahPh);
-    final predGroups = QuranNormalizer.chunkPhonemes(predictedAyahPh);
-
-    // Map each raw chunk to its word index
-    List<int> refGroupToWord = [];
-    int charCursor = 0;
-    for (var chunk in refGroups) {
-      int wIdx = 0;
-      for (int i = 0; i < phonemeWords.length; i++) {
-        if (charCursor >= wordBoundaries[i] && charCursor < wordBoundaries[i+1]) {
-          wIdx = i;
-          break;
-        }
-      }
-      refGroupToWord.add(wIdx);
-      charCursor += chunk.length;
-    }
-
-    print('[ErrorExplainer] Reference Groups: $refGroups');
-    print('[ErrorExplainer] Predicted Groups: $predGroups');
-
-    // 3. Align Groups
-    final alignments = _alignPhonemeGroups(refGroups, predGroups);
     final Map<int, List<ReciterError>> errorsByWord = {};
 
-    for (final align in alignments) {
-      String refChunk = align.refIdx >= 0 && align.refIdx < refGroups.length
-          ? refGroups[align.refIdx]
-          : '';
-      String predChunk = align.predIdx >= 0 && align.predIdx < predGroups.length
-          ? predGroups[align.predIdx]
-          : '';
-
-      // Calculate the duration of the predChunk by summing char durations
-      double chunkDuration = 0.0;
-      if (predChunk.isNotEmpty && align.predIdx >= 0) {
-        // Find the absolute character index in predictedAyahPh for this chunk
-        int charIdx = 0;
-        for (int k = 0; k < align.predIdx; k++) {
-          charIdx += predGroups[k].length;
-        }
-        
-        for (int k = 0; k < predChunk.length; k++) {
-           if (charIdx + k < predictedDurations.length) {
-              chunkDuration += predictedDurations[charIdx + k];
-           }
-        }
-        if (chunkDuration <= 0.0) chunkDuration = 0.15;
+    for (int wIdx = 0; wIdx < phonemeWords.length; wIdx++) {
+      String expectedWord = phonemeWords[wIdx].replaceAll(' ', '');
+      String predictedWord = '';
+      if (wIdx < predictedWordsPh.length) {
+        predictedWord = predictedWordsPh[wIdx].replaceAll(' ', '');
       }
 
-      int wIdx = align.refIdx >= 0 && align.refIdx < refGroupToWord.length 
-          ? refGroupToWord[align.refIdx] 
-          : (refGroupToWord.isNotEmpty ? refGroupToWord.last : 0);
+      // Skip words not yet matched
+      if (predictedWord.isEmpty) continue;
 
-      ReciterError? error;
+      List<double> wordDurations = [];
+      if (wIdx < predictedWordDurations.length) {
+        wordDurations = predictedWordDurations[wIdx];
+      }
 
-      if (align.opType == 'insert') {
-        error = ReciterError(
-          errorType: ErrorCategory.normal,
-          speechErrorType: SpeechErrorType.insert,
-          expectedPh: '',
-          predictedPh: predChunk,
-        );
-      } else {
-        if (align.opType == 'delete' || align.opType == 'replace' || (align.opType == 'equal' && refChunk != predChunk)) {
-          // Check for Tajweed rules first for ANY mismatch involving the reference
-          TajweedRule? expectedTajweed;
-          
-          bool isLastWord = wIdx == phonemeWords.length - 1;
+      final refGroups = QuranNormalizer.chunkPhonemes(expectedWord);
 
-          final allRules = [
-            Qalqalah(),
-            TafkheemRule(),
-            HamsRule(),
-            LeenMaddRule(),
-            isLastWord ? AaredMaddRule() : MaddRule(name: const LangName(ar: "مد", en: "Madd"), goldenLen: refChunk.length),
-            Ghonnah(name: const LangName(ar: "غنة", en: "Ghonnah"), goldenLen: refChunk.length),
-          ];
+      // Append the first chunk of the next word for boundary rules (Idgham etc)
+      bool hasBoundaryContext = false;
+      if (wIdx < phonemeWords.length - 1) {
+        String nextWord = phonemeWords[wIdx + 1].replaceAll(' ', '');
+        if (nextWord.isNotEmpty) {
+          final nextChunks = QuranNormalizer.chunkPhonemes(nextWord);
+          if (nextChunks.isNotEmpty) {
+            refGroups.add(nextChunks.first);
+            hasBoundaryContext = true;
+          }
+        }
+      }
 
-          bool isValidTajweedVariation = false;
-          double? errExpectedDuration;
-          double? errActualDuration;
+      final predGroups = QuranNormalizer.chunkPhonemes(predictedWord);
+      final alignments = _alignPhonemeGroups(refGroups, predGroups);
+      final List<String> wordErrorDesc = [];
 
-          for (var rule in allRules) {
-            if (rule.isPhStrIn(refChunk)) {
-              var specificRule = rule.getRelevantRule(refChunk);
-              if (specificRule != null) {
-                if (specificRule.correctnessType == CorrectnessType.match && !specificRule.match(refChunk, predChunk)) {
-                  expectedTajweed = specificRule;
-                  print('[ErrorExplainer] Tajweed MATCH error found: ${specificRule.name.en} for ref: $refChunk, pred: $predChunk');
-                  break;
-                } else if (specificRule.correctnessType == CorrectnessType.count) {
-                  // Only check duration for rules that actually require elongation (>= 2 harakat)
-                  if (specificRule.goldenLen >= 2) {
-                    bool hasValidDuration = specificRule.checkDuration(chunkDuration);
-                    
-                    if (!hasValidDuration) {
-                      expectedTajweed = specificRule;
-                      errExpectedDuration = specificRule.goldenLen * 0.20;
-                      errActualDuration = chunkDuration;
-                      print('[ErrorExplainer] Tajweed DURATION error found: ${specificRule.name.en}. Expected >= ${errExpectedDuration.toStringAsFixed(2)} seconds. Duration got: ${chunkDuration.toStringAsFixed(2)} seconds. (ref: $refChunk, pred: $predChunk)');
-                      break;
-                    } else {
-                      // Bypass phoneme matching for Madd/Ghunna since it is now purely timestamp-based
-                      isValidTajweedVariation = true;
-                      print('[ErrorExplainer] Valid Tajweed DURATION match: ${specificRule.name.en}. Required >= ${(specificRule.goldenLen * 0.20).toStringAsFixed(2)}s, got ${chunkDuration.toStringAsFixed(2)}s. (ref: $refChunk, pred: $predChunk)');
-                    }
-                  } else {
-                    // It's a normal consonant (like a single 'م' or 'ن' for Izhar), no Tajweed duration required.
-                    isValidTajweedVariation = true; 
-                  }
-                }
-              }
+      for (final align in alignments) {
+        if (hasBoundaryContext && align.refIdx == refGroups.length - 1)
+          continue;
+
+        String refChunk = align.refIdx >= 0 && align.refIdx < refGroups.length
+            ? refGroups[align.refIdx]
+            : '';
+        String predChunk =
+            align.predIdx >= 0 && align.predIdx < predGroups.length
+            ? predGroups[align.predIdx]
+            : '';
+
+        double chunkDuration = 0.0;
+        if (predChunk.isNotEmpty && align.predIdx >= 0) {
+          int charIdx = 0;
+          for (int k = 0; k < align.predIdx; k++) {
+            charIdx += predGroups[k].length;
+          }
+          for (int k = 0; k < predChunk.length; k++) {
+            if (charIdx + k < wordDurations.length) {
+              chunkDuration += wordDurations[charIdx + k];
             }
           }
+          if (chunkDuration <= 0.0) chunkDuration = 0.15;
+        }
 
-          if (expectedTajweed != null) {
-            error = ReciterError(
-              errorType: ErrorCategory.tajweed,
-              speechErrorType: align.opType == 'delete' ? SpeechErrorType.delete : SpeechErrorType.replace,
-              expectedPh: refChunk,
-              predictedPh: predChunk,
-              expectedRule: expectedTajweed,
-              expectedDuration: errExpectedDuration,
-              actualDuration: errActualDuration,
-            );
-          } else if (isValidTajweedVariation) {
-            print('[ErrorExplainer] Ignoring valid Tajweed count variation: ref=$refChunk, pred=$predChunk');
-          } else {
-            if (align.opType == 'delete') {
-              error = ReciterError(
-                errorType: ErrorCategory.normal,
-                speechErrorType: SpeechErrorType.delete,
-                expectedPh: refChunk,
-                predictedPh: '',
-              );
-            } else if (align.opType == 'replace') {
-              error = ReciterError(
-                errorType: ErrorCategory.normal,
+        ReciterError? error;
+
+        if (align.opType == 'insert') {
+          error = ReciterError(
+            errorType: ErrorCategory.normal,
+            speechErrorType: SpeechErrorType.insert,
+            expectedPh: '',
+            predictedPh: predChunk,
+          );
+        } else {
+          if (align.opType == 'delete' ||
+              align.opType == 'replace' ||
+              (align.opType == 'equal' && refChunk != predChunk)) {
+            TajweedRule? expectedTajweed;
+
+            //Tashkeel of last letter checking
+            if (align.opType == 'equal' &&
+                refChunk.isNotEmpty &&
+                predChunk.isNotEmpty &&
+                refChunk[0] == predChunk[0]) {
+              ReciterError tashkeelErr = ReciterError(
+                errorType: ErrorCategory.tashkeel,
                 speechErrorType: SpeechErrorType.replace,
                 expectedPh: refChunk,
                 predictedPh: predChunk,
               );
-            } else { // equal but different
+              errorsByWord.putIfAbsent(wIdx, () => []).add(tashkeelErr);
+              wordErrorDesc.add('Tashkeel(ref:$refChunk got:$predChunk)');
+              continue; // Move to the next phoneme chunk, skipping Tajweed checks for this specific letter
+            }
+
+            bool isLastWord = wIdx == phonemeWords.length - 1;
+
+            final allRules = [
+              Qalqalah(),
+              TafkheemRule(),
+              HamsRule(),
+              LeenMaddRule(),
+              isLastWord
+                  ? AaredMaddRule()
+                  : MaddRule(
+                      name: const LangName(ar: "مد", en: "Madd"),
+                      goldenLen: refChunk.length,
+                    ),
+              Ghonnah(
+                name: const LangName(ar: "غنة", en: "Ghonnah"),
+                goldenLen: refChunk.length,
+              ),
+            ];
+
+            bool isValidTajweedVariation = false;
+            double? errExpectedDuration;
+            double? errActualDuration;
+
+            for (var rule in allRules) {
+              if (rule.isPhStrIn(refChunk)) {
+                var specificRule = rule.getRelevantRule(refChunk);
+                if (specificRule != null) {
+                  if (specificRule.correctnessType == CorrectnessType.match &&
+                      !specificRule.match(refChunk, predChunk)) {
+                    expectedTajweed = specificRule;
+                    wordErrorDesc.add(
+                      '${specificRule.name.en}(ref:$refChunk pred:$predChunk)',
+                    );
+                    break;
+                  } else if (specificRule.correctnessType ==
+                      CorrectnessType.count) {
+                    if (specificRule.goldenLen >= 2) {
+                      bool hasValidDuration = specificRule.checkDuration(
+                        chunkDuration,
+                      );
+                      if (!hasValidDuration) {
+                        expectedTajweed = specificRule;
+                        errExpectedDuration = specificRule.goldenLen * 0.20;
+                        errActualDuration = chunkDuration;
+                        wordErrorDesc.add(
+                          '${specificRule.name.en}Duration(ref:$refChunk got:${chunkDuration.toStringAsFixed(2)}s need:${errExpectedDuration.toStringAsFixed(2)}s)',
+                        );
+                        break;
+                      } else {
+                        isValidTajweedVariation = true;
+                      }
+                    } else {
+                      isValidTajweedVariation = true;
+                    }
+                  }
+                }
+              }
+            }
+
+            if (expectedTajweed != null) {
               error = ReciterError(
-                errorType: ErrorCategory.tashkeel,
-                speechErrorType: refChunk.length > predChunk.length
+                errorType: ErrorCategory.tajweed,
+                speechErrorType: align.opType == 'delete'
                     ? SpeechErrorType.delete
-                    : (refChunk.length < predChunk.length
-                          ? SpeechErrorType.insert
-                          : SpeechErrorType.replace),
+                    : SpeechErrorType.replace,
                 expectedPh: refChunk,
                 predictedPh: predChunk,
+                expectedRule: expectedTajweed,
+                expectedDuration: errExpectedDuration,
+                actualDuration: errActualDuration,
               );
+            } else if (!isValidTajweedVariation) {
+              if (align.opType == 'delete') {
+                error = ReciterError(
+                  errorType: ErrorCategory.normal,
+                  speechErrorType: SpeechErrorType.delete,
+                  expectedPh: refChunk,
+                  predictedPh: '',
+                );
+              } else if (align.opType == 'replace') {
+                error = ReciterError(
+                  errorType: ErrorCategory.normal,
+                  speechErrorType: SpeechErrorType.replace,
+                  expectedPh: refChunk,
+                  predictedPh: predChunk,
+                );
+              } else {
+                error = ReciterError(
+                  errorType: ErrorCategory.tashkeel,
+                  speechErrorType: refChunk.length > predChunk.length
+                      ? SpeechErrorType.delete
+                      : (refChunk.length < predChunk.length
+                            ? SpeechErrorType.insert
+                            : SpeechErrorType.replace),
+                  expectedPh: refChunk,
+                  predictedPh: predChunk,
+                );
+              }
             }
           }
         }
+
+        if (error != null) {
+          errorsByWord.putIfAbsent(wIdx, () => []).add(error);
+        }
+      } // end for align
+
+      // Print word-level summary
+      if (wordErrorDesc.isNotEmpty) {
+        print(
+          '[Tajweed] Word $wIdx | ref:$expectedWord pred:$predictedWord | errors: ${wordErrorDesc.join(", ")}',
+        );
+      } else {
+        print(
+          '[Tajweed] Word $wIdx | ref:$expectedWord pred:$predictedWord | OK ✓',
+        );
       }
-
-
-      if (error != null) {
-        errorsByWord.putIfAbsent(wIdx, () => []).add(error);
-      }
-    }
-
-    print('[ErrorExplainer] Output Errors By Word Index:');
-    if (errorsByWord.isEmpty) {
-      print('[ErrorExplainer]   -> No errors found.');
-    } else {
-      errorsByWord.forEach((wIdx, errs) {
-        print('[ErrorExplainer]   -> Word $wIdx: ${errs.map((e) => e.errorType.toString()).toList()}');
-      });
-    }
-    print('[ErrorExplainer] === END GLOBAL TAJWEED EVALUATION ===\n');
+    } // end for wIdx
 
     return errorsByWord;
   }
@@ -331,12 +356,16 @@ class ErrorExplainer {
   /// instead of waiting for the full Ayah to finish.
   static List<ReciterError> explainWordError(
     String expectedWordPh,
-    String predictedWordPh,
-    {bool isLastWordOfAyah = false}
-  ) {
+    String predictedWordPh, {
+    bool isLastWordOfAyah = false,
+  }) {
     // 1. Chunk just this specific word
-    final refGroups = QuranNormalizer.chunkPhonemes(expectedWordPh.replaceAll(' ', ''));
-    final predGroups = QuranNormalizer.chunkPhonemes(predictedWordPh.replaceAll(' ', ''));
+    final refGroups = QuranNormalizer.chunkPhonemes(
+      expectedWordPh.replaceAll(' ', ''),
+    );
+    final predGroups = QuranNormalizer.chunkPhonemes(
+      predictedWordPh.replaceAll(' ', ''),
+    );
 
     // 2. Align the groups for this single word
     final alignments = _alignPhonemeGroups(refGroups, predGroups);
@@ -344,8 +373,12 @@ class ErrorExplainer {
 
     // 3. Evaluate rules instantly
     for (final align in alignments) {
-      String refChunk = align.refIdx >= 0 && align.refIdx < refGroups.length ? refGroups[align.refIdx] : '';
-      String predChunk = align.predIdx >= 0 && align.predIdx < predGroups.length ? predGroups[align.predIdx] : '';
+      String refChunk = align.refIdx >= 0 && align.refIdx < refGroups.length
+          ? refGroups[align.refIdx]
+          : '';
+      String predChunk = align.predIdx >= 0 && align.predIdx < predGroups.length
+          ? predGroups[align.predIdx]
+          : '';
 
       ReciterError? error;
 
@@ -356,17 +389,39 @@ class ErrorExplainer {
           expectedPh: '',
           predictedPh: predChunk,
         );
-      } else if (align.opType == 'delete' || align.opType == 'replace' || (align.opType == 'equal' && refChunk != predChunk)) {
-        
+      } else if (align.opType == 'delete' ||
+          align.opType == 'replace' ||
+          (align.opType == 'equal' && refChunk != predChunk)) {
+        //TashkeelError
+        if (align.opType == 'equal' &&
+            refChunk.isNotEmpty &&
+            predChunk.isNotEmpty &&
+            refChunk[0] == predChunk[0]) {
+          ReciterError tashkeelErr = ReciterError(
+            errorType: ErrorCategory.tashkeel,
+            speechErrorType: SpeechErrorType.replace,
+            expectedPh: refChunk,
+            predictedPh: predChunk,
+          );
+          wordErrors.add(tashkeelErr);
+          continue;
+        }
         TajweedRule? expectedTajweed;
-        
+
         final allRules = [
           Qalqalah(),
           TafkheemRule(),
           HamsRule(),
           LeenMaddRule(),
-          isLastWordOfAyah ? AaredMaddRule() : MaddRule(name: const LangName(ar: "مد", en: "Madd"), goldenLen: refChunk.length),
-          Ghonnah(name: const LangName(ar: "غنة", en: "Ghonnah")),
+          isLastWordOfAyah
+              ? AaredMaddRule()
+              : MaddRule(
+                  name: const LangName(ar: "مد", en: "Madd"),
+                  goldenLen: refChunk.length,
+                ),
+          Ghonnah(
+            name: const LangName(ar: "غنة", en: "Ghonnah"),
+          ),
         ];
 
         bool isValidTajweedVariation = false;
@@ -375,20 +430,27 @@ class ErrorExplainer {
           if (rule.isPhStrIn(refChunk)) {
             var specificRule = rule.getRelevantRule(refChunk);
             if (specificRule != null) {
-              if (specificRule.correctnessType == CorrectnessType.match && !specificRule.match(refChunk, predChunk)) {
+              if (specificRule.correctnessType == CorrectnessType.match &&
+                  !specificRule.match(refChunk, predChunk)) {
                 expectedTajweed = specificRule;
                 break;
-              } else if (specificRule.correctnessType == CorrectnessType.count) {
+              } else if (specificRule.correctnessType ==
+                  CorrectnessType.count) {
                 int count = specificRule.count(refChunk, predChunk);
                 int expectedCount = specificRule.count(refChunk, refChunk);
-                int requiredCount = specificRule.goldenLen > 0 ? min(expectedCount, specificRule.goldenLen) : expectedCount;
-                
+                int requiredCount = specificRule.goldenLen > 0
+                    ? min(expectedCount, specificRule.goldenLen)
+                    : expectedCount;
+
                 if (expectedCount > 1 && count < requiredCount) {
                   expectedTajweed = specificRule;
                   break;
-                } else if (expectedCount > 1 && count >= requiredCount && predChunk.isNotEmpty) {
+                } else if (expectedCount > 1 &&
+                    count >= requiredCount &&
+                    predChunk.isNotEmpty) {
                   String baseChar = predChunk[0];
-                  if (predChunk.split('').every((c) => c == baseChar) && refChunk.contains(baseChar)) {
+                  if (predChunk.split('').every((c) => c == baseChar) &&
+                      refChunk.contains(baseChar)) {
                     isValidTajweedVariation = true;
                   }
                 }
@@ -400,20 +462,36 @@ class ErrorExplainer {
         if (expectedTajweed != null) {
           error = ReciterError(
             errorType: ErrorCategory.tajweed,
-            speechErrorType: align.opType == 'delete' ? SpeechErrorType.delete : SpeechErrorType.replace,
+            speechErrorType: align.opType == 'delete'
+                ? SpeechErrorType.delete
+                : SpeechErrorType.replace,
             expectedPh: refChunk,
             predictedPh: predChunk,
             expectedRule: expectedTajweed,
           );
         } else if (!isValidTajweedVariation) {
           if (align.opType == 'delete') {
-            error = ReciterError(errorType: ErrorCategory.normal, speechErrorType: SpeechErrorType.delete, expectedPh: refChunk, predictedPh: '');
+            error = ReciterError(
+              errorType: ErrorCategory.normal,
+              speechErrorType: SpeechErrorType.delete,
+              expectedPh: refChunk,
+              predictedPh: '',
+            );
           } else if (align.opType == 'replace') {
-            error = ReciterError(errorType: ErrorCategory.normal, speechErrorType: SpeechErrorType.replace, expectedPh: refChunk, predictedPh: predChunk);
+            error = ReciterError(
+              errorType: ErrorCategory.normal,
+              speechErrorType: SpeechErrorType.replace,
+              expectedPh: refChunk,
+              predictedPh: predChunk,
+            );
           } else {
             error = ReciterError(
               errorType: ErrorCategory.tashkeel,
-              speechErrorType: refChunk.length > predChunk.length ? SpeechErrorType.delete : (refChunk.length < predChunk.length ? SpeechErrorType.insert : SpeechErrorType.replace),
+              speechErrorType: refChunk.length > predChunk.length
+                  ? SpeechErrorType.delete
+                  : (refChunk.length < predChunk.length
+                        ? SpeechErrorType.insert
+                        : SpeechErrorType.replace),
               expectedPh: refChunk,
               predictedPh: predChunk,
             );
@@ -429,4 +507,3 @@ class ErrorExplainer {
     return wordErrors;
   }
 }
-

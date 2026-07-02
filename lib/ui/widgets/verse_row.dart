@@ -454,7 +454,7 @@ class _VerseRowState extends State<VerseRow> {
 
     for (int i = 0; i < words.length; i++) {
       final cIdx = i;
-      final isActiveWord = isActive && ctrl.activeWordIndex == cIdx;
+
       final isRead =
           cIdx >= 0 &&
           (ctrl.isWordGreen(ayah, cIdx) || ctrl.isWordRed(ayah, cIdx) || ctrl.isWordYellow(ayah, cIdx));

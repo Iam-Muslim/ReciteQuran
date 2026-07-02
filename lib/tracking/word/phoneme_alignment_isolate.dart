@@ -319,6 +319,9 @@ void _alignmentWorker(SendPort mainSendPort) {
   String cleanAsr = '';
   List<double> cleanTimestamps = [];
 
+  List<String> acceptedWordsAsr = [];
+  List<List<double>> acceptedWordsTimestamps = [];
+
   int targetChunkCursor =
       0; // Where we currently are in the expected refChunks array
   int currentWordId = 0; // The last word ID we highlighted
@@ -381,6 +384,11 @@ void _alignmentWorker(SendPort mainSendPort) {
       asrTimestamps = forceClear ? [] : unconsumedTimestamps;
       cleanAsr = '';
       cleanTimestamps = [];
+
+      int wordCount = wordBoundaries.length - 1;
+      acceptedWordsAsr = List.filled(wordCount, '');
+      acceptedWordsTimestamps = List.generate(wordCount, (_) => []);
+
       asrConsumedChars = 0;
       consecutiveFailures = 0;
 
@@ -487,7 +495,6 @@ void _alignmentWorker(SendPort mainSendPort) {
       // Instead of global alignment, slide a window across the ASR buffer to find the best match.
       // This flawlessly ignores hallucinated garbage and stutters!
       int bestAsrStartIdx = 0;
-      double bestCurrentWordSim = -1.0;
       double bestSelectionScore = -999.0;
       var alignments = _alignPhonemeGroups(
         targetWindowChunks,
@@ -560,7 +567,6 @@ void _alignmentWorker(SendPort mainSendPort) {
 
         if (selectionScore > bestSelectionScore) {
           bestSelectionScore = selectionScore;
-          bestCurrentWordSim = rawSim;
           bestAsrStartIdx = startIdx;
           alignments = tempAlignments;
           wordEqualCounts = tempWordEqualCounts;
@@ -595,17 +601,48 @@ void _alignmentWorker(SendPort mainSendPort) {
         bool isFirstWord =
             (w == (chunkToWordMap.isNotEmpty ? chunkToWordMap.first : 0));
 
-        double requiredSimilarity = (isTajweed && isLastWord) ? 0.95 : 0.70;
+        // --- PASTE THIS NEW BLOCK ---
+        // Matching Strictness & Terminal Anchor Rule
+        double requiredSimilarity;
+        bool mustAnchorTail = false;
 
-        if (isFirstWord) {
-          requiredSimilarity =
-              0.50; // Drop required match to 50% just for word 0
-        } else if (total <= 3 && requiredSimilarity > 0.65) {
-          requiredSimilarity =
-              0.65; // Allow 1 mistake in a 3-character word (e.g. 2/3 = 66.7%)
+        if (isTajweed) {
+          // 1. Allow 75% flexibility for the word body to prevent freezing on tiny glitches
+          requiredSimilarity = 0.75;
+          // 2. Enforce strict checking of the final letter/tashkeel
+          mustAnchorTail = true;
+        } else {
+          requiredSimilarity = 0.65;
+          if (isFirstWord)
+            requiredSimilarity = 0.50;
+          else if (total <= 3)
+            requiredSimilarity = 0.65;
         }
 
-        if (equal / total >= requiredSimilarity) {
+        // Check if the base similarity percentage passes
+        bool bodyMatches = (equal / total >= requiredSimilarity);
+        bool tailIsReady = true;
+
+        if (mustAnchorTail && bodyMatches) {
+          // Find the absolute last expected chunk for this specific word
+          int wordEndChunk = chunkToWordMap.lastIndexOf(w);
+          // Calculate its index relative to our current sliding window
+          int relativeLastChunkIdx = wordEndChunk - targetChunkCursor;
+
+          // Check if this exact final chunk was successfully aligned as 'equal'
+          bool finalPhonemeMatched = alignments.any(
+            (align) =>
+                align.refIdx == relativeLastChunkIdx && align.opType == 'equal',
+          );
+
+          // If the final letter/tashkeel hasn't been spoken correctly yet, hold back
+          if (!finalPhonemeMatched) {
+            tailIsReady = false;
+          }
+        }
+
+        // Only accept the word if the body is good AND the final letter is verified
+        if (bodyMatches && tailIsReady) {
           wordsToAdvance++;
           chunksToConsume += total;
 
@@ -635,31 +672,49 @@ void _alignmentWorker(SendPort mainSendPort) {
       }
 
       if (wordsToAdvance > 0) {
+        int savedChunkCursor = targetChunkCursor; // save BEFORE advance
         targetChunkCursor += chunksToConsume;
 
         int nextWordId = currentWordId + wordsToAdvance;
-        if (maxPredIdxToChop >= 0) {
-          int startClean = minPredIdxToStart >= 0
-              ? minPredIdxToStart
-              : bestAsrStartIdx;
-          if (startClean <= maxPredIdxToChop &&
-              maxPredIdxToChop < currentAsrChunks.length) {
-            int charIdx = 0;
-            for (int k = 0; k < startClean; k++) {
-              charIdx += currentAsrChunks[k].length;
-            }
-            for (int k = startClean; k <= maxPredIdxToChop; k++) {
-              cleanAsr += currentAsrChunks[k];
-              int chunkLen = currentAsrChunks[k].length;
-              for (int c = 0; c < chunkLen; c++) {
-                if (charIdx < trackingTimestamps.length) {
-                  cleanTimestamps.add(trackingTimestamps[charIdx]);
-                }
-                charIdx++;
-              }
+
+        // Build per-word pred strings directly from alignment
+        Map<int, String> wordPredStrMap = {};
+        Map<int, List<double>> wordPredTsMap = {};
+
+        for (var align in alignments) {
+          if (align.refIdx < 0 || align.predIdx < 0) continue;
+          int absRefIdx = savedChunkCursor + align.refIdx;
+          if (absRefIdx >= chunkToWordMap.length) continue;
+          int wId = chunkToWordMap[absRefIdx];
+          if (wId < currentWordId || wId >= nextWordId) continue;
+
+          int absPredIdx = bestAsrStartIdx + align.predIdx;
+          if (absPredIdx >= currentAsrChunks.length) continue;
+          String chunk = currentAsrChunks[absPredIdx];
+          wordPredStrMap[wId] = (wordPredStrMap[wId] ?? '') + chunk;
+
+          // timestamps: count chars before absPredIdx
+          int charStart = 0;
+          for (int k = 0; k < absPredIdx; k++)
+            charStart += currentAsrChunks[k].length;
+          for (int c = 0; c < chunk.length; c++) {
+            if (charStart + c < trackingTimestamps.length) {
+              wordPredTsMap
+                  .putIfAbsent(wId, () => [])
+                  .add(trackingTimestamps[charStart + c]);
             }
           }
+        }
 
+        // Commit to acceptedWordsAsr
+        for (int w = currentWordId; w < nextWordId; w++) {
+          acceptedWordsAsr[w] = wordPredStrMap[w] ?? '';
+          acceptedWordsTimestamps[w] = wordPredTsMap[w] ?? [];
+          cleanAsr += acceptedWordsAsr[w];
+          cleanTimestamps.addAll(acceptedWordsTimestamps[w]);
+        }
+
+        if (maxPredIdxToChop >= 0) {
           int consumedChars = 0;
           for (
             int k = 0;
@@ -668,9 +723,7 @@ void _alignmentWorker(SendPort mainSendPort) {
           ) {
             consumedChars += currentAsrChunks[k].length;
           }
-          // Chop ONLY from the tracking system by advancing the consumed pointer!
-          int charsToChop = consumedChars;
-          asrConsumedChars += charsToChop;
+          asrConsumedChars += consumedChars;
         }
 
         debugLog(
@@ -681,8 +734,10 @@ void _alignmentWorker(SendPort mainSendPort) {
             'event': 'highlight',
             'word_id': w,
             'is_red': false,
-            'clean_asr': cleanAsr,
-            'timestamps': cleanTimestamps,
+            'clean_asr': acceptedWordsAsr[w],
+            'timestamps': acceptedWordsTimestamps[w],
+            'word_asr': acceptedWordsAsr,
+            'word_timestamps': acceptedWordsTimestamps,
           });
         }
 
@@ -694,6 +749,8 @@ void _alignmentWorker(SendPort mainSendPort) {
             'event': 'ayah_completed',
             'raw_asr': cleanAsr,
             'timestamps': cleanTimestamps,
+            'word_asr': acceptedWordsAsr,
+            'word_timestamps': acceptedWordsTimestamps,
           });
         }
 
@@ -702,9 +759,11 @@ void _alignmentWorker(SendPort mainSendPort) {
       } else {
         consecutiveFailures++;
 
-        if (currentAsrChunks.length > 10 &&
-            consecutiveFailures >= 3 &&
-            !isTajweed) {
+        //currentAsrChunks.length > 1 && //how much asr chunk length to activate lookahead
+
+        if (consecutiveFailures >= (0)) {
+          //How much word fails to activate lookahead ?
+          ///Lookahead Matching Strictness
           // --- 4. CATCH-UP (LOOKAHEAD) SEARCH ---
           // If similarity is low, the user might have skipped a word or the ASR hallucinated.
           // We look ahead up to 3 words to see if the user is actually reciting further down the Ayah.
@@ -743,12 +802,12 @@ void _alignmentWorker(SendPort mainSendPort) {
             double rawSim = catchupEqual / adjustedLength;
 
             int wordsSkipped = w - currentWordId;
-            double jumpPenalty = wordsSkipped * 0.15;
+            double jumpPenalty = wordsSkipped * 0.1;
             if (jumpPenalty > 0.30) jumpPenalty = 0.30;
 
             // Require a much stronger match for short words in catch-up to avoid coincidences
             double requiredSim = 0.75;
-            if (wordChunks.length <= 4) requiredSim = 0.95;
+            if (wordChunks.length <= 4) requiredSim = 0.85;
             if (wordChunks.length <= 2)
               requiredSim = 1.0; // Demand perfection for tiny words
 
@@ -760,49 +819,71 @@ void _alignmentWorker(SendPort mainSendPort) {
               );
 
               // 3. Safely consume characters
-              int maxPredIdx = -1;
-              int minPredIdx = -1;
+              int maxCatchupPredToChop = -1;
+              int minCatchupPredToStart = -1;
               for (var align in catchupAlignments) {
-                if (align.predIdx > maxPredIdx) {
-                  maxPredIdx = align.predIdx;
+                if (align.predIdx > maxCatchupPredToChop) {
+                  maxCatchupPredToChop = align.predIdx;
                 }
                 if (align.predIdx >= 0 &&
-                    (minPredIdx == -1 || align.predIdx < minPredIdx)) {
-                  minPredIdx = align.predIdx;
+                    (minCatchupPredToStart == -1 ||
+                        align.predIdx < minCatchupPredToStart)) {
+                  minCatchupPredToStart = align.predIdx;
                 }
               }
 
-              if (maxPredIdx >= 0) {
-                if (minPredIdx >= 0 &&
-                    minPredIdx <= maxPredIdx &&
-                    maxPredIdx < currentAsrChunks.length) {
-                  int charIdx = 0;
-                  for (int k = 0; k < minPredIdx; k++) {
-                    charIdx += currentAsrChunks[k].length;
-                  }
-                  for (int k = minPredIdx; k <= maxPredIdx; k++) {
-                    cleanAsr += currentAsrChunks[k];
-                    int chunkLen = currentAsrChunks[k].length;
-                    for (int c = 0; c < chunkLen; c++) {
-                      if (charIdx < trackingTimestamps.length) {
-                        cleanTimestamps.add(trackingTimestamps[charIdx]);
-                      }
-                      charIdx++;
-                    }
-                  }
+              if (minCatchupPredToStart >= 0 && maxCatchupPredToChop >= 0) {
+                int charIdx = 0;
+                for (int k = 0; k < minCatchupPredToStart; k++) {
+                  charIdx += currentAsrChunks[k].length;
                 }
-
-                int consumedChars = 0;
                 for (
-                  int k = 0;
-                  k <= maxPredIdx && k < currentAsrChunks.length;
+                  int k = minCatchupPredToStart;
+                  k <= maxCatchupPredToChop;
                   k++
                 ) {
-                  consumedChars += currentAsrChunks[k].length;
+                  int mappedWordId = w;
+                  for (var align in catchupAlignments) {
+                    if (align.predIdx == k &&
+                        align.refIdx >= 0 &&
+                        startChunk + align.refIdx <= endChunk) {
+                      mappedWordId = chunkToWordMap[startChunk + align.refIdx];
+                      break;
+                    }
+                  }
+
+                  cleanAsr += currentAsrChunks[k];
+                  if (mappedWordId >= 0 &&
+                      mappedWordId < acceptedWordsAsr.length) {
+                    acceptedWordsAsr[mappedWordId] += currentAsrChunks[k];
+                  }
+
+                  int chunkLen = currentAsrChunks[k].length;
+                  for (int c = 0; c < chunkLen; c++) {
+                    if (charIdx < trackingTimestamps.length) {
+                      cleanTimestamps.add(trackingTimestamps[charIdx]);
+                      if (mappedWordId >= 0 &&
+                          mappedWordId < acceptedWordsTimestamps.length) {
+                        acceptedWordsTimestamps[mappedWordId].add(
+                          trackingTimestamps[charIdx],
+                        );
+                      }
+                    }
+                    charIdx++;
+                  }
                 }
-                int charsToChop = consumedChars;
-                asrConsumedChars += charsToChop;
               }
+
+              int consumedChars = 0;
+              for (
+                int k = 0;
+                k <= maxCatchupPredToChop && k < currentAsrChunks.length;
+                k++
+              ) {
+                consumedChars += currentAsrChunks[k].length;
+              }
+              int charsToChop = consumedChars;
+              asrConsumedChars += charsToChop;
 
               // 1. Highlight the skipped words as RED
               if (w > currentWordId) {

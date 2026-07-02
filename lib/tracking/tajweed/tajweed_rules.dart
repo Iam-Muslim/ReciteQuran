@@ -40,7 +40,9 @@ abstract class TajweedRule {
   }) {
     if (tag != null && availableTags != null) {
       if (!availableTags!.contains(tag)) {
-        throw ArgumentError('Invalid tag value: $tag. Available ones are: $availableTags');
+        throw ArgumentError(
+          'Invalid tag value: $tag. Available ones are: $availableTags',
+        );
       }
     }
   }
@@ -66,11 +68,11 @@ abstract class TajweedRule {
 
 class Qalqalah extends TajweedRule {
   Qalqalah()
-      : super(
-          name: const LangName(ar: "قلقة", en: "Qalqalah"),
-          goldenLen: 0,
-          correctnessType: CorrectnessType.match,
-        );
+    : super(
+        name: const LangName(ar: "قلقة", en: "Qalqalah"),
+        goldenLen: 0,
+        correctnessType: CorrectnessType.match,
+      );
 
   @override
   bool match(String refText, String predText) => refText == predText;
@@ -86,7 +88,8 @@ class Qalqalah extends TajweedRule {
   TajweedRule? getRelevantRule(String phStr) {
     if (isPhStrIn(phStr)) return this;
     // Also support the explicit qalqalah small jeem sign at the end
-    if (phStr.isNotEmpty && phStr[phStr.length - 1] == PhoneticConstants.qlqla) return this;
+    if (phStr.isNotEmpty && phStr[phStr.length - 1] == PhoneticConstants.qlqla)
+      return this;
     return null;
   }
 
@@ -113,7 +116,11 @@ class MaddRule extends TajweedRule {
     if (predText.isEmpty || refText.isEmpty) return 0;
     // The case where we have Tashkeel after madd (Error from the model)
     if (predText[predText.length - 1] != predText[0]) {
-      return predText.substring(0, predText.length - 1).split(refText[0]).length - 1;
+      return predText
+              .substring(0, predText.length - 1)
+              .split(refText[0])
+              .length -
+          1;
     } else {
       return predText.split(refText[0]).length - 1;
     }
@@ -147,50 +154,53 @@ class MaddRule extends TajweedRule {
 
 class NormalMaddRule extends MaddRule {
   NormalMaddRule({super.tag})
-      : super(
-          name: const LangName(ar: "المد الطبيعي", en: "Normal Madd"),
-          goldenLen: 2,
-        );
+    : super(
+        name: const LangName(ar: "المد الطبيعي", en: "Normal Madd"),
+        goldenLen: 2,
+      );
 }
 
 class MonfaselMaddRule extends MaddRule {
   MonfaselMaddRule({super.tag})
-      : super(
-          name: const LangName(ar: "المد المنفصل", en: "Monfasel Madd"),
-          goldenLen: 4,
-        );
+    : super(
+        name: const LangName(ar: "المد المنفصل", en: "Monfasel Madd"),
+        goldenLen: 4,
+      );
 }
 
 class MottaselMaddPauseRule extends MaddRule {
   MottaselMaddPauseRule({super.tag})
-      : super(
-          name: const LangName(ar: "المد المتصل وقفا", en: "Mottasel Madd at Pause"),
-          goldenLen: 4,
-        );
+    : super(
+        name: const LangName(
+          ar: "المد المتصل وقفا",
+          en: "Mottasel Madd at Pause",
+        ),
+        goldenLen: 4,
+      );
 }
 
 class MottaselMaddRule extends MaddRule {
   MottaselMaddRule({super.tag})
-      : super(
-          name: const LangName(ar: "المد المتصل", en: "Mottasel Madd"),
-          goldenLen: 4,
-        );
+    : super(
+        name: const LangName(ar: "المد المتصل", en: "Mottasel Madd"),
+        goldenLen: 4,
+      );
 }
 
 class LazemMaddRule extends MaddRule {
   LazemMaddRule({super.tag})
-      : super(
-          name: const LangName(ar: "المد اللازم", en: "Lazem Madd"),
-          goldenLen: 6,
-        );
+    : super(
+        name: const LangName(ar: "المد اللازم", en: "Lazem Madd"),
+        goldenLen: 6,
+      );
 }
 
 class AaredMaddRule extends MaddRule {
   AaredMaddRule({super.tag})
-      : super(
-          name: const LangName(ar: "المد العارض للسكون", en: "Aared Madd"),
-          goldenLen: 2,
-        );
+    : super(
+        name: const LangName(ar: "المد العارض للسكون", en: "Aared Madd"),
+        goldenLen: 2,
+      );
 }
 
 class LeenMaddRule extends MaddRule {
@@ -200,10 +210,10 @@ class LeenMaddRule extends MaddRule {
   };
 
   LeenMaddRule({super.tag})
-      : super(
-          name: const LangName(ar: "مد اللين", en: "Leen Madd"),
-          goldenLen: 2,
-        );
+    : super(
+        name: const LangName(ar: "مد اللين", en: "Leen Madd"),
+        goldenLen: 2,
+      );
 
   @override
   bool isPhStrIn(String phStr) {
@@ -229,7 +239,12 @@ class LeenMaddRule extends MaddRule {
   int count(String refText, String predText) {
     if (predText.isEmpty || refText.isEmpty) return 0;
     if (predText[predText.length - 1] != predText[0]) {
-      return (predText.substring(0, predText.length - 1).split(refText[0]).length - 1) + 1;
+      return (predText
+                  .substring(0, predText.length - 1)
+                  .split(refText[0])
+                  .length -
+              1) +
+          1;
     } else {
       return (predText.split(refText[0]).length - 1) + 1;
     }
@@ -238,11 +253,11 @@ class LeenMaddRule extends MaddRule {
 
 class IdghamKamel extends TajweedRule {
   IdghamKamel()
-      : super(
-          name: const LangName(ar: "إدغام كامل", en: "Full Merging"),
-          goldenLen: 0,
-          correctnessType: CorrectnessType.match,
-        );
+    : super(
+        name: const LangName(ar: "إدغام كامل", en: "Full Merging"),
+        goldenLen: 0,
+        correctnessType: CorrectnessType.match,
+      );
 
   @override
   bool match(String refText, String predText) => refText == predText;
@@ -262,7 +277,11 @@ class GhonnahMetadata {
   final String tag;
   final int offset;
 
-  const GhonnahMetadata({required this.name, required this.tag, this.offset = 0});
+  const GhonnahMetadata({
+    required this.name,
+    required this.tag,
+    this.offset = 0,
+  });
 }
 
 class Ghonnah extends TajweedRule {
@@ -270,7 +289,10 @@ class Ghonnah extends TajweedRule {
 
   static const Map<String, GhonnahMetadata> _phToMetadata = {
     PhoneticConstants.noon: GhonnahMetadata(
-      name: LangName(ar: "النون المشددة أو المدغمة", en: "Moshadad or Modgham Noon"),
+      name: LangName(
+        ar: "النون المشددة أو المدغمة",
+        en: "Moshadad or Modgham Noon",
+      ),
       tag: "noon",
       offset: 0,
     ),
@@ -307,14 +329,16 @@ class Ghonnah extends TajweedRule {
     super.correctnessType = CorrectnessType.count,
     super.tag,
     this.offset = 0,
-  }) : super(availableTags: {
-          "noon",
-          "noon_yaa",
-          "noon_waw",
-          "noon_mokhfah",
-          "meem",
-          "meem_mokhfah",
-        });
+  }) : super(
+         availableTags: {
+           "noon",
+           "noon_yaa",
+           "noon_waw",
+           "noon_mokhfah",
+           "meem",
+           "meem_mokhfah",
+         },
+       );
 
   @override
   int count(String refText, String predText) {
@@ -351,19 +375,22 @@ class Ghonnah extends TajweedRule {
 
 class MoshaddadOrModghamNoonRule extends MaddRule {
   MoshaddadOrModghamNoonRule({super.tag})
-      : super(
-          name: const LangName(ar: "النون المشددة أو المدغمة", en: "Moshaddad or ModghamNoon"),
-          goldenLen: 4,
-        );
+    : super(
+        name: const LangName(
+          ar: "النون المشددة أو المدغمة",
+          en: "Moshaddad or ModghamNoon",
+        ),
+        goldenLen: 4,
+      );
 }
 
 class TafkheemRule extends TajweedRule {
   TafkheemRule()
-      : super(
-          name: const LangName(ar: "تفخيم", en: "Tafkheem"),
-          goldenLen: 0,
-          correctnessType: CorrectnessType.match,
-        );
+    : super(
+        name: const LangName(ar: "تفخيم", en: "Tafkheem"),
+        goldenLen: 0,
+        correctnessType: CorrectnessType.match,
+      );
 
   @override
   bool match(String refText, String predText) => refText == predText;
@@ -386,11 +413,11 @@ class TafkheemRule extends TajweedRule {
 
 class HamsRule extends TajweedRule {
   HamsRule()
-      : super(
-          name: const LangName(ar: "همس", en: "Hams"),
-          goldenLen: 0,
-          correctnessType: CorrectnessType.match,
-        );
+    : super(
+        name: const LangName(ar: "همس", en: "Hams"),
+        goldenLen: 0,
+        correctnessType: CorrectnessType.match,
+      );
 
   @override
   bool match(String refText, String predText) => refText == predText;

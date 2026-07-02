@@ -157,9 +157,16 @@ class HighlightingController extends ChangeNotifier {
     int wordId = event['word_id'] as int;
     bool isRed = event['is_red'] as bool? ?? false;
     String cleanAsr = event['clean_asr'] as String? ?? '';
-    List<double> cleanTimestamps = [];
-    if (event['timestamps'] != null) {
-      cleanTimestamps = (event['timestamps'] as List).cast<double>();
+
+    
+    List<String> wordAsr = [];
+    if (event['word_asr'] != null) {
+      wordAsr = (event['word_asr'] as List).cast<String>();
+    }
+    
+    List<List<double>> wordTimestamps = [];
+    if (event['word_timestamps'] != null) {
+      wordTimestamps = (event['word_timestamps'] as List).map((e) => (e as List).cast<double>()).toList();
     }
 
     if (!(_greenWordsByVerse[ayahNum]?.contains(wordId) ?? false) &&
@@ -177,10 +184,9 @@ class HighlightingController extends ChangeNotifier {
       // can be accurately evaluated because cleanAsr contains the boundary!
       if (isTajweed && cleanAsr.isNotEmpty) {
         final errors = ErrorExplainer.explainAyahError(
-          targetAyah.textPhoneme,
-          cleanAsr,
           targetAyah.phonemeWords,
-          cleanTimestamps,
+          wordAsr,
+          wordTimestamps,
         );
         
         // Only apply errors for words strictly less than the currently matched wordId
@@ -225,16 +231,26 @@ class HighlightingController extends ChangeNotifier {
   void _onAyahCompleted(Map<String, dynamic> event) {
     if (_currentMatch == null) return;
     String rawAsr = event['raw_asr'] as String;
-    List<double> timestamps = (event['timestamps'] as List).cast<double>();
+
+    
+    List<String> wordAsr = [];
+    if (event['word_asr'] != null) {
+      wordAsr = (event['word_asr'] as List).cast<String>();
+    }
+    
+    List<List<double>> wordTimestamps = [];
+    if (event['word_timestamps'] != null) {
+      wordTimestamps = (event['word_timestamps'] as List).map((e) => (e as List).cast<double>()).toList();
+    }
+    
     print('[HighlightingController] Ayah completed with raw ASR: $rawAsr');
     
     if (isTajweed) {
       final targetAyah = _currentMatch!.verse;
       final errors = ErrorExplainer.explainAyahError(
-        targetAyah.textPhoneme,
-        rawAsr,
         targetAyah.phonemeWords,
-        timestamps,
+        wordAsr,
+        wordTimestamps,
       );
       
       if (errors.isNotEmpty) {
