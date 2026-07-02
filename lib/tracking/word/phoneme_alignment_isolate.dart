@@ -596,8 +596,6 @@ void _alignmentWorker(SendPort mainSendPort) {
         int total = wordTotalCounts[w]!;
         int equal = wordEqualCounts[w] ?? 0;
 
-        bool isLastWord =
-            (w == (chunkToWordMap.isNotEmpty ? chunkToWordMap.last : -1));
         bool isFirstWord =
             (w == (chunkToWordMap.isNotEmpty ? chunkToWordMap.first : 0));
 
@@ -612,11 +610,10 @@ void _alignmentWorker(SendPort mainSendPort) {
           // 2. Enforce strict checking of the final letter/tashkeel
           mustAnchorTail = true;
         } else {
-          requiredSimilarity = 0.65;
-          if (isFirstWord)
-            requiredSimilarity = 0.50;
-          else if (total <= 3)
-            requiredSimilarity = 0.65;
+          requiredSimilarity = 0.75;
+          // if (isFirstWord)
+          // requiredSimilarity = 0.50;
+          if (total <= 3) requiredSimilarity = 0.75;
         }
 
         // Check if the base similarity percentage passes

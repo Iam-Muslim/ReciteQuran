@@ -236,6 +236,8 @@ class ErrorExplainer {
               TafkheemRule(),
               HamsRule(),
               LeenMaddRule(),
+              IqlabRule(),
+              IkhfaRule(),
               isLastWord
                   ? AaredMaddRule()
                   : MaddRule(

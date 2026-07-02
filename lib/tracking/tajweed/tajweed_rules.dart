@@ -201,6 +201,12 @@ class AaredMaddRule extends MaddRule {
         name: const LangName(ar: "المد العارض للسكون", en: "Aared Madd"),
         goldenLen: 2,
       );
+  @override
+  bool checkDuration(double durationSeconds) {
+    // Overriding the default (goldenLen * 0.20) which required 0.4s.
+    // Setting a relaxed threshold of 0.20s (or whatever fits your ASR latency best).
+    return durationSeconds >= 0.20;
+  }
 }
 
 class LeenMaddRule extends MaddRule {
@@ -433,6 +439,49 @@ class HamsRule extends TajweedRule {
     if (isPhStrIn(phStr)) return this;
     return null;
   }
+
+  @override
+  TajweedRule copyWith({String? tag, LangName? name, int? offset}) => this;
+}
+
+///test
+class IqlabRule extends TajweedRule {
+  IqlabRule()
+    : super(
+        name: const LangName(ar: "إقلاب", en: "Iqlab"),
+        goldenLen: 2,
+        correctnessType: CorrectnessType.count, // Switched to count
+      );
+
+  @override
+  int count(String refText, String predText) {
+    if (predText.isEmpty) return 0;
+    return predText.split(PhoneticConstants.meemMokhfah).length - 1;
+  }
+
+  @override
+  bool isPhStrIn(String phStr) => phStr.contains(PhoneticConstants.meemMokhfah);
+
+  @override
+  TajweedRule copyWith({String? tag, LangName? name, int? offset}) => this;
+}
+
+class IkhfaRule extends TajweedRule {
+  IkhfaRule()
+    : super(
+        name: const LangName(ar: "إخفاء", en: "Ikhfa"),
+        goldenLen: 2,
+        correctnessType: CorrectnessType.count, // Switched to count
+      );
+
+  @override
+  int count(String refText, String predText) {
+    if (predText.isEmpty) return 0;
+    return predText.split(PhoneticConstants.noonMokhfah).length - 1;
+  }
+
+  @override
+  bool isPhStrIn(String phStr) => phStr.contains(PhoneticConstants.noonMokhfah);
 
   @override
   TajweedRule copyWith({String? tag, LangName? name, int? offset}) => this;
