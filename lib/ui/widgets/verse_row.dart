@@ -314,9 +314,18 @@ class _VerseRowState extends State<VerseRow> {
                     if (ruleName.isEmpty && e.expectedRule?.name.ar != null) {
                         ruleName = e.expectedRule!.name.ar;
                     }
-                    explanation = isAr
-                        ? 'قرأت "$predicted"، ولكن كان يجب أن تقرأها بحكم "$ruleName" كـ "$expected" بالطريقة الصحيحة.'
-                        : 'You recited "$predicted", but you should have recited it with "$ruleName" as "$expected" in the expected way.';
+                    
+                    if (e.expectedDuration != null && e.actualDuration != null) {
+                        String expSec = e.expectedDuration!.toStringAsFixed(1);
+                        String actSec = e.actualDuration!.toStringAsFixed(1);
+                        explanation = isAr
+                            ? 'كان يجب أن تقرأها بحكم "$ruleName" لمدة $expSec ثانية، ولكنك قرأتها لمدة $actSec ثانية.'
+                            : 'You should have said it for $expSec seconds but you said it for $actSec seconds.';
+                    } else {
+                        explanation = isAr
+                            ? 'قرأت "$predicted"، ولكن كان يجب أن تقرأها بحكم "$ruleName" كـ "$expected" بالطريقة الصحيحة.'
+                            : 'You recited "$predicted", but you should have recited it with "$ruleName" as "$expected" in the expected way.';
+                    }
                   } else if (e.errorType.toString().contains('tashkeel')) {
                     title = isAr ? 'خطأ في الحركات' : 'Harakat (Vowel) Error';
                     icon = Icons.spellcheck_rounded;

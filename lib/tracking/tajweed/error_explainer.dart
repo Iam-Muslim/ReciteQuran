@@ -14,6 +14,8 @@ class ReciterError {
   final String predictedPh;
   final TajweedRule? expectedRule;
   final TajweedRule? predictedRule;
+  final double? expectedDuration;
+  final double? actualDuration;
 
   ReciterError({
     required this.errorType,
@@ -22,11 +24,13 @@ class ReciterError {
     required this.predictedPh,
     this.expectedRule,
     this.predictedRule,
+    this.expectedDuration,
+    this.actualDuration,
   });
 
   @override
   String toString() {
-    return 'ReciterError(type: $errorType, action: $speechErrorType, expected: "$expectedPh", predicted: "$predictedPh", expectedRule: ${expectedRule?.name.en}, predictedRule: ${predictedRule?.name.en})';
+    return 'ReciterError(type: $errorType, action: $speechErrorType, expected: "$expectedPh", predicted: "$predictedPh", expectedRule: ${expectedRule?.name.en}, predictedRule: ${predictedRule?.name.en}, expDur: $expectedDuration, actDur: $actualDuration)';
   }
 }
 
@@ -126,6 +130,7 @@ class ErrorExplainer {
     String expectedAyahPh,
     String predictedAyahPh,
     List<String> phonemeWords,
+    List<double> predictedDurations,
   ) {
     print('\n[ErrorExplainer] === START GLOBAL TAJWEED EVALUATION ===');
     print('[ErrorExplainer] Raw Expected: "$expectedAyahPh"');
@@ -176,6 +181,23 @@ class ErrorExplainer {
           ? predGroups[align.predIdx]
           : '';
 
+      // Calculate the duration of the predChunk by summing char durations
+      double chunkDuration = 0.0;
+      if (predChunk.isNotEmpty && align.predIdx >= 0) {
+        // Find the absolute character index in predictedAyahPh for this chunk
+        int charIdx = 0;
+        for (int k = 0; k < align.predIdx; k++) {
+          charIdx += predGroups[k].length;
+        }
+        
+        for (int k = 0; k < predChunk.length; k++) {
+           if (charIdx + k < predictedDurations.length) {
+              chunkDuration += predictedDurations[charIdx + k];
+           }
+        }
+        if (chunkDuration <= 0.0) chunkDuration = 0.15;
+      }
+
       int wIdx = align.refIdx >= 0 && align.refIdx < refGroupToWord.length 
           ? refGroupToWord[align.refIdx] 
           : (refGroupToWord.isNotEmpty ? refGroupToWord.last : 0);
@@ -202,10 +224,12 @@ class ErrorExplainer {
             HamsRule(),
             LeenMaddRule(),
             isLastWord ? AaredMaddRule() : MaddRule(name: const LangName(ar: "مد", en: "Madd"), goldenLen: refChunk.length),
-            Ghonnah(name: const LangName(ar: "غنة", en: "Ghonnah")),
+            Ghonnah(name: const LangName(ar: "غنة", en: "Ghonnah"), goldenLen: refChunk.length),
           ];
 
           bool isValidTajweedVariation = false;
+          double? errExpectedDuration;
+          double? errActualDuration;
 
           for (var rule in allRules) {
             if (rule.isPhStrIn(refChunk)) {
@@ -216,32 +240,24 @@ class ErrorExplainer {
                   print('[ErrorExplainer] Tajweed MATCH error found: ${specificRule.name.en} for ref: $refChunk, pred: $predChunk');
                   break;
                 } else if (specificRule.correctnessType == CorrectnessType.count) {
-                  int count = specificRule.count(refChunk, predChunk);
-                  int expectedCount = specificRule.count(refChunk, refChunk);
-                  
-                  int requiredCount = expectedCount;
-                  if (specificRule.goldenLen > 0) {
-                    requiredCount = min(expectedCount, specificRule.goldenLen);
-                  }
-                  
-                  if (expectedCount > 1 && count < requiredCount) {
-                    expectedTajweed = specificRule;
-                    print('[ErrorExplainer] Tajweed COUNT error found: ${specificRule.name.en}. Expected count >= $requiredCount, got $count. (ref: $refChunk, pred: $predChunk)');
-                    break;
-                  } else if (expectedCount > 1 && count >= requiredCount) {
-                    if (predChunk.isNotEmpty) {
-                      String baseChar = predChunk[0];
-                      bool isOnlyBase = true;
-                      for (int i = 0; i < predChunk.length; i++) {
-                         if (predChunk[i] != baseChar) {
-                            isOnlyBase = false;
-                            break;
-                         }
-                      }
-                      if (isOnlyBase && refChunk.contains(baseChar)) {
-                          isValidTajweedVariation = true;
-                      }
+                  // Only check duration for rules that actually require elongation (>= 2 harakat)
+                  if (specificRule.goldenLen >= 2) {
+                    bool hasValidDuration = specificRule.checkDuration(chunkDuration);
+                    
+                    if (!hasValidDuration) {
+                      expectedTajweed = specificRule;
+                      errExpectedDuration = specificRule.goldenLen * 0.20;
+                      errActualDuration = chunkDuration;
+                      print('[ErrorExplainer] Tajweed DURATION error found: ${specificRule.name.en}. Expected >= ${errExpectedDuration.toStringAsFixed(2)} seconds. Duration got: ${chunkDuration.toStringAsFixed(2)} seconds. (ref: $refChunk, pred: $predChunk)');
+                      break;
+                    } else {
+                      // Bypass phoneme matching for Madd/Ghunna since it is now purely timestamp-based
+                      isValidTajweedVariation = true;
+                      print('[ErrorExplainer] Valid Tajweed DURATION match: ${specificRule.name.en}. Required >= ${(specificRule.goldenLen * 0.20).toStringAsFixed(2)}s, got ${chunkDuration.toStringAsFixed(2)}s. (ref: $refChunk, pred: $predChunk)');
                     }
+                  } else {
+                    // It's a normal consonant (like a single 'م' or 'ن' for Izhar), no Tajweed duration required.
+                    isValidTajweedVariation = true; 
                   }
                 }
               }
@@ -255,6 +271,8 @@ class ErrorExplainer {
               expectedPh: refChunk,
               predictedPh: predChunk,
               expectedRule: expectedTajweed,
+              expectedDuration: errExpectedDuration,
+              actualDuration: errActualDuration,
             );
           } else if (isValidTajweedVariation) {
             print('[ErrorExplainer] Ignoring valid Tajweed count variation: ref=$refChunk, pred=$predChunk');

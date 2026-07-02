@@ -49,6 +49,12 @@ abstract class TajweedRule {
 
   bool match(String refText, String predText) => true;
 
+  bool checkDuration(double durationSeconds) {
+    if (goldenLen <= 0) return true;
+    double requiredDuration = goldenLen * 0.20; // 0.20s per harakah roughly
+    return durationSeconds >= requiredDuration;
+  }
+
   /// Whether the phonetic script is associated with this Tajweed rule or not
   bool isPhStrIn(String phStr) => true;
 

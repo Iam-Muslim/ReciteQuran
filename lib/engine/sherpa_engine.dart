@@ -24,10 +24,15 @@ class TranscriptionResult {
   final String text;
   final bool isFinal;
   final int startTime;
+  final List<String> tokens;
+  final List<double> timestamps;
+
   TranscriptionResult({
     required this.text,
     this.isFinal = false,
     this.startTime = 0,
+    this.tokens = const [],
+    this.timestamps = const [],
   });
 }
 
@@ -151,6 +156,8 @@ class SherpaEngine {
             text: message['text'] as String,
             isFinal: message['isFinal'] as bool,
             startTime: message['startTime'] as int,
+            tokens: List<String>.from(message['tokens'] ?? []),
+            timestamps: List<double>.from(message['timestamps'] ?? []),
           ),
         );
       }
@@ -300,6 +307,8 @@ class SherpaEngine {
           if (!endpointDetected && !isFinal) {
             mainSendPort.send({
               'text': partial.text,
+              'tokens': partial.tokens,
+              'timestamps': partial.timestamps,
               'isFinal': false,
               'startTime': startTime,
             });
@@ -316,6 +325,8 @@ class SherpaEngine {
 
             mainSendPort.send({
               'text': final_.text,
+              'tokens': final_.tokens,
+              'timestamps': final_.timestamps,
               'isFinal': true,
               'startTime': startTime,
             });

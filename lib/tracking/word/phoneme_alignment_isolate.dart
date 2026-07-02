@@ -44,9 +44,9 @@ class PhonemeAlignmentIsolate {
   Stream<Map<String, dynamic>> get wordStream => _wordStreamController.stream;
 
   // Stream to emit completed ayah raw ASR back to the UI for Tajweed processing
-  final StreamController<String> _ayahCompletedStreamController =
-      StreamController<String>.broadcast();
-  Stream<String> get ayahCompletedStream =>
+  final StreamController<Map<String, dynamic>> _ayahCompletedStreamController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get ayahCompletedStream =>
       _ayahCompletedStreamController.stream;
 
   /// Starts the background isolate and sets up the communication ports.
@@ -67,7 +67,7 @@ class PhonemeAlignmentIsolate {
           // Print debug logs coming from the background isolate
           print('[PhonemeAlignmentIsolate] ${message['message']}');
         } else if (message['event'] == 'ayah_completed') {
-          _ayahCompletedStreamController.add(message['raw_asr'] as String);
+          _ayahCompletedStreamController.add(message as Map<String, dynamic>);
         }
       }
     });
@@ -94,16 +94,25 @@ class PhonemeAlignmentIsolate {
   }
 
   /// Feeds a new chunk of space-less ASR phonetic output to the isolate.
-  void feed(String asrChunk) {
-    _sendPort?.send({'cmd': IsolateCommands.feed, 'asr': asrChunk});
+  void feed(String asrChunk, List<double> timestampsChunk) {
+    _sendPort?.send({
+      'cmd': IsolateCommands.feed,
+      'asr': asrChunk,
+      'timestamps': timestampsChunk,
+    });
   }
 
   /// Backtracks and replaces the tail of the ASR buffer when the engine corrects itself
-  void replaceTail(int backtrack, String newTail) {
+  void replaceTail(
+    int backtrack,
+    String newTail,
+    List<double> newTailTimestamps,
+  ) {
     _sendPort?.send({
       'cmd': IsolateCommands.replaceTail,
       'backtrack': backtrack,
       'tail': newTail,
+      'timestamps': newTailTimestamps,
     });
   }
 
@@ -139,6 +148,7 @@ int _getCharSubCost(String c1, String c2) {
     ['ذ', 'ظ', 'ز'], // Sibilants / Interdentals / D
     ['س', 'ص', 'ث'], // S/Th/Sh sounds
     ['ت', 'ط', 'د', 'ض'], // T/D sounds
+    ['ج', 'ز'],
     //['ه', 'ح', 'خ', 'ع', 'ء', 'أ', 'إ', 'آ', 'ا'], // Throat / Hamza / Alif
     //['ب', 'ف', 'و'], // Labials
     //['ي', 'ى', 'ئ', 'ؤ', 'ء'], // Ya / Hamza variants
@@ -297,15 +307,17 @@ void _alignmentWorker(SendPort mainSendPort) {
 
   // Tracking State
   String asrWindow = ''; // The FULL raw ASR string for the current Ayah
+  List<double> asrTimestamps = []; // The FULL timestamps for the current Ayah
   // --- THE POINTER TRICK ---
   // The 'asrConsumedChars' pointer is the secret to preserving the raw ASR string!
   // Instead of physically deleting matched characters from 'asrWindow' (which would destroy the string),
   // we just advance this integer pointer. The sliding window only reads from 'asrConsumedChars' onwards.
   int asrConsumedChars = 0;
-  
+
   // Accumulated clean ASR string that only contains characters successfully matched to the Ayah
   // (filters out stutters, false starts, and background noise)
   String cleanAsr = '';
+  List<double> cleanTimestamps = [];
 
   int targetChunkCursor =
       0; // Where we currently are in the expected refChunks array
@@ -358,16 +370,25 @@ void _alignmentWorker(SendPort mainSendPort) {
       String unconsumed = asrConsumedChars < asrWindow.length
           ? asrWindow.substring(asrConsumedChars)
           : '';
+      List<double> unconsumedTimestamps =
+          asrConsumedChars < asrTimestamps.length
+          ? asrTimestamps.sublist(asrConsumedChars)
+          : [];
 
       // (Removed sending ayah_completed here to prevent out-of-sync state with main thread)
 
       asrWindow = forceClear ? '' : unconsumed;
+      asrTimestamps = forceClear ? [] : unconsumedTimestamps;
       cleanAsr = '';
+      cleanTimestamps = [];
       asrConsumedChars = 0;
       consecutiveFailures = 0;
 
       if (asrWindow.length > 50) {
         asrWindow = asrWindow.substring(asrWindow.length - 50);
+        if (asrTimestamps.length > 50) {
+          asrTimestamps = asrTimestamps.sublist(asrTimestamps.length - 50);
+        }
       }
       targetChunkCursor = 0;
       currentWordId = 0;
@@ -381,8 +402,10 @@ void _alignmentWorker(SendPort mainSendPort) {
     // --- FEED ASR COMMAND ---
     if (cmd == IsolateCommands.feed) {
       String newAsr = message['asr'] as String;
+      List<double> newTimestamps = message['timestamps'] as List<double>;
       if (newAsr.isNotEmpty) {
         asrWindow += newAsr;
+        asrTimestamps.addAll(newTimestamps);
       }
     }
 
@@ -390,6 +413,7 @@ void _alignmentWorker(SendPort mainSendPort) {
     if (cmd == IsolateCommands.replaceTail) {
       int backtrack = message['backtrack'] as int;
       String newTail = message['tail'] as String;
+      List<double> newTailTimestamps = message['timestamps'] as List<double>;
 
       if (backtrack <= asrWindow.length) {
         int newLength = asrWindow.length - backtrack;
@@ -398,8 +422,16 @@ void _alignmentWorker(SendPort mainSendPort) {
           newLength = asrConsumedChars;
         }
         asrWindow = asrWindow.substring(0, newLength) + newTail;
+        if (newLength <= asrTimestamps.length) {
+          asrTimestamps = asrTimestamps.sublist(0, newLength)
+            ..addAll(newTailTimestamps);
+        }
       } else {
         asrWindow = asrWindow.substring(0, asrConsumedChars) + newTail;
+        if (asrConsumedChars <= asrTimestamps.length) {
+          asrTimestamps = asrTimestamps.sublist(0, asrConsumedChars)
+            ..addAll(newTailTimestamps);
+        }
       }
     }
 
@@ -428,12 +460,18 @@ void _alignmentWorker(SendPort mainSendPort) {
       String trackingAsr = asrConsumedChars < asrWindow.length
           ? asrWindow.substring(asrConsumedChars)
           : '';
+      List<double> trackingTimestamps = asrConsumedChars < asrTimestamps.length
+          ? asrTimestamps.sublist(asrConsumedChars)
+          : [];
 
       // Safety cap: Only search the last 2000 characters to prevent CPU hangs if left on for hours.
       if (trackingAsr.length > 2000) {
         int excess = trackingAsr.length - 2000;
         asrConsumedChars += excess;
         trackingAsr = trackingAsr.substring(excess);
+        if (trackingTimestamps.length > excess) {
+          trackingTimestamps = trackingTimestamps.sublist(excess);
+        }
       }
 
       String currentAsrWindow = trackingAsr;
@@ -600,18 +638,25 @@ void _alignmentWorker(SendPort mainSendPort) {
         targetChunkCursor += chunksToConsume;
 
         int nextWordId = currentWordId + wordsToAdvance;
-        debugLog(
-          '>>> HIGHLIGHTING WORDS [$currentWordId to ${nextWordId - 1}]',
-        );
-        for (int w = currentWordId; w < nextWordId; w++) {
-          mainSendPort.send({'event': 'highlight', 'word_id': w, 'is_red': false});
-        }
-
         if (maxPredIdxToChop >= 0) {
-          int startClean = minPredIdxToStart >= 0 ? minPredIdxToStart : bestAsrStartIdx;
-          if (startClean <= maxPredIdxToChop && maxPredIdxToChop < currentAsrChunks.length) {
+          int startClean = minPredIdxToStart >= 0
+              ? minPredIdxToStart
+              : bestAsrStartIdx;
+          if (startClean <= maxPredIdxToChop &&
+              maxPredIdxToChop < currentAsrChunks.length) {
+            int charIdx = 0;
+            for (int k = 0; k < startClean; k++) {
+              charIdx += currentAsrChunks[k].length;
+            }
             for (int k = startClean; k <= maxPredIdxToChop; k++) {
               cleanAsr += currentAsrChunks[k];
+              int chunkLen = currentAsrChunks[k].length;
+              for (int c = 0; c < chunkLen; c++) {
+                if (charIdx < trackingTimestamps.length) {
+                  cleanTimestamps.add(trackingTimestamps[charIdx]);
+                }
+                charIdx++;
+              }
             }
           }
 
@@ -628,11 +673,28 @@ void _alignmentWorker(SendPort mainSendPort) {
           asrConsumedChars += charsToChop;
         }
 
+        debugLog(
+          '>>> HIGHLIGHTING WORDS [$currentWordId to ${nextWordId - 1}]',
+        );
+        for (int w = currentWordId; w < nextWordId; w++) {
+          mainSendPort.send({
+            'event': 'highlight',
+            'word_id': w,
+            'is_red': false,
+            'clean_asr': cleanAsr,
+            'timestamps': cleanTimestamps,
+          });
+        }
+
         bool isLastWordOfAyah =
             (nextWordId - 1) ==
             (chunkToWordMap.isNotEmpty ? chunkToWordMap.last : -1);
         if (isLastWordOfAyah && isTajweed) {
-          mainSendPort.send({'event': 'ayah_completed', 'raw_asr': cleanAsr});
+          mainSendPort.send({
+            'event': 'ayah_completed',
+            'raw_asr': cleanAsr,
+            'timestamps': cleanTimestamps,
+          });
         }
 
         currentWordId = nextWordId;
@@ -640,7 +702,9 @@ void _alignmentWorker(SendPort mainSendPort) {
       } else {
         consecutiveFailures++;
 
-        if (currentAsrChunks.length > 10 && consecutiveFailures >= 3 && !isTajweed) {
+        if (currentAsrChunks.length > 10 &&
+            consecutiveFailures >= 3 &&
+            !isTajweed) {
           // --- 4. CATCH-UP (LOOKAHEAD) SEARCH ---
           // If similarity is low, the user might have skipped a word or the ASR hallucinated.
           // We look ahead up to 3 words to see if the user is actually reciting further down the Ayah.
@@ -648,7 +712,7 @@ void _alignmentWorker(SendPort mainSendPort) {
 
           // Try jumping forward by checking whole words ahead
           int targetWordLimit = currentWordId + 3;
-          
+
           for (int w = currentWordId + 1; w <= targetWordLimit; w++) {
             if (chunkToWordMap.isEmpty || w > chunkToWordMap.last) break;
 
@@ -656,13 +720,16 @@ void _alignmentWorker(SendPort mainSendPort) {
             int endChunk = chunkToWordMap.lastIndexOf(w);
             if (startChunk == -1 || endChunk == -1) continue;
 
-            List<String> wordChunks = refChunks.sublist(startChunk, endChunk + 1);
+            List<String> wordChunks = refChunks.sublist(
+              startChunk,
+              endChunk + 1,
+            );
 
             var catchupAlignments = _alignPhonemeGroups(
               wordChunks,
               currentAsrChunks,
             );
-            
+
             int catchupEqual = catchupAlignments
                 .where((a) => a.opType == 'equal')
                 .length;
@@ -678,11 +745,12 @@ void _alignmentWorker(SendPort mainSendPort) {
             int wordsSkipped = w - currentWordId;
             double jumpPenalty = wordsSkipped * 0.15;
             if (jumpPenalty > 0.30) jumpPenalty = 0.30;
-            
+
             // Require a much stronger match for short words in catch-up to avoid coincidences
             double requiredSim = 0.75;
-            if (wordChunks.length <= 4) requiredSim = 0.95; 
-            if (wordChunks.length <= 2) requiredSim = 1.0; // Demand perfection for tiny words
+            if (wordChunks.length <= 4) requiredSim = 0.95;
+            if (wordChunks.length <= 2)
+              requiredSim = 1.0; // Demand perfection for tiny words
 
             double catchupScore = rawSim - jumpPenalty;
 
@@ -691,19 +759,6 @@ void _alignmentWorker(SendPort mainSendPort) {
                 '!!! CATCH-UP MATCH FOUND !!! Jumping forward to Word $w.',
               );
 
-              // 1. Highlight the skipped words as RED
-              if (w > currentWordId) {
-                debugLog(
-                  '>>> HIGHLIGHTING SKIPPED WORDS [$currentWordId to ${w - 1}] AS RED',
-                );
-                for (int skipW = currentWordId; skipW < w; skipW++) {
-                  mainSendPort.send({'event': 'highlight', 'word_id': skipW, 'is_red': true});
-                }
-              }
-
-              // 2. Highlight the matched word W as GREEN
-              mainSendPort.send({'event': 'highlight', 'word_id': w, 'is_red': false});
-
               // 3. Safely consume characters
               int maxPredIdx = -1;
               int minPredIdx = -1;
@@ -711,15 +766,29 @@ void _alignmentWorker(SendPort mainSendPort) {
                 if (align.predIdx > maxPredIdx) {
                   maxPredIdx = align.predIdx;
                 }
-                if (align.predIdx >= 0 && (minPredIdx == -1 || align.predIdx < minPredIdx)) {
+                if (align.predIdx >= 0 &&
+                    (minPredIdx == -1 || align.predIdx < minPredIdx)) {
                   minPredIdx = align.predIdx;
                 }
               }
 
               if (maxPredIdx >= 0) {
-                if (minPredIdx >= 0 && minPredIdx <= maxPredIdx && maxPredIdx < currentAsrChunks.length) {
+                if (minPredIdx >= 0 &&
+                    minPredIdx <= maxPredIdx &&
+                    maxPredIdx < currentAsrChunks.length) {
+                  int charIdx = 0;
+                  for (int k = 0; k < minPredIdx; k++) {
+                    charIdx += currentAsrChunks[k].length;
+                  }
                   for (int k = minPredIdx; k <= maxPredIdx; k++) {
                     cleanAsr += currentAsrChunks[k];
+                    int chunkLen = currentAsrChunks[k].length;
+                    for (int c = 0; c < chunkLen; c++) {
+                      if (charIdx < trackingTimestamps.length) {
+                        cleanTimestamps.add(trackingTimestamps[charIdx]);
+                      }
+                      charIdx++;
+                    }
                   }
                 }
 
@@ -735,6 +804,31 @@ void _alignmentWorker(SendPort mainSendPort) {
                 asrConsumedChars += charsToChop;
               }
 
+              // 1. Highlight the skipped words as RED
+              if (w > currentWordId) {
+                debugLog(
+                  '>>> HIGHLIGHTING SKIPPED WORDS [$currentWordId to ${w - 1}] AS RED',
+                );
+                for (int skipW = currentWordId; skipW < w; skipW++) {
+                  mainSendPort.send({
+                    'event': 'highlight',
+                    'word_id': skipW,
+                    'is_red': true,
+                    'clean_asr': cleanAsr,
+                    'timestamps': cleanTimestamps,
+                  });
+                }
+              }
+
+              // 2. Highlight the matched word W as GREEN
+              mainSendPort.send({
+                'event': 'highlight',
+                'word_id': w,
+                'is_red': false,
+                'clean_asr': cleanAsr,
+                'timestamps': cleanTimestamps,
+              });
+
               // 4. Update cursors to move PAST word w
               targetChunkCursor = endChunk + 1;
               currentWordId = w + 1;
@@ -743,7 +837,11 @@ void _alignmentWorker(SendPort mainSendPort) {
               // 5. Check if Ayah completed
               bool isLastWordOfAyah = (w == chunkToWordMap.last);
               if (isLastWordOfAyah && isTajweed) {
-                mainSendPort.send({'event': 'ayah_completed', 'raw_asr': cleanAsr});
+                mainSendPort.send({
+                  'event': 'ayah_completed',
+                  'raw_asr': cleanAsr,
+                  'timestamps': cleanTimestamps,
+                });
               }
 
               break; // Exit catch-up loop

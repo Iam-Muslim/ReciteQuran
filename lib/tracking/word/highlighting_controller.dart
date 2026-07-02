@@ -156,6 +156,11 @@ class HighlightingController extends ChangeNotifier {
 
     int wordId = event['word_id'] as int;
     bool isRed = event['is_red'] as bool? ?? false;
+    String cleanAsr = event['clean_asr'] as String? ?? '';
+    List<double> cleanTimestamps = [];
+    if (event['timestamps'] != null) {
+      cleanTimestamps = (event['timestamps'] as List).cast<double>();
+    }
 
     if (!(_greenWordsByVerse[ayahNum]?.contains(wordId) ?? false) &&
         !(_redWordsByVerse[ayahNum]?.contains(wordId) ?? false) &&
@@ -165,6 +170,37 @@ class HighlightingController extends ChangeNotifier {
         (_redWordsByVerse[ayahNum] ??= {}).add(wordId);
       } else {
         (_greenWordsByVerse[ayahNum] ??= {}).add(wordId);
+      }
+      
+      // Real-time Tajweed Evaluation (Deferred Commitment)
+      // Since wordId is now fully matched, any boundary rules (Idgham) for wordId - 1
+      // can be accurately evaluated because cleanAsr contains the boundary!
+      if (isTajweed && cleanAsr.isNotEmpty) {
+        final errors = ErrorExplainer.explainAyahError(
+          targetAyah.textPhoneme,
+          cleanAsr,
+          targetAyah.phonemeWords,
+          cleanTimestamps,
+        );
+        
+        // Only apply errors for words strictly less than the currently matched wordId
+        // This ensures boundary rules (like Idgham with the next word) are fully evaluated
+        // before we lock in the Tajweed status.
+        bool changed = false;
+        errors.forEach((errWordId, errList) {
+          if (errWordId < wordId) {
+             if (_greenWordsByVerse[ayahNum]?.contains(errWordId) ?? false) {
+               _greenWordsByVerse[ayahNum]?.remove(errWordId);
+               (_yellowWordsByVerse[ayahNum] ??= {}).add(errWordId);
+               (_errorsByVerse[ayahNum] ??= {})[errWordId] = errList;
+               changed = true;
+             }
+          }
+        });
+        
+        if (changed) {
+          notifyListeners();
+        }
       }
       
       // If this was the last word of the Ayah, automatically advance to the next Ayah!
@@ -186,8 +222,10 @@ class HighlightingController extends ChangeNotifier {
     }
   }
 
-  void _onAyahCompleted(String rawAsr) {
+  void _onAyahCompleted(Map<String, dynamic> event) {
     if (_currentMatch == null) return;
+    String rawAsr = event['raw_asr'] as String;
+    List<double> timestamps = (event['timestamps'] as List).cast<double>();
     print('[HighlightingController] Ayah completed with raw ASR: $rawAsr');
     
     if (isTajweed) {
@@ -196,6 +234,7 @@ class HighlightingController extends ChangeNotifier {
         targetAyah.textPhoneme,
         rawAsr,
         targetAyah.phonemeWords,
+        timestamps,
       );
       
       if (errors.isNotEmpty) {
@@ -366,6 +405,13 @@ class HighlightingController extends ChangeNotifier {
     } else if (activeAyah.value != null) {
       clearHighlightsFromAyah(activeAyah.value!);
     }
+    
+    // CRITICAL: Synchronize Isolate state! Since we cleared the UI highlights,
+    // the isolate must also reset its word cursor back to 0 for this Ayah.
+    if (_currentMatch != null && _isolateStarted) {
+      _alignmentIsolate.setAyah(_currentMatch!.verse.textPhoneme, _calculateBoundaries(_currentMatch!.verse.phonemeWords), isTajweed: isTajweed, forceClear: true);
+    }
+    
     _engine.resetBuffer();
     _lastProcessedText = '';
     _lastResetTime = DateTime.now().millisecondsSinceEpoch;
@@ -410,12 +456,41 @@ class HighlightingController extends ChangeNotifier {
     if (_state == TrackerState.discovery) return;
     if (_currentMatch == null) return;
 
-    final String asrText = result.text.trim();
-    debugRecognizedText.value = asrText;
-
     if (result.startTime < _lastResetTime) {
       return;
     }
+
+    List<double> charDurations = [];
+    StringBuffer asrTextBuffer = StringBuffer();
+    
+    double currentAudioTime = (DateTime.now().millisecondsSinceEpoch - _lastResetTime) / 1000.0;
+    
+    for (int i = 0; i < result.tokens.length; i++) {
+      String token = result.tokens[i].replaceAll(' ', '');
+      if (token.isEmpty) continue; // Safely skip space-only tokens
+      
+      double tokenDur = 0.15;
+      if (i < result.timestamps.length - 1) {
+         tokenDur = result.timestamps[i+1] - result.timestamps[i];
+      } else if (i < result.timestamps.length) {
+         // Trailing token: calculate duration dynamically using elapsed audio time!
+         tokenDur = currentAudioTime - result.timestamps[i];
+      }
+      
+      // Safety clamps
+      if (tokenDur <= 0.15) tokenDur = 0.15;
+      if (tokenDur > 3.0) tokenDur = 3.0; 
+      
+      double charDur = tokenDur / token.length;
+      
+      for (int j = 0; j < token.length; j++) {
+        asrTextBuffer.write(token[j]);
+        charDurations.add(charDur);
+      }
+    }
+    
+    final String asrText = asrTextBuffer.toString();
+    debugRecognizedText.value = asrText;
 
     if (asrText.length > 800) {
       _engine.resetBuffer();
@@ -454,11 +529,19 @@ class HighlightingController extends ChangeNotifier {
        }
     }
 
+    // charDurations is now calculated earlier in the method.
+
     String newText = asrText;
+    List<double> newTimestamps = charDurations;
     if (newText.startsWith(_lastProcessedText)) {
       newText = newText.substring(_lastProcessedText.length);
+      if (charDurations.length >= _lastProcessedText.length) {
+         newTimestamps = charDurations.sublist(_lastProcessedText.length);
+      } else {
+         newTimestamps = [];
+      }
       if (newText.isNotEmpty && _isolateStarted) {
-        _alignmentIsolate.feed(newText);
+        _alignmentIsolate.feed(newText, newTimestamps);
       }
     } else {
       // The ASR rewrote the past (corrected itself).
@@ -475,9 +558,13 @@ class HighlightingController extends ChangeNotifier {
       
       int backtrackChars = _lastProcessedText.length - commonLen;
       String newTail = asrText.substring(commonLen);
+      List<double> newTailTimestamps = [];
+      if (charDurations.length >= commonLen) {
+         newTailTimestamps = charDurations.sublist(commonLen);
+      }
       
       if (_isolateStarted) {
-        _alignmentIsolate.replaceTail(backtrackChars, newTail);
+        _alignmentIsolate.replaceTail(backtrackChars, newTail, newTailTimestamps);
       }
     }
     
