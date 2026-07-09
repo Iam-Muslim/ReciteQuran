@@ -1,0 +1,6 @@
+{
+  "name": "Recite Quran",
+  "description": "A landing page for the Recite Quran Android application.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

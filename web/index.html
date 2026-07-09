@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="A new Flutter project.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Recite Quran">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>Recite Quran - اتلو القران</title>
+  <link rel="manifest" href="manifest.json">
+  <script src="coi-serviceworker.min.js"></script>
+  <style>
+    /* Modern Splash Screen Styles */
+    #splash-overlay {
+      position: fixed;
+      inset: 0;
+      background: #fdfaf6; /* Matches React landing page */
+      z-index: 99999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, -apple-system, sans-serif;
+      transition: opacity 0.5s ease;
+    }
+    .splash-card {
+      background: white;
+      padding: 2.5rem;
+      border-radius: 1.5rem;
+      box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+      max-width: 24rem;
+      text-align: center;
+      border: 1px solid #f3f4f6;
+    }
+    .splash-icon {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 1.5rem auto;
+    }
+    .splash-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: #171717;
+      margin-bottom: 0.5rem;
+    }
+    .splash-desc {
+      font-size: 0.875rem;
+      color: #525252;
+      margin-bottom: 2rem;
+      line-height: 1.6;
+    }
+    .splash-btn {
+      background: #059669; /* Emerald 600 */
+      color: white;
+      border: none;
+      padding: 0.875rem 1.5rem;
+      border-radius: 9999px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      width: 100%;
+      transition: all 0.2s;
+      box-shadow: 0 4px 6px -1px rgb(5 150 105 / 0.2);
+    }
+    .splash-btn:hover { background: #047857; transform: scale(1.02); }
+    
+    /* Progress Bar */
+    #progress-container {
+      display: none;
+      width: 100%;
+    }
+    .progress-bar-bg {
+      width: 100%;
+      height: 0.75rem;
+      background: #ecfdf5;
+      border-radius: 9999px;
+      overflow: hidden;
+      margin-bottom: 0.75rem;
+    }
+    #progress-bar-fill {
+      height: 100%;
+      background: #059669;
+      width: 0%;
+      transition: width 0.1s linear;
+    }
+    #progress-text {
+      font-size: 0.85rem;
+      color: #059669;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <div id="splash-overlay">
+    <div class="splash-card">
+      <img src="/app_icon.png" alt="Recite Quran" class="splash-icon" />
+      
+      <div id="prompt-section">
+        <h2 class="splash-title">Initializing AI Engine...</h2>
+        <p class="splash-desc">Loading the offline model into memory. This takes a few seconds...</p>
+        <button id="accept-download-btn" class="splash-btn" style="display: none;">Download & Start</button>
+      </div>
+
+      <div id="progress-container">
+        <h2 class="splash-title">Downloading Engine...</h2>
+        <p class="splash-desc" style="margin-bottom: 1rem;">Please do not close this tab.</p>
+        <div class="progress-bar-bg">
+          <div id="progress-bar-fill"></div>
+        </div>
+        <div id="progress-text">0%</div>
+      </div>
+    </div>
+  </div>
+
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+    This is useful to provide a custom configuration to the Flutter loader
+    or to give the user feedback during the initialization process.
+
+    For more details:
+    * https://docs.flutter.dev/platform-integration/web/initialization
+  -->
+  <script src="sherpa-onnx-asr.js?v=2"></script>
+  <script src="sherpa_official_app.js?v=2"></script>
+  <script src="sherpa-onnx-wasm-main-asr.js?v=2"></script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
