@@ -80,7 +80,7 @@ class SherpaEngine {
         final host = Uri.base.host;
         if (host != 'localhost' && host != '127.0.0.1' && host.isNotEmpty) {
             print("[SherpaDart] Production detected on $host. Fetching ONNX model from GitHub Releases...");
-            final url = 'https://github.com/Iam-Muslim/ReciteQuran/releases/download/v9.0.0/quran_phoneme_zipformer.int8.onnx'.toJS;
+            final url = '/download-model'.toJS;
             modelBytes = await _fetchSherpaModel(url).toDart as JSUint8Array;
         } else {
             print("[SherpaDart] Local environment detected. Loading ONNX model directly via Javascript fetch to bypass Chrome cache limits...");
