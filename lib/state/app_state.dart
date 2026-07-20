@@ -17,7 +17,8 @@ enum AppLanguage { ar, en }
 // Application Mode: Word Checker (Sherpa) vs Tajweed (Muaalem)
 enum AppMode { wordChecker, tajweed }
 
-
+// Tracking Strictness: Easy (relaxed), Normal (default), Strict (anchor both ends)
+enum TrackingStrictness { easy, normal, strict }
 
 // Available color themes.
 enum AppTheme { light, dark }
@@ -83,13 +84,26 @@ class AppState extends ChangeNotifier {
 
 
 
-  int autoScrollSpeed = 1; // 1 = 1x, 2 = 2x
+  int autoScrollSpeed = 2; // 2 = 1.0x (index in new array)
 
   void setAutoScrollSpeed(int speed) async {
     autoScrollSpeed = speed;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('autoScrollSpeed', autoScrollSpeed);
+  }
+
+  // ── Tracking Strictness ───────────────────────────────────────────────────
+
+  TrackingStrictness trackingStrictness = TrackingStrictness.normal;
+
+  void setTrackingStrictness(TrackingStrictness strictness) async {
+    if (trackingStrictness != strictness) {
+      trackingStrictness = strictness;
+      notifyListeners();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('trackingStrictness', trackingStrictness.name);
+    }
   }
 
   // ── Font Size ──────────────────────────────────────────────────────────────
@@ -108,32 +122,38 @@ class AppState extends ChangeNotifier {
   /// Returns the active color palette based on the current theme.
   ThemeColors get colors => isDarkMode ? _darkColors : _lightColors;
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // LIGHT THEME — Warm Ivory / Cream
+  // Inspired by classic Mushaf paper tones. Eye-comfortable for long reading.
+  // ──────────────────────────────────────────────────────────────────────────
   static const ThemeColors _lightColors = ThemeColors(
-    bg: Color(0xFFFFFFFF),
-    surface: Color(0xFFFFFFFF),
-    border: Color(0xFFE2E8F0),
-    gold: Color(0xFFD97706),
-    green: Color(0xFF10B981),
-    red: Color(0xFFEF4444),
-    muted: Color(0xFF64748B),
-    currentWord: Color(0xFFF59E0B),
-    text: Color(0xFF1E293B),
-    // 50% lerp of surface(0xFFFFFFFF) and border(0xFFE2E8F0)
-    surfaceHigh: Color(0xFFF1F4F8),
+    bg: Color(0xFFFAF6F0),          // Warm ivory/cream — like Mushaf paper
+    surface: Color(0xFFFFFDF8),      // Slightly brighter cream for cards
+    border: Color(0xFFE8DFD3),       // Warm tan border
+    gold: Color(0xFFB8860B),         // Deep warm gold — Islamic heritage
+    green: Color(0xFF2E8B57),        // Sea green — softer than emerald
+    red: Color(0xFFCD5C5C),          // Indian red — softer, less alarming
+    muted: Color(0xFF8B7D6B),        // Warm grey-brown
+    currentWord: Color(0xFFDAA520),   // Goldenrod — warm amber highlight
+    text: Color(0xFF2C1810),          // Deep warm brown — easier on eyes than black
+    surfaceHigh: Color(0xFFF2EDE5),  // Elevated cream
   );
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // DARK THEME — Deep Warm Black
+  // AMOLED-friendly but never harsh. Warm undertones reduce eye strain.
+  // ──────────────────────────────────────────────────────────────────────────
   static const ThemeColors _darkColors = ThemeColors(
-    bg: Color(0xFF000000), // Pure AMOLED Black
-    surface: Color(0xFF000000), // Match bg
-    border: Color(0xFF2A2A2A), // Subtle borders
-    gold: Color(0xFFD97706), // Kept orange from white mode
-    green: Color(0xFF10B981), // Rich Emerald
-    red: Color(0xFFEF4444), // Bright Red
-    muted: Color(0xFFA1A1AA), // Light muted grey
-    currentWord: Color(0xFFF59E0B), // Kept orange highlight from white mode
-    text: Color(0xFFE2E8F0),
-    // 50% lerp of surface(0xFF000000) and border(0xFF2A2A2A)
-    surfaceHigh: Color(0xFF151515),
+    bg: Color(0xFF0A0806),          // Very deep warm black (not pure #000)
+    surface: Color(0xFF141210),      // Slightly elevated warm surface
+    border: Color(0xFF2A2520),       // Warm dark border
+    gold: Color(0xFFDAA520),         // Goldenrod — warm & visible on dark
+    green: Color(0xFF3CB371),        // Medium sea green — readable on dark
+    red: Color(0xFFE07070),          // Soft red — not harsh on dark bg
+    muted: Color(0xFF9A8F82),        // Warm muted
+    currentWord: Color(0xFFF0C050),  // Bright goldenrod
+    text: Color(0xFFF0E6D6),         // Warm off-white — never pure white
+    surfaceHigh: Color(0xFF1E1A16),  // Elevated warm dark
   );
 
   Future<void> load() async {
@@ -154,8 +174,15 @@ class AppState extends ChangeNotifier {
 
 
 
-      autoScrollSpeed = prefs.getInt('autoScrollSpeed') ?? 1;
+      autoScrollSpeed = prefs.getInt('autoScrollSpeed') ?? 2;
       fontSize = prefs.getDouble('fontSize') ?? 28.0;
+
+      if (prefs.containsKey('trackingStrictness')) {
+        final s = prefs.getString('trackingStrictness');
+        if (s == 'easy') trackingStrictness = TrackingStrictness.easy;
+        else if (s == 'strict') trackingStrictness = TrackingStrictness.strict;
+        else trackingStrictness = TrackingStrictness.normal;
+      }
 
       notifyListeners();
     } catch (e) {
