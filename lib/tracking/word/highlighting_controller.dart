@@ -483,93 +483,98 @@ class WebHighlightingController extends ChangeNotifier {
     List<double> charDurations = [];
     StringBuffer asrTextBuffer = StringBuffer();
 
-    const double lookaheadDelay = 0.320;
-    List<Map<String, dynamic>> rawStarts = [];
+    if (result.tokens.isEmpty && result.text.isNotEmpty) {
+      String cleanText = result.text.replaceAll(' ', '');
+      asrTextBuffer.write(cleanText);
+    } else {
+      const double lookaheadDelay = 0.320;
+      List<Map<String, dynamic>> rawStarts = [];
 
-    for (
-      int i = 0;
-      i < min(result.tokens.length, result.timestamps.length);
-      i++
-    ) {
-      String tok = result.tokens[i].replaceAll(' ', '');
-      if (tok.isEmpty ||
-          tok == '<blank>' ||
-          tok == '<blk>' ||
-          tok == '<eps>' ||
-          tok == 'eps') {
-        continue;
-      }
-      double realTs = max(0.0, result.timestamps[i] - lookaheadDelay);
-      rawStarts.add({'tok': tok, 'ts': realTs});
-    }
-
-    for (int i = 0; i < rawStarts.length; i++) {
-      String token = rawStarts[i]['tok'] as String;
-      double spikeTime = rawStarts[i]['ts'] as double;
-
-      // 1. Calculate raw gap from previous token's spike time (excluding <blank> transition gaps)
-      double prevSpikeTime = (i == 0)
-          ? max(0.0, spikeTime - 0.15)
-          : rawStarts[i - 1]['ts'] as double;
-      double rawGap = max(0.04, spikeTime - prevSpikeTime);
-
-      // 2. Classify token type based on tokens.txt structure to set acoustic ceiling
-      bool isMaddCarrier =
-          token.contains('ا') ||
-          token.contains('و') ||
-          token.contains('ي') ||
-          token.contains('ۥ') ||
-          token.contains('ۦ');
-      bool isDoubledOrNasal =
-          (token.length >= 2 && token[0] == token[1]) ||
-          token.contains('ن') ||
-          token.contains('م') ||
-          token.contains('ں') ||
-          token.contains('۾');
-
-      // 3. Clamp maximum allowed duration to prevent <blank> transition silence from bloating tokens
-      double maxAllowedDur;
-      if (isMaddCarrier) {
-        maxAllowedDur = max(
-          0.35,
-          token.length * 1.50,
-        ); // Elongated vowels expand up to rawGap
-      } else if (isDoubledOrNasal) {
-        maxAllowedDur = max(
-          0.20,
-          min(0.38, token.length * 0.15),
-        ); // Shaddah / Ghunnah ceiling
-      } else {
-        maxAllowedDur = max(
-          0.06,
-          min(0.14, token.length * 0.07),
-        ); // Short consonants max out at ~140ms
-      }
-
-      double tokenDur = max(0.04, min(rawGap, maxAllowedDur));
-
-      // 4. Distribute token duration across characters using Phonetic Weighting
-      double totalWeight = 0.0;
-      List<double> charWeights = [];
-      for (int j = 0; j < token.length; j++) {
-        String ch = token[j];
-        double w = 1.0;
-        if (ch == 'ا' || ch == 'و' || ch == 'ي' || ch == 'ۥ' || ch == 'ۦ') {
-          w = 4.0; // Madd letters hold sound much longer
-        } else if (ch == 'ن' || ch == 'م' || ch == 'ں' || ch == '۾') {
-          w = 2.5; // Nasals hold resonance longer
-        } else {
-          w = 1.0; // Consonants and diacritics are quick bursts
+      for (
+        int i = 0;
+        i < min(result.tokens.length, result.timestamps.length);
+        i++
+      ) {
+        String tok = result.tokens[i].replaceAll(' ', '');
+        if (tok.isEmpty ||
+            tok == '<blank>' ||
+            tok == '<blk>' ||
+            tok == '<eps>' ||
+            tok == 'eps') {
+          continue;
         }
-        charWeights.add(w);
-        totalWeight += w;
+        double realTs = max(0.0, result.timestamps[i] - lookaheadDelay);
+        rawStarts.add({'tok': tok, 'ts': realTs});
       }
 
-      for (int j = 0; j < token.length; j++) {
-        asrTextBuffer.write(token[j]);
-        // The duration is distributed proportionally based on the character's phonetic weight.
-        double charDur = tokenDur * (charWeights[j] / totalWeight);
-        charDurations.add(charDur);
+      for (int i = 0; i < rawStarts.length; i++) {
+        String token = rawStarts[i]['tok'] as String;
+        double spikeTime = rawStarts[i]['ts'] as double;
+
+        // 1. Calculate raw gap from previous token's spike time (excluding <blank> transition gaps)
+        double prevSpikeTime = (i == 0)
+            ? max(0.0, spikeTime - 0.15)
+            : rawStarts[i - 1]['ts'] as double;
+        double rawGap = max(0.04, spikeTime - prevSpikeTime);
+
+        // 2. Classify token type based on tokens.txt structure to set acoustic ceiling
+        bool isMaddCarrier =
+            token.contains('ا') ||
+            token.contains('و') ||
+            token.contains('ي') ||
+            token.contains('ۥ') ||
+            token.contains('ۦ');
+        bool isDoubledOrNasal =
+            (token.length >= 2 && token[0] == token[1]) ||
+            token.contains('ن') ||
+            token.contains('م') ||
+            token.contains('ں') ||
+            token.contains('۾');
+
+        // 3. Clamp maximum allowed duration to prevent <blank> transition silence from bloating tokens
+        double maxAllowedDur;
+        if (isMaddCarrier) {
+          maxAllowedDur = max(
+            0.35,
+            token.length * 1.50,
+          ); // Elongated vowels expand up to rawGap
+        } else if (isDoubledOrNasal) {
+          maxAllowedDur = max(
+            0.20,
+            min(0.38, token.length * 0.15),
+          ); // Shaddah / Ghunnah ceiling
+        } else {
+          maxAllowedDur = max(
+            0.06,
+            min(0.14, token.length * 0.07),
+          ); // Short consonants max out at ~140ms
+        }
+
+        double tokenDur = max(0.04, min(rawGap, maxAllowedDur));
+
+        // 4. Distribute token duration across characters using Phonetic Weighting
+        double totalWeight = 0.0;
+        List<double> charWeights = [];
+        for (int j = 0; j < token.length; j++) {
+          String ch = token[j];
+          double w = 1.0;
+          if (ch == 'ا' || ch == 'و' || ch == 'ي' || ch == 'ۥ' || ch == 'ۦ') {
+            w = 4.0; // Madd letters hold sound much longer
+          } else if (ch == 'ن' || ch == 'م' || ch == 'ں' || ch == '۾') {
+            w = 2.5; // Nasals hold resonance longer
+          } else {
+            w = 1.0; // Consonants and diacritics are quick bursts
+          }
+          charWeights.add(w);
+          totalWeight += w;
+        }
+
+        for (int j = 0; j < token.length; j++) {
+          asrTextBuffer.write(token[j]);
+          // The duration is distributed proportionally based on the character's phonetic weight.
+          double charDur = tokenDur * (charWeights[j] / totalWeight);
+          charDurations.add(charDur);
+        }
       }
     }
 
