@@ -660,9 +660,9 @@ function createOnlineRecognizer(Module, myConfig) {
     decodingMethod: 'greedy_search',
     maxActivePaths: 4,
     enableEndpoint: 1,
-    rule1MinTrailingSilence: 2.4,
-    rule2MinTrailingSilence: 1.2,
-    rule3MinUtteranceLength: 20,
+    rule1MinTrailingSilence: 50.0,
+    rule2MinTrailingSilence: 50.0,
+    rule3MinUtteranceLength: 99999.0,
     hotwordsFile: '',
     hotwordsScore: 1.5,
     ctcFstDecoderConfig: {

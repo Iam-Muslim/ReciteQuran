@@ -172,17 +172,6 @@ class WebHighlightingController extends ChangeNotifier {
     bool isRed = event['is_red'] as bool? ?? false;
     String cleanAsr = event['clean_asr'] as String? ?? '';
 
-    List<String> wordAsr = [];
-    if (event['word_asr'] != null) {
-      wordAsr = (event['word_asr'] as List).cast<String>();
-    }
-
-    List<List<double>> wordTimestamps = [];
-    if (event['word_timestamps'] != null) {
-      wordTimestamps = (event['word_timestamps'] as List)
-          .map((e) => (e as List).cast<double>())
-          .toList();
-    }
 
     if (!(_greenWordsByVerse[ayahNum]?.contains(wordId) ?? false) &&
         !(_redWordsByVerse[ayahNum]?.contains(wordId) ?? false) &&
@@ -194,37 +183,18 @@ class WebHighlightingController extends ChangeNotifier {
       }
 
       // =========================================================================
-      // Deferred Tajweed Evaluation (The "N-1" Rule)
+      // Process Tajweed Errors received from Web Worker
       // =========================================================================
-      // To grade a word accurately (e.g. Idgham), the model MUST hear the beginning
-      // of the *next* word to know if the transition rules were respected.
-      // Therefore, we only run the ErrorExplainer when a new word is matched, and
-      // we only lock in the grade for words strictly *before* the newly matched word.
-      if (isTajweed && cleanAsr.isNotEmpty) {
-        final errors = ErrorExplainer.explainAyahError(
-          targetAyah.phonemeWords,
-          wordAsr,
-          wordTimestamps,
-          targetWordIdx: wordId,
-        );
-
-        // Only apply errors for words strictly less than the currently matched wordId
-        // This ensures boundary rules (like Idgham with the next word) are fully evaluated
-        // before we lock in the Tajweed status.
-        bool changed = false;
-        errors.forEach((errWordId, errList) {
-          if (errWordId < wordId) {
-            if (_greenWordsByVerse[ayahNum]?.contains(errWordId) ?? false) {
-              _greenWordsByVerse[ayahNum]?.remove(errWordId);
-              (_yellowWordsByVerse[ayahNum] ??= {}).add(errWordId);
-              (_errorsByVerse[ayahNum] ??= {})[errWordId] = errList;
-              changed = true;
-            }
+      if (isTajweed && cleanAsr.isNotEmpty && event['tajweed_errors'] != null) {
+        List<dynamic> errList = event['tajweed_errors'];
+        if (errList.isNotEmpty) {
+          List<ReciterError> decodedErrors = errList.map((e) => ReciterError.fromMap(e as Map<String, dynamic>)).toList();
+          
+          if (_greenWordsByVerse[ayahNum]?.contains(wordId) ?? false) {
+             _greenWordsByVerse[ayahNum]?.remove(wordId);
+             (_yellowWordsByVerse[ayahNum] ??= {}).add(wordId);
           }
-        });
-
-        if (changed) {
-          notifyListeners();
+          (_errorsByVerse[ayahNum] ??= {})[wordId] = decodedErrors;
         }
       }
 
@@ -252,48 +222,10 @@ class WebHighlightingController extends ChangeNotifier {
 
   void _onAyahCompleted(Map<String, dynamic> event) {
     if (_currentMatch == null) return;
-    String rawAsr = event['raw_asr'] as String;
-
-    List<String> wordAsr = [];
-    if (event['word_asr'] != null) {
-      wordAsr = (event['word_asr'] as List).cast<String>();
-    }
-
-    List<List<double>> wordTimestamps = [];
-    if (event['word_timestamps'] != null) {
-      wordTimestamps = (event['word_timestamps'] as List)
-          .map((e) => (e as List).cast<double>())
-          .toList();
-    }
-
+    String rawAsr = event['raw_asr'] as String? ?? '';
     print('[HighlightingController] Ayah completed with raw ASR: $rawAsr');
 
-    if (isTajweed) {
-      // =======================================================================
-      // Final Ayah Sweep
-      // =======================================================================
-      // The deferred Tajweed logic (N-1) in `_onIsolateWordMatched` evaluates
-      // everything up to the second-to-last word. When the Ayah completes, we
-      // run one final sweep without a `targetWordIdx` limit to grade the very
-      // last word of the Ayah and catch any terminal pausing rules (Madd Aridh).
-      final targetAyah = _currentMatch!.verse;
-      final errors = ErrorExplainer.explainAyahError(
-        targetAyah.phonemeWords,
-        wordAsr,
-        wordTimestamps,
-      );
-
-      if (errors.isNotEmpty) {
-        _errorsByVerse[targetAyah.ayah] = errors;
-
-        for (int wordId in errors.keys) {
-          _greenWordsByVerse[targetAyah.ayah]?.remove(wordId);
-          (_yellowWordsByVerse[targetAyah.ayah] ??= {}).add(wordId);
-        }
-
-        notifyListeners();
-      }
-    }
+    // Final sweep logic is now handled fully in the background worker thread.
   }
 
   // ── Public accessors ──────────────────────────────────────────────────────

@@ -138,6 +138,11 @@ class _OrchestratorState extends State<_Orchestrator> {
 
     // Global subscription for Voice Search text
     _engine.transcriptionStream.listen((res) {
+      if (_isRecording && res.isFinal && mounted) {
+        debugPrint('[Orchestrator] Auto-stopping recording due to Sherpa Endpoint (50s silence)');
+        _toggleRecord();
+      }
+
       if (_isVoiceSearching && mounted) {
         setState(() {
           _voiceSearchAsrText = res.text;

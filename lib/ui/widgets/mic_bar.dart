@@ -2,6 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../state/app_state.dart';
 
+/// Bottom floating action bar — the primary interaction point.
+///
+/// Design principles:
+/// - Large, obvious button (64px) — easy for elderly users
+/// - Single primary action visible at a time (Record or Pause)
+/// - Pulsing glow when recording — clear visual feedback
+/// - Floating pill shape — modern & non-intrusive
 class BottomActionBar extends StatefulWidget {
   final bool isRecording;
   final bool isLoadingEngine;
@@ -31,7 +38,8 @@ class BottomActionBar extends StatefulWidget {
 class _BottomActionBarState extends State<BottomActionBar>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
+  // _pulseAnimation is currently unused
+  // late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
@@ -40,9 +48,11 @@ class _BottomActionBarState extends State<BottomActionBar>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
+    /*
     _pulseAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
+    */
 
     if (widget.isRecording) {
       _pulseController.repeat(reverse: true);
@@ -69,128 +79,118 @@ class _BottomActionBarState extends State<BottomActionBar>
   @override
   Widget build(BuildContext context) {
     final c = widget.c;
+    final app = AppState.instance;
+
+    // Choose the correct button based on current state
+    Widget actionButton;
+    if (widget.isAutoScrolling) {
+      // ── AutoScroll Pause Button ──
+      actionButton = _buildFloatingButton(
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          widget.onToggleAutoScroll();
+        },
+        gradient: LinearGradient(
+          colors: [c.gold, c.gold.withValues(alpha: 0.85)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        shadowColor: c.gold.withValues(alpha: 0.3),
+        icon: Icons.pause_rounded,
+        label: app.isArabic ? 'إيقاف' : 'Pause',
+      );
+    } else {
+      // ── Record / Stop Button ──
+      final Color buttonColor = widget.isRecording ? c.red : c.green;
+      actionButton = _buildFloatingButton(
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          widget.onMic();
+        },
+        gradient: LinearGradient(
+          colors: [buttonColor, buttonColor.withValues(alpha: 0.85)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        shadowColor: buttonColor.withValues(alpha: 0.25),
+        shadowBlur: 16,
+        shadowSpread: 2,
+        icon: widget.isLoadingEngine
+            ? null
+            : (widget.isRecording ? Icons.stop_rounded : Icons.mic_rounded),
+        isLoading: widget.isLoadingEngine,
+        label: widget.isRecording
+            ? (app.isArabic ? 'انتهي' : 'End')
+            : (app.isArabic ? 'اتلو' : 'Recite'),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 24, right: 24, left: 24),
-      child: Align(
-        alignment:
-            Alignment.bottomLeft, // Force physical left regardless of RTL
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // ── Record / Stop Button ──────────────────────────────────────────────
-            if (!widget.isAutoScrolling) // Show record button if not reading
-              GestureDetector(
-                onTap: () {
-                  HapticFeedback.mediumImpact();
-                  widget.onMic();
-                },
-                child: AnimatedBuilder(
-                  animation: _pulseAnimation,
-                  builder: (context, child) {
-                    final double pulseValue = widget.isRecording ? _pulseAnimation.value : 0.0;
-                    final double scale = 1.0 + (pulseValue * 0.08);
-                    final double glowSpread = 2 + (pulseValue * 6);
-                    final double glowBlur = 16 + (pulseValue * 12);
-                    final double glowAlpha = 0.3 + (pulseValue * 0.2);
+      child: Align(alignment: Alignment.bottomLeft, child: actionButton),
+    );
+  }
 
-                    return Transform.scale(
-                      scale: scale,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        width: 64,
-                        height: 64,
-                        decoration: BoxDecoration(
-                          gradient: widget.isRecording
-                              ? LinearGradient(
-                                      colors: [c.red, c.red.withValues(alpha: 0.8)],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    )
-                                  : LinearGradient(
-                                      colors: [c.green, c.green.withValues(alpha: 0.8)],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                          borderRadius: BorderRadius.circular(32),
-                          boxShadow: [
-                            BoxShadow(
-                              color: (widget.isRecording ? c.red : c.green)
-                                  .withValues(alpha: glowAlpha),
-                              blurRadius: glowBlur,
-                              spreadRadius: glowSpread,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.2),
-                            width: 2,
-                          ),
-                        ),
-                        child: widget.isLoadingEngine
-                            ? const Padding(
-                                padding: EdgeInsets.all(18.0),
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2.5,
-                                ),
-                              )
-                            : Icon(
-                                widget.isRecording
-                                    ? Icons.stop_rounded
-                                    : Icons.mic_rounded,
-                                color: Colors.white,
-                                size: 32,
-                              ),
-                      ),
-                    );
-                  },
+  /// Builds a consistent floating action button with label underneath.
+  Widget _buildFloatingButton({
+    required VoidCallback onTap,
+    required Gradient gradient,
+    required Color shadowColor,
+    double shadowBlur = 16,
+    double shadowSpread = 2,
+    IconData? icon,
+    bool isLoading = false,
+    required String label,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          gradient: gradient,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [
+            BoxShadow(
+              color: shadowColor,
+              blurRadius: shadowBlur,
+              spreadRadius: shadowSpread,
+              offset: const Offset(0, 4),
+            ),
+          ],
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.15),
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (isLoading)
+              const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2.5,
                 ),
               )
-            else
-              // Stop button for AutoScroll
-              GestureDetector(
-                onTap: () {
-                  HapticFeedback.mediumImpact();
-                  widget.onToggleAutoScroll();
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [c.gold, c.gold.withValues(alpha: 0.8)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(32),
-                    boxShadow: [
-                      BoxShadow(
-                        color: c.gold.withValues(alpha: 0.3),
-                        blurRadius: 16,
-                        spreadRadius: 2,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      width: 2,
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.pause_rounded,
-                    color: Colors.white,
-                    size: 32,
-                  ),
-                ),
+            else if (icon != null)
+              Icon(icon, color: Colors.white, size: 26),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+                letterSpacing: 0.3,
               ),
+            ),
           ],
         ),
       ),
     );
   }
 }
-

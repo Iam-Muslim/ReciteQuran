@@ -5,7 +5,7 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
+
 
 class TranscriptionResult {
   final String text;

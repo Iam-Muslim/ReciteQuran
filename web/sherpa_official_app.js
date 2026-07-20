@@ -75,13 +75,9 @@ let recorder = null;
 
 let lastResult = '';
 let processedChunks = 0;
+let frameBuffer = new Float32Array(0);
+const RECORD_CHUNK_SAMPLES = 5120; // 320ms at 16000Hz
 
-// VAD and Pre-roll state
-let isSpeaking = false;
-let preRollBuffer = [];
-let preRollSamples = 0;
-const MAX_PREROLL_SAMPLES = 16000 * 0.35; // ~350ms
-const RMS_THRESHOLD = 0.015;
 
 function downsampleBuffer(buffer, exportSampleRate) {
   if (exportSampleRate === recordSampleRate) {
@@ -106,6 +102,17 @@ function downsampleBuffer(buffer, exportSampleRate) {
   return result;
 }
 
+function primeRecognizer() {
+    if (recognizer && recognizer_stream) {
+        let primingBuffer = new Float32Array(4800); // 300ms at 16000Hz
+        recognizer_stream.acceptWaveform(expectedSampleRate, primingBuffer);
+        while (recognizer.isReady(recognizer_stream)) {
+            recognizer.decode(recognizer_stream);
+        }
+        console.log('[Sherpa] Injected 300ms priming preroll zeros.');
+    }
+}
+
 window.startOfficialSherpa = function() {
   console.log('[Sherpa] startOfficialSherpa called from Dart');
   if (!navigator.mediaDevices.getUserMedia) {
@@ -113,7 +120,13 @@ window.startOfficialSherpa = function() {
     return;
   }
 
-  const constraints = {audio: true};
+  const constraints = {
+      audio: {
+          autoGainControl: false,
+          echoCancellation: false,
+          noiseSuppression: false
+      }
+  };
 
   let onSuccess = function(stream) {
     console.log('[Sherpa] Microphone access granted. Initializing AudioContext...');
@@ -150,45 +163,44 @@ window.startOfficialSherpa = function() {
       let samples = new Float32Array(e.inputBuffer.getChannelData(0))
       samples = downsampleBuffer(samples, expectedSampleRate);
 
+      // Apply digital gain (2.5x) and hard limiter
+      for (let i = 0; i < samples.length; i++) {
+          let floatVal = samples[i] * 2.5;
+          if (floatVal > 1.0) floatVal = 1.0;
+          if (floatVal < -1.0) floatVal = -1.0;
+          samples[i] = floatVal;
+      }
+
       if (recognizer_stream == null) {
         console.log('[Sherpa] Creating recognizer stream...');
         recognizer_stream = recognizer.createStream();
+        primeRecognizer();
       }
 
-      // --- Simple Energy VAD ---
-      let sumSquares = 0.0;
-      for (let i = 0; i < samples.length; i++) {
-         sumSquares += samples[i] * samples[i];
-      }
-      let rms = Math.sqrt(sumSquares / samples.length);
+      // Concat to frame buffer
+      let newBuffer = new Float32Array(frameBuffer.length + samples.length);
+      newBuffer.set(frameBuffer);
+      newBuffer.set(samples, frameBuffer.length);
+      frameBuffer = newBuffer;
 
-      if (!isSpeaking) {
-         if (rms > RMS_THRESHOLD) {
-             console.log(`[Sherpa] Speech detected (RMS: ${rms.toFixed(4)}). Flushing pre-roll buffer.`);
-             isSpeaking = true;
-             // Flush pre-roll buffer into recognizer
-             for (let i = 0; i < preRollBuffer.length; i++) {
-                 recognizer_stream.acceptWaveform(expectedSampleRate, preRollBuffer[i]);
-             }
-             preRollBuffer = [];
-             preRollSamples = 0;
-         } else {
-             // Still IDLE. Maintain pre-roll buffer.
-             preRollBuffer.push(samples);
-             preRollSamples += samples.length;
-             while (preRollSamples > MAX_PREROLL_SAMPLES && preRollBuffer.length > 1) {
-                 let dropped = preRollBuffer.shift();
-                 preRollSamples -= dropped.length;
-             }
-             // Bypassing Sherpa completely during silence!
-             return; 
-         }
+      // Process in EXACT 320ms chunks (5120 samples)
+      let offset = 0;
+      while (frameBuffer.length - offset >= RECORD_CHUNK_SAMPLES) {
+          let chunk = frameBuffer.slice(offset, offset + RECORD_CHUNK_SAMPLES);
+          offset += RECORD_CHUNK_SAMPLES;
+
+          // Feed directly to Sherpa (No VAD)
+          recognizer_stream.acceptWaveform(expectedSampleRate, chunk);
+          while (recognizer.isReady(recognizer_stream)) {
+            recognizer.decode(recognizer_stream);
+          }
       }
 
-      // We are SPEAKING
-      recognizer_stream.acceptWaveform(expectedSampleRate, samples);
-      while (recognizer.isReady(recognizer_stream)) {
-        recognizer.decode(recognizer_stream);
+      // Keep remainder
+      if (offset < frameBuffer.length) {
+          frameBuffer = frameBuffer.slice(offset);
+      } else {
+          frameBuffer = new Float32Array(0);
       }
 
       let isEndpoint = recognizer.isEndpoint(recognizer_stream);
@@ -206,18 +218,14 @@ window.startOfficialSherpa = function() {
       }
 
       if (isEndpoint) {
-        if (lastResult.length > 0) {
-            console.log(`[Sherpa] Endpoint detected. Final result: ${lastResult}`);
-            if (window.dartSherpaOnResult) {
-                window.dartSherpaOnResult(lastResult, true); // Finalize word
-            }
-            lastResult = '';
+        console.log(`[Sherpa] Endpoint detected. Final result: ${lastResult}`);
+        if (window.dartSherpaOnResult) {
+            window.dartSherpaOnResult(lastResult, true); // Finalize word
         }
+        lastResult = '';
         recognizer.reset(recognizer_stream);
-        console.log('[Sherpa] Engine reset. Returning to IDLE state.');
-        isSpeaking = false;
-        preRollBuffer = [];
-        preRollSamples = 0;
+        primeRecognizer();
+        console.log('[Sherpa] Engine reset and primed. Returning to IDLE state.');
       }
     };
 
@@ -253,24 +261,22 @@ window.stopOfficialSherpa = function() {
       }
   }
   lastResult = '';
-  isSpeaking = false;
-  preRollBuffer = [];
-  preRollSamples = 0;
 
   if (recognizer && recognizer_stream) {
       recognizer.reset(recognizer_stream);
+      primeRecognizer();
   }
   console.log('[Sherpa] Recorder stopped successfully.');
+    frameBuffer = new Float32Array(0);
 };
 
 window.resetOfficialSherpaBuffer = function() {
    console.log('[Sherpa] resetOfficialSherpaBuffer called from Dart');
    if (recognizer && recognizer_stream) {
        recognizer.reset(recognizer_stream);
+       primeRecognizer();
        lastResult = '';
-       isSpeaking = false;
-       preRollBuffer = [];
-       preRollSamples = 0;
+       frameBuffer = new Float32Array(0);
    }
 };
 

@@ -105,14 +105,16 @@ class QuranNormalizer {
   static final RegExp _tashkeelRegex = RegExp('[$_tashkeelChars]');
 
   // ── Residual characters (harakat, tanween, sukun, etc.) ───────────────────
-  // These are "modifier" characters that attach to a base consonant.
   //   U+064E, U+064F, U+0650 = fatha, damma, kasra
-  //   U+0687 = qalqalah (small jeem)
+  //   U+0686 = qalqalah (small jeem)
   //   U+065E = fatha momala (imala sign)
-  //   U+06E3 = sakt (small seen above)
+  //   U+06E3 = sakt (small seen above) — preserved for tajweed
   //   U+0619 = dama mokhtalasa
+  //   U+06DC = sakt marker (small sin)
+  //   U+06EA = jazm/special marker
+  //   U+0640 = tatweel (kashida/extension)
   static final String _residualsStr =
-      r'\u064E\u064F\u0650\u0687\u065E\u06E3\u0619';
+      r'\u064B\u064C\u064D\u064E\u064F\u0650\u0651\u0652\u06EB\u0686\u065E\u06E3\u0619\u06DC\u06EA\u0640';
 
   // ── Regex: identical non-residual chars + optional trailing residuals ─────────────
   // This matches Python's: `(?:core_chars+)[residuals]?`
