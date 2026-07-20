@@ -120,13 +120,7 @@ window.startOfficialSherpa = function() {
     return;
   }
 
-  const constraints = {
-      audio: {
-          autoGainControl: false,
-          echoCancellation: false,
-          noiseSuppression: false
-      }
-  };
+  const constraints = {audio: true};
 
   let onSuccess = function(stream) {
     console.log('[Sherpa] Microphone access granted. Initializing AudioContext...');
@@ -163,13 +157,7 @@ window.startOfficialSherpa = function() {
       let samples = new Float32Array(e.inputBuffer.getChannelData(0))
       samples = downsampleBuffer(samples, expectedSampleRate);
 
-      // Apply digital gain (2.5x) and hard limiter
-      for (let i = 0; i < samples.length; i++) {
-          let floatVal = samples[i] * 2.5;
-          if (floatVal > 1.0) floatVal = 1.0;
-          if (floatVal < -1.0) floatVal = -1.0;
-          samples[i] = floatVal;
-      }
+
 
       if (recognizer_stream == null) {
         console.log('[Sherpa] Creating recognizer stream...');
