@@ -62,13 +62,20 @@ class SherpaEngine {
     final JSFunction jsOnResult = (JSString jsonStr, JSBoolean isFinal) {
       try {
         final Map<String, dynamic> data = jsonDecode(jsonStr.toDart);
+        final tokensList = List<String>.from(data['tokens'] ?? []);
+        final probsList = List<double>.from((data['ys_probs'] ?? []).map((e) => (e as num).toDouble()));
+        
+        if (probsList.isNotEmpty) {
+           print("[SherpaDart] 🎯 Tokens: $tokensList | Confidence (ysProbs): $probsList");
+        }
+
         _outputController.add(TranscriptionResult(
           text: data['text'] ?? '',
           isFinal: isFinal.toDart,
           startTime: DateTime.now().millisecondsSinceEpoch,
-          tokens: List<String>.from(data['tokens'] ?? []),
+          tokens: tokensList,
           timestamps: List<double>.from((data['timestamps'] ?? []).map((e) => (e as num).toDouble())),
-          ysProbs: List<double>.from((data['ys_probs'] ?? []).map((e) => (e as num).toDouble())),
+          ysProbs: probsList,
         ));
       } catch (e) {
         print("[SherpaDart] Error parsing JSON result: $e");
