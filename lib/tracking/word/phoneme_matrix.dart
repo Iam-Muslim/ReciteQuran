@@ -103,22 +103,36 @@ class SubCostTable {
     }
 
     // -------------------------------------------------------------------------
-    // Rule 7: Shadda (Gemination) Penalty Calculation
+    // Rule 7: Shadda & Maddah (Length Penalty)
     // If we determined above that the Base letters are the same, we still need
-    // to check if one has a Shadda and the other doesn't.
-    // Missing a Shadda is a minor error, so we give it a tiny penalty (0.25).
-    // If the base is identical and Shadda matches, it gets an almost-perfect score of 0.1.
+    // to check if one has a Shadda/Maddah and the other doesn't.
+    // Missing a Shadda or shortening a Maddah gets a penalty of 0.55.
     // -------------------------------------------------------------------------
     if (sameBase) {
-      bool hasShadda1 = c1.contains('ّ');
-      bool hasShadda2 = c2.contains('ّ');
-      if (hasShadda1 != hasShadda2)
-        return 0.25; // Minor penalty for missing Shadda
-      return 0.1; // Almost perfect match
+      // Shaddas and Maddahs are represented as repeated letters (e.g. 'ببِ' or 'يييي').
+      // Because the chunker groups them into a single chunk, we check the length of the repetition.
+      int base1Code = c1.codeUnitAt(0);
+      int count1 = 0;
+      for (int i = 0; i < c1.length; i++) {
+        if (c1.codeUnitAt(i) == base1Code) count1++;
+      }
+      int base2Code = c2.codeUnitAt(0);
+      int count2 = 0;
+      for (int i = 0; i < c2.length; i++) {
+        if (c2.codeUnitAt(i) == base2Code) count2++;
+      }
+      
+      if (count1 != count2) {
+        // Missing a Shadda (e.g., 'بِ' vs 'ببِ') or cutting a Maddah short ('يي' vs 'يييي').
+        return 0.55; 
+      }
+
+      // If the lengths match but the strings are different, it is a wrong Tashkeel.
+      return 0.45; // Heavily penalize wrong Tashkeel
     }
 
     // -------------------------------------------------------------------------
-    // Rule 8: Phonetic Neighbors (The 0.25 Penalty Zone)
+    // Rule 8: Phonetic Neighbors (The Consonant Confusion Zone)
     // If the base letters are completely different, we check if they sound similar.
     // We define a helper function `isPair` to check bidirectional similarity.
     // -------------------------------------------------------------------------
@@ -126,8 +140,10 @@ class SubCostTable {
         (base1 == a && base2 == b) || (base1 == b && base2 == a);
 
     // If the letters are notorious acoustic neighbors (like Sin/Sad, Ta/Ta, Thal/Zha),
-    // we assign a low penalty of 0.25. The DP algorithm will gladly accept a 0.25 penalty
-    // rather than doing a full deletion or insertion.
+    // we use a dual-penalty system. The ASR is easily confused by consonants, but
+    // highly accurate with vowels (Tashkeel).
+    // If the vowel matches perfectly, we give a highly forgiving 0.25 penalty.
+    // If the vowel is wrong, we apply a harsh 0.60 penalty to stop False Greens.
     if (isPair('س', 'ص') || // Sin / Sad
         isPair('ت', 'ط') || // Ta / Tta
         isPair('ذ', 'ظ') || // Thal / Zha
@@ -148,7 +164,27 @@ class SubCostTable {
         isPair('ي', 'ِ') || // Ya / Kasra (Madd confusion)
         isPair('ا', 'َ') || // Alif / Fatha (Madd confusion)
         isPair('ى', 'َ')) { // Alif Maqsura / Fatha
-      return 0.25;
+      // The user's ASR is excellent at catching Tashkeel, even if it mixes up the consonant.
+      // We extract the vowels (everything after the first base character) to check them.
+      bool harakatMatch = false;
+      if (c1.length == c2.length) {
+        harakatMatch = true;
+        for (int i = 1; i < c1.length; i++) {
+          if (c1.codeUnitAt(i) != c2.codeUnitAt(i)) {
+            harakatMatch = false;
+            break;
+          }
+        }
+      }
+
+      if (harakatMatch) {
+        // The consonant is a neighbor, but the vowel is a PERFECT match!
+        // We restore this to your original 0.25 because the ASR constantly confuses them.
+        return 0.25; 
+      } else {
+        // The consonant is a neighbor AND the vowel is wrong. 
+        return 0.60; 
+      }
     }
 
     // -------------------------------------------------------------------------
