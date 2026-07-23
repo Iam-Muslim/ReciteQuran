@@ -1,5 +1,6 @@
 // ignore_for_file: avoid_web_libraries_in_flutter
 import 'dart:async';
+import 'dart:convert';
 
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
@@ -13,6 +14,7 @@ class TranscriptionResult {
   final int startTime;
   final List<String> tokens;
   final List<double> timestamps;
+  final List<double> ysProbs;
 
   TranscriptionResult({
     required this.text,
@@ -20,6 +22,7 @@ class TranscriptionResult {
     this.startTime = 0,
     this.tokens = const [],
     this.timestamps = const [],
+    this.ysProbs = const [],
   });
 }
 
@@ -56,12 +59,20 @@ class SherpaEngine {
   Future<void> initialize() async {
     if (_isInitialized) return;
     
-    final JSFunction jsOnResult = (JSString text, JSBoolean isFinal) {
-      _outputController.add(TranscriptionResult(
-        text: text.toDart,
-        isFinal: isFinal.toDart,
-        startTime: DateTime.now().millisecondsSinceEpoch,
-      ));
+    final JSFunction jsOnResult = (JSString jsonStr, JSBoolean isFinal) {
+      try {
+        final Map<String, dynamic> data = jsonDecode(jsonStr.toDart);
+        _outputController.add(TranscriptionResult(
+          text: data['text'] ?? '',
+          isFinal: isFinal.toDart,
+          startTime: DateTime.now().millisecondsSinceEpoch,
+          tokens: List<String>.from(data['tokens'] ?? []),
+          timestamps: List<double>.from((data['timestamps'] ?? []).map((e) => (e as num).toDouble())),
+          ysProbs: List<double>.from((data['ys_probs'] ?? []).map((e) => (e as num).toDouble())),
+        ));
+      } catch (e) {
+        print("[SherpaDart] Error parsing JSON result: $e");
+      }
     }.toJS;
     
     globalContext.setProperty('dartSherpaOnResult'.toJS, jsOnResult);

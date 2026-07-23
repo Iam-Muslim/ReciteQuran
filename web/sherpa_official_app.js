@@ -120,7 +120,13 @@ window.startOfficialSherpa = function() {
     return;
   }
 
-  const constraints = {audio: true};
+  const constraints = {
+      audio: {
+          autoGainControl: false,
+          echoCancellation: false,
+          noiseSuppression: false
+      }
+  };
 
   let onSuccess = function(stream) {
     console.log('[Sherpa] Microphone access granted. Initializing AudioContext...');
@@ -192,14 +198,15 @@ window.startOfficialSherpa = function() {
       }
 
       let isEndpoint = recognizer.isEndpoint(recognizer_stream);
-      let result = recognizer.getResult(recognizer_stream).text;
+      let fullResult = recognizer.getResult(recognizer_stream);
+      let resultText = fullResult.text;
 
       // Send intermediate results to Dart
-      if (result.length > 0 && lastResult != result) {
-        console.log(`[Sherpa] Partial result: ${result}`);
-        lastResult = result;
+      if (resultText.length > 0 && lastResult != resultText) {
+        console.log(`[Sherpa] Partial result: ${resultText}`);
+        lastResult = resultText;
         if (window.dartSherpaOnResult) {
-            window.dartSherpaOnResult(result, false);
+            window.dartSherpaOnResult(JSON.stringify(fullResult), false);
         } else {
             console.warn('[Sherpa] window.dartSherpaOnResult callback is not defined!');
         }
@@ -208,7 +215,7 @@ window.startOfficialSherpa = function() {
       if (isEndpoint) {
         console.log(`[Sherpa] Endpoint detected. Final result: ${lastResult}`);
         if (window.dartSherpaOnResult) {
-            window.dartSherpaOnResult(lastResult, true); // Finalize word
+            window.dartSherpaOnResult(JSON.stringify(fullResult), true); // Finalize word
         }
         lastResult = '';
         recognizer.reset(recognizer_stream);
