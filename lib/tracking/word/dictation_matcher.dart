@@ -14,7 +14,7 @@ import 'phoneme_matrix.dart';
 /// - Determines the optimal mathematical alignment path (bestScore).
 /// - Extracts the exact traceback (PhonemeGroupAlignment array) required by Tajweed rules.
 /// AI NOTE: This file is purely mathematical. Do NOT add UI logic, app state, or buffer management here.
-/// That belongs in `phoneme_alignment.dart`.
+/// That belongs in `phoneme_alignment_isolate.dart`.
 ///
 
 /// ────────────────────────────────────────────────────────────────────────────
@@ -381,6 +381,11 @@ class ForwardDictationMatcher {
               // If the best mathematical path is pinned exactly against the live edge (i == m),
               // AND that path ends in a Deletion (op == 2, meaning "I am missing the final letter"),
               // it means the tail has NOT arrived yet! We force the engine to wait for more audio.
+              //
+              // Note: We used to have an exception here that skipped this rule for the last word
+              // of the Ayah (j < n). That was a bug. It caused the engine to prematurely commit
+              // incomplete words at the end of the Ayah. We removed it so this protection now
+              // applies to EVERY word equally.
               if (i == m && op[i * (n + 1) + j] == 2) {
                 isStable = false;
               }
@@ -541,14 +546,24 @@ class ForwardDictationMatcher {
         // ---------------------------------------------------------------------
         // [CASE 2 SHIELD] Acoustic Confidence Extraction
         // ---------------------------------------------------------------------
+        // We only extract confidence if this step mapped to actual ASR audio (predIdx >= 0)
+        // AND if the Sherpa engine actually provided probability metrics (asrYsProbs != null).
+        // Finally, we check that `bestStartI + align.predIdx` (the global audio index)
+        // is safely within the array bounds to prevent an IndexOutOfRangeException crash.
         if (align.predIdx >= 0 && asrYsProbs != null && (bestStartI + align.predIdx) < asrYsProbs.length) {
+          // Calculate the global index where this exact phoneme lives in the audio array.
           int globalIndex = bestStartI + align.predIdx;
+          // The engine outputs log-probabilities (e.g. -0.0018). We use `exp()` to convert it to a percentage.
           double confidencePercentage = exp(asrYsProbs[globalIndex]);
+          // Create an array for this specific Word ID if it doesn't exist yet.
           wordConfs.putIfAbsent(currentWId, () => []);
+          // Push the exact percentage of this specific letter into the word's array.
           wordConfs[currentWId]!.add(confidencePercentage);
         }
 
         // [Tail Anchor] Constantly overwrite the tail cost for the current word.
+        // Since the trace is sequential, this will ultimately hold the cost of the FINAL reference phoneme.
+        // We ignore 'insert' because insertions don't consume reference phonemes.
         if (align.opType == 'delete') {
           wordTailCost[currentWId] = costDel;
         } else if (align.predIdx >= 0 && align.opType != 'insert') {
@@ -588,14 +603,21 @@ class ForwardDictationMatcher {
         int refLen = refLens[wId] ?? 0;
         double penalty = penalties[wId] ?? 0.0;
 
+        // The individual word score is calculated exactly like the segment score:
+        // Penalty / max(Length).
         int denom = max(asrLen, max(refLen, 1));
+
+        // Protect short words from failing due to a single 1.0 penalty.
         if (denom < 4) denom = 4;
 
         double wordScore = penalty / denom;
         double tailCost = wordTailCost[wId] ?? 1.0;
 
+        // [Tail Anchor] If Tajweed mode is on, enforce that the word's final phoneme
+        // must be a perfect match (0.0 cost) to prevent fabricated matches on short words.
         bool passesTailAnchor = !requireStableTail || tailCost == 0.0;
 
+        // If the word passes the strictness threshold on its own, it is verified!
         String refWordStr = '';
         for (int k = 0; k < targetWindow.length; k++) {
           if (targetWordIds[k] == wId) refWordStr += targetWindow[k];
@@ -609,28 +631,53 @@ class ForwardDictationMatcher {
           );
         } else {
           // ══════════════════════════════════════════════════════════════════════
-          // [ASR FAULT SHIELD - CASE 2 ONLY]
+          // [ANDROID ASR FAULT SHIELD - CASE 2 ONLY]
+          // The word failed the strictness threshold (so it's destined to be Red).
+          // However, we must check if the microphone glitched and gave us garbage.
           // ══════════════════════════════════════════════════════════════════════
+          
+          // Rule 1: Only shield words that are relatively close matches (Score <= 0.65). 
+          // If the score is huge (e.g. >0.80), the user said a completely wrong word.
           if (wordScore <= 0.65) {
+            // Assume perfect confidence initially, in case no audio was mapped.
             double minConf = 1.0;
+            
+            // Verify that this word actually had audio letters mapped to it.
             if (wordConfs[wId] != null && wordConfs[wId]!.isNotEmpty) {
+              // Iterate through all the letters in this word and find the LOWEST confidence.
+              // A single microphone glitch on ONE letter is enough to ruin the entire word.
               minConf = wordConfs[wId]!.reduce((a, b) => a < b ? a : b);
             }
             
+            // Rule 2: If the weakest letter in this word dropped below 80% confidence,
+            // we have absolute proof that the microphone/ASR model failed the user.
             if (minConf < 0.80) {
+              // ── SHIELD PROMOTION ──────────────────────────────────────────────
+              // If the word score is ≤ 0.45 (generous but bounded — still blocks
+              // outright wrong words), the global DP found the word acoustically
+              // and the ASR low-confidence proves partial signal degradation.
+              // Promote directly to GREEN instead of leaving it grey.
+              // This handles the common case of الرَّحمن / بسم where the initial
+              // ءَرر (hamza + shadda) is consistently dropped by the ASR model
+              // even though the user recited it correctly.
               if (wordScore <= 0.45 && passesTailAnchor) {
                 verifiedWords.add(WordMatch(wordId: wId, score: wordScore));
                 debugLog?.call(
                   '✅ SHIELD-PROMOTE: ref word is "$refWordStr", heard word is "$heardStr" | '
                   'Score: ${wordScore.toStringAsFixed(3)} ≤ 0.45 with low ASR conf (${(minConf*100).toStringAsFixed(1)}%) → GREEN',
                 );
-                continue;
+                continue; // Skip the shieldedWords.add below, it's already green
               }
+              // ── SHIELD ONLY (grey) ────────────────────────────────────────────
+              // Score > 0.45: too uncertain to call green, but still protect from red.
               shieldedWords.add(wId);
               debugLog?.call('🛡️ [SHIELD] Word $wId refused but shielded! (Min Conf: ${(minConf*100).toStringAsFixed(1)}%)');
             }
           }
+          // ══════════════════════════════════════════════════════════════════════
 
+          // If the word score is too high, it was a "mumbled" word that the DP
+          // tried to drag across the finish line. We drop it here!
           String reason = wordScore > threshold
               ? '(Score: ${wordScore.toStringAsFixed(3)} > $threshold)'
               : '(Failed Tail Anchor: TailCost=$tailCost)';
@@ -640,6 +687,10 @@ class ForwardDictationMatcher {
         }
       }
 
+      // If the match was so poor that EVERY single word inside it failed the
+      // strictness evaluation, then this entire segment match is likely just
+      // ASR hallucination or background noise. We must abort and return null
+      // so the Sequencer doesn't accidentally advance the cursor and mark them red.
       if (verifiedWords.isEmpty) {
         debugLog?.call(
           '⚠️ [DP STRICTNESS] All matched words failed strictness. Aborting segment match. Waiting for better audio...',
@@ -660,6 +711,7 @@ class ForwardDictationMatcher {
       );
     }
 
+    // If no path beat the strictness threshold, return null. The user must keep reading.
     return null;
   }
 }

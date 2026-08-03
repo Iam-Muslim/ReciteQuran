@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:typed_data';
 import 'package:flutter/services.dart';
 
@@ -126,6 +127,7 @@ class PhoneticSearch {
     _isLoaded = true;
   }
 
+  
   static const String _coreChars = "ءبتثجحخدذرزسشصضطظعغفقكلمنهوياۥۦ۾ںـٲ";
   static const String _residualChars = "َُِڇؙ۪ۜ";
 
@@ -221,8 +223,8 @@ class PhoneticSearch {
 
     int maxEdits = (normQuery.length * errorRatio).toInt();
 
-    // Use our fuzzy_search algorithm directly on the main thread for Web
-    List<FuzzyMatch> outs = _runSearchIsolated(_SearchArgs(normQuery, _refPhNorm, maxEdits));
+    // Use our fuzzy_search algorithm on a background isolate
+    List<FuzzyMatch> outs = await compute(_runSearchIsolated, _SearchArgs(normQuery, _refPhNorm, maxEdits));
 
     if (outs.isEmpty) {
       return [];

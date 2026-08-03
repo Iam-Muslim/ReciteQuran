@@ -37,6 +37,31 @@ class SubCostTable {
   /// confuses due to acoustic similarity or mic muffling.
   /// This list can be expanded without bloating the logic below.
   static final List<Set<String>> _sherpaAcousticNeighbors = [
+    // 📊 Empirical substitutions found under extreme noise:
+    // {'م', 'ء'}, // Mim / Hamza
+    // {'ش', 'ك'}, // Shin / Kaf
+    // {'س', 'ت'}, // Sin / Ta
+    // {'س', 'ر'}, // Sin / Ra
+    // {'م', 'ف'}, // Mim / Fa
+    // {'ص', 'ء'}, // Sad / Hamza
+    // {'ص', 'ط'}, // Sad / Tta
+    // {'ه', 'د'}, // Ha / Dal
+    // {'ق', 'ر'}, // Qaf / Ra
+    // {'ش', 'ت'}, // Shin / Ta
+    // {'ع', 'ر'}, // Ayn / Ra
+    // {'ف', 'ت'}, // Fa / Ta
+    // {'ر', 'د'}, // Ra / Dal
+    // {'ش', 'ل'}, // Shin / Lam
+    // {'ر', 'ء'}, // Ra / Hamza
+    // {'خ', 'ق'}, // Kha / Qaf
+    // {'ت', 'س'}, // Ta / Sin
+    // {'ج', 'ء'}, // Jeem / Hamza
+    // {'س', 'ف'}, // Sin / Fa
+    // {'ذ', 'ت'}, // Thal / Ta
+    // {'ل', 'ت'}, // Lam / Ta
+    // {'م', 'ن'}, // Mim / Nun
+    // {'ب', 'د'}, // Ba / Dal
+
     // Original extensive acoustic neighbor list for robustness against False Reds
     // on cheap Android microphones:
     {'س', 'ص'}, // Sin / Sad
