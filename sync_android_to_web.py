@@ -144,24 +144,15 @@ def main():
         model_name = model_file.name
         log(f"Detected ONNX model in Android: {model_name}")
 
-        # Copy ONNX model to Web assets
+        # Copy ONNX model to Web assets for local testing
         dst_model = script_dir / f"assets/model/{model_name}"
         shutil.copy2(model_file, dst_model)
         log_success(f"Copied ONNX model: {model_name}")
-
-        # Update pubspec.yaml
-        pubspec_path = script_dir / "pubspec.yaml"
-        if pubspec_path.exists():
-            pubspec = pubspec_path.read_text(encoding="utf-8")
-            pubspec = re.sub(r"- assets/model/.*\.onnx", f"- assets/model/{model_name}", pubspec)
-            pubspec_path.write_text(pubspec, encoding="utf-8")
-            log_success(f"Updated pubspec.yaml with {model_name}")
 
         # Update sherpa_engine.dart
         sherpa_engine_path = script_dir / "lib/engine/sherpa_engine.dart"
         if sherpa_engine_path.exists():
             eng = sherpa_engine_path.read_text(encoding="utf-8")
-            eng = re.sub(r"assets/assets/model/.*\.onnx", f"assets/assets/model/{model_name}", eng)
             eng = re.sub(r"_writeSherpaAssetToVFS\('.*\.onnx'\.toJS", f"_writeSherpaAssetToVFS('{model_name}'.toJS", eng)
             sherpa_engine_path.write_text(eng, encoding="utf-8")
             log_success(f"Updated lib/engine/sherpa_engine.dart with {model_name}")

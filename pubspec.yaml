@@ -26,7 +26,6 @@ flutter:
     - assets/model/ordered_quran_phonemes.json
     - assets/model/ph_index.npy
     - assets/model/ref_norm_ph.txt
-    - assets/model/zipformer_p_arabic_v2.int8.onnx
     - assets/icon/app_icon.png
 
 
