@@ -11,7 +11,7 @@ flutter pub run flutter_launcher_icons
 flutter build web --wasm --base-href "/recite/"
 
 echo "=== Preparing Landing Page ==="
-rm -f build/web/assets/assets/model/quran_phoneme_zipformer.int8.onnx
+rm -f build/web/assets/assets/model/zipformer_p_arabic_v2.int8.onnx
 mkdir -p landing_page/public/recite
 cp -R build/web/* landing_page/public/recite/
 

@@ -5,10 +5,11 @@ import '../tajweed/error_explainer.dart';
 import 'dictation_matcher.dart';
 import 'quran_normalizer.dart';
 import 'phoneme_matrix.dart';
+import '../../utils/debug_logger.dart';
 
 ///
-/// FILE ROLE: Orchestrator / Thread Manager / App State
-/// ARCHITECTURE: Dart Isolate (Background Thread)
+/// FILE ROLE: Orchestrator / Thread Manager / App State (Web Async Stream Version)
+/// ARCHITECTURE: StreamController asynchronous message pipeline
 /// DEPENDENCIES: dictation_matcher.dart (Engine), quran_normalizer.dart (Text Prep)
 /// RESPONSIBILITY:
 /// - Manages the `asrWindow` buffer (raw audio phonetic stream).
@@ -16,59 +17,45 @@ import 'phoneme_matrix.dart';
 /// - Slices 'lookahead' windows of text to feed into the Matcher.
 /// - Routes successful matches through the Tajweed `ErrorExplainer`.
 /// - Emits final JSON payloads ('highlight' events) back to the Flutter UI thread.
-/// AI NOTE: Do NOT modify the mathematical alignment DP logic here; that belongs in `dictation_matcher.dart`.
-/// Do NOT modify penalty logic here; that belongs in `phoneme_matrix.dart`.
 ///
 
 /// ────────────────────────────────────────────────────────────────────────────
-/// [IsolateCommands] - Inter-thread Communication Protocol
+/// [IsolateCommands] - Communication Protocol
 /// ────────────────────────────────────────────────────────────────────────────
-/// Because phonetic alignment is mathematically intense, running it on the main UI
-/// thread would cause the app to freeze and drop frames (jank).
-/// Instead, we run it in a background "Isolate" (a separate CPU thread).
-///
-/// Since Isolates do not share memory, they can only communicate by passing messages.
-/// This class defines the integer "commands" the UI uses to tell the background
-/// thread what to do.
 class IsolateCommands {
   static const int setup = 0;
-  static const int feed = 1; // Feed new ASR phonetic stream chunks
+  static const int syncStream = 1; // Sync full ASR stream for current segment
   static const int setAyah = 2; // Initialize a new Ayah with expected phonemes
-  static const int shutdown = 3; // Terminate the isolate
-  static const int replaceTail = 4; // Backtrack and replace unstable ASR tail
+  static const int shutdown = 3; // Terminate the worker
   static const int setTajweedMode = 5; // Toggle tajweed mode
   static const int setTrackingStrictness = 6; // Set strictness mode
 }
 
 /// ────────────────────────────────────────────────────────────────────────────
-/// [PhonemeAlignmentIsolate] - The Isolate Manager (UI Thread Side)
+/// [PhonemeAlignmentIsolate] - The Worker Manager
 /// ────────────────────────────────────────────────────────────────────────────
-/// This class lives on the MAIN UI THREAD.
-/// Its only job is to start the background thread, send it messages, and
-/// listen for the "highlight" events coming back to update the screen.
-class PhonemeAlignmentWeb {
-  StreamController<dynamic>? _receivePort;
+class PhonemeAlignmentIsolate {
   StreamController<dynamic>? _commandPort;
+  StreamController<dynamic>? _receivePort;
 
   final StreamController<Map<String, dynamic>> _wordStreamController =
       StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get wordStream => _wordStreamController.stream;
 
-  final StreamController<Map<String, dynamic>> _ayahCompletedController =
-      StreamController<Map<String, dynamic>>.broadcast();
-  Stream<Map<String, dynamic>> get ayahCompletedStream => _ayahCompletedController.stream;
-
   Future<void> start() async {
-    _receivePort = StreamController<dynamic>();
     _commandPort = StreamController<dynamic>();
+    _receivePort = StreamController<dynamic>();
 
     _alignmentWorker(_receivePort!.sink, _commandPort!.stream);
 
     _receivePort!.stream.listen((message) {
-      if (message is Map && message['event'] == 'highlight') {
-        _wordStreamController.add(message as Map<String, dynamic>);
-      } else if (message is Map && message['event'] == 'ayah_completed') {
-        _ayahCompletedController.add(message as Map<String, dynamic>);
+      if (message is Map) {
+        if (message['event'] == 'highlight') {
+          _wordStreamController.add(message as Map<String, dynamic>);
+        } else if (message['event'] == 'debug') {
+          DebugLogger.updateAsrBuffer(message['asr_buffer'] as String? ?? '');
+          DebugLogger.log('DP', message['message'] as String);
+        }
       }
     });
   }
@@ -78,13 +65,15 @@ class PhonemeAlignmentWeb {
     _commandPort?.add({'cmd': IsolateCommands.setup, 'tokens': tokens});
   }
 
-  /// Tells the background thread to load a new Ayah.
+  /// Tells the worker to load a new Ayah.
   void setAyah(
     String expectedPhonemes,
     List<int> wordBoundaries, {
     bool isTajweed = false,
     bool forceClear = false,
     String trackingStrictness = 'normal',
+    int startWordCursor = 0,
+    int ayahNumber = 0,
   }) {
     _commandPort?.add({
       'cmd': IsolateCommands.setAyah,
@@ -93,28 +82,26 @@ class PhonemeAlignmentWeb {
       'isTajweed': isTajweed,
       'forceClear': forceClear,
       'trackingStrictness': trackingStrictness,
+      'startWordCursor': startWordCursor,
+      'ayahNumber': ayahNumber,
     });
   }
 
-  /// Sends raw, messy audio chunks from the microphone to the background thread.
-  void feed(String asrChunk, List<double> timestampsChunk) {
+  /// Sends the full unconsumed segment string and its timestamps to the worker.
+  void syncStream(
+    String fullSegmentAsr,
+    List<double> segmentTimestamps, [
+    List<double>? segmentYsProbs,
+    bool isNewSegment = false,
+    int ayahNumber = 0,
+  ]) {
     _commandPort?.add({
-      'cmd': IsolateCommands.feed,
-      'asr': asrChunk,
-      'timestamps': timestampsChunk,
-    });
-  }
-
-  void replaceTail(
-    int backtrack,
-    String newTail,
-    List<double> newTailTimestamps,
-  ) {
-    _commandPort?.add({
-      'cmd': IsolateCommands.replaceTail,
-      'backtrack': backtrack,
-      'tail': newTail,
-      'timestamps': newTailTimestamps,
+      'cmd': IsolateCommands.syncStream,
+      'asr': fullSegmentAsr,
+      'timestamps': segmentTimestamps,
+      'ysProbs': segmentYsProbs ?? [],
+      'isNewSegment': isNewSegment,
+      'ayahNumber': ayahNumber,
     });
   }
 
@@ -134,27 +121,17 @@ class PhonemeAlignmentWeb {
 
   void stop() {
     _commandPort?.add({'cmd': IsolateCommands.shutdown});
+    _wordStreamController.close();
     _commandPort?.close();
     _receivePort?.close();
   }
 }
 
+typedef PhonemeAlignmentWeb = PhonemeAlignmentIsolate;
+
 /// ────────────────────────────────────────────────────────────────────────────
-/// [DictationSequencer] - The App Logic Orchestrator (Background Thread Side)
+/// [DictationSequencer] - The App Logic Orchestrator
 /// ────────────────────────────────────────────────────────────────────────────
-/// This class lives entirely in the BACKGROUND THREAD.
-///
-/// It acts as the "Traffic Controller" between the incoming raw audio (ASR)
-/// and the purely mathematical `ForwardDictationMatcher`.
-///
-/// It maintains state:
-/// - What word are we currently waiting for the user to say? (`targetWordCursor`)
-/// - How much "garbage" audio is currently buffered? (`asrWindow`)
-/// - What was the last phoneme matched? (`lastMatchedPhoneme` for Tajweed bridging)
-///
-/// It constructs the "Lookahead Window" (a small slice of the Ayah) and feeds it
-/// to the Matcher. If the Matcher finds a match, the Sequencer cuts out the
-/// matched audio, advances the cursor, and sends a highlight event to the UI.
 class DictationSequencer {
   final Sink<dynamic> mainSendPort;
 
@@ -173,14 +150,18 @@ class DictationSequencer {
   // ---------------------------------------------------------------------------
   // ASR State (The messy audio)
   // ---------------------------------------------------------------------------
-  /// The accumulated string of phonetic sounds the microphone has heard.
-  String asrWindow = '';
+  /// The full string of phonetic sounds the microphone has heard in the current segment.
+  String currentSegmentAsr = '';
 
-  /// The timestamps corresponding to every character in the `asrWindow`.
-  List<double> asrTimestamps = [];
+  /// The timestamps corresponding to every character in the `currentSegmentAsr`.
+  List<double> currentSegmentTimestamps = [];
 
   /// The acoustic confidence (log probability) corresponding to every character.
-  List<double> asrYsProbs = [];
+  List<double> currentSegmentYsProbs = [];
+
+  /// The number of valid phoneme tokens the DP engine has successfully consumed
+  /// from the `currentSegmentAsr` stream.
+  int asrConsumedTokenCount = 0;
 
   // ---------------------------------------------------------------------------
   // Output State
@@ -193,9 +174,10 @@ class DictationSequencer {
   int targetWordCursor = 0;
 
   /// [Tajweed] Stores the very last phoneme of the previously matched word.
-  /// If Word 1 ends in a Nun Sakinah, and Word 2 begins with a Waw, the Tajweed
-  /// engine needs to know what the end of Word 1 sounded like to verify an Idgham.
   String? lastMatchedPhoneme;
+
+  /// Current Ayah number being tracked
+  int currentAyahNumber = 0;
 
   /// The purely mathematical engine.
   final ForwardDictationMatcher _matcher = ForwardDictationMatcher();
@@ -203,15 +185,18 @@ class DictationSequencer {
   DictationSequencer(this.mainSendPort);
 
   void debugLog(String message) {
-    mainSendPort.add({'event': 'debug', 'message': message, 'asr_buffer': asrWindow});
+    mainSendPort.add({
+      'event': 'debug',
+      'message': message,
+      'asr_buffer': currentSegmentAsr,
+    });
   }
 
   /// --------------------------------------------------------------------------
   /// Ayah Initialization
   /// --------------------------------------------------------------------------
-  /// Parses the raw string of the entire Ayah into individual phoneme chunks,
-  /// maps them to specific Word IDs, and builds the boolean boundary arrays.
   void setAyah(Map message) {
+    currentAyahNumber = message['ayahNumber'] as int? ?? 0;
     String expectedPhonemes = (message['phonemes'] as String).replaceAll(
       ' ',
       '',
@@ -255,169 +240,136 @@ class DictationSequencer {
       endBd[n] = true;
     }
 
+    int wordCount = wordBoundaries.length - 1;
+
     if (forceClear) {
-      asrWindow = '';
-      asrTimestamps = [];
-      asrYsProbs = [];
+      currentSegmentAsr = '';
+      currentSegmentTimestamps = [];
+      currentSegmentYsProbs = [];
+      asrConsumedTokenCount = 0;
+      targetWordCursor = 0;
+    } else {
+      int startCursor = message['startWordCursor'] as int? ?? 0;
+      targetWordCursor = startCursor.clamp(0, wordCount);
     }
 
-    int wordCount = wordBoundaries.length - 1;
     acceptedWordsAsr = List.filled(wordCount, '');
     acceptedWordsTimestamps = List.generate(wordCount, (_) => []);
-
-    targetWordCursor = 0;
     lastMatchedPhoneme = null;
 
     debugLog(
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     );
     debugLog(
-      '📖 [AYAH SET] Words: ${wordBoundaries.length - 1} | Tajweed: $isTajweed | Strict: $trackingStrictness | Ref Chunks: ${refChunks.length}',
+      '📖 [AYAH SET] Ayah: $currentAyahNumber | Words: ${wordBoundaries.length - 1} | Tajweed: $isTajweed | Strict: $trackingStrictness | Ref Chunks: ${refChunks.length} | Consumed: $asrConsumedTokenCount',
     );
     debugLog(
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     );
+
+    if (!forceClear && currentSegmentAsr.isNotEmpty) {
+      _processSequence();
+    }
   }
 
   /// --------------------------------------------------------------------------
   /// ASR Data Ingestion
   /// --------------------------------------------------------------------------
-  /// Whenever the microphone hears a new sound, it is appended to the buffer here.
-  /// Then, we instantly kick off a processing loop to see if those new sounds
-  /// are enough to complete the word we are waiting for.
-  void feed(Map message) {
-    // Extract the raw text letters from the Isolate message.
-    String newAsr = message['asr'];
-    // Extract the list of timing float values.
-    List<double> newTimestamps = List<double>.from(message['timestamps']);
-    // Extract the acoustic confidence probabilities safely (fallback to empty list if missing).
-    List<double> newYsProbs = List<double>.from(message['ysProbs'] ?? []);
-
-    // Append the new audio strings to the end of our active listening window.
-    asrWindow += newAsr;
-    // Append the new timing values so they perfectly align with the new letters.
-    asrTimestamps.addAll(newTimestamps);
-    // Append the confidence metrics so they perfectly align with the new letters.
-    asrYsProbs.addAll(newYsProbs);
-
-    // Now that we have new audio, trigger the DP algorithm to search for the word.
-    _processSequence();
-  }
-
-  void replaceTail(Map message) {
-    // How many characters from the end of the buffer we need to delete.
-    int backtrack = message['backtrack'];
-    // The new text that will replace the deleted characters.
-    String newTail = message['tail'];
-    // The new timings corresponding to the new text.
-    List<double> newTailTimestamps = List<double>.from(message['timestamps']);
-    // The new confidences corresponding to the new text.
-    List<double> newTailYsProbs = List<double>.from(message['ysProbs'] ?? []);
-
-    // Safety check: Ensure we aren't trying to delete more characters than we actually have.
-    if (backtrack <= asrWindow.length) {
-      // Calculate the index exactly where the backtrack cut should happen.
-      int newLength = asrWindow.length - backtrack;
-      // Slice off the old tail and append the new corrected text from Sherpa.
-      asrWindow = asrWindow.substring(0, newLength) + newTail;
-
-      // Slice the timestamps array to match the text length, then append the new timings.
-      if (newLength <= asrTimestamps.length) {
-        asrTimestamps = asrTimestamps.sublist(0, newLength)..addAll(newTailTimestamps);
-      }
-      // Slice the confidences array to match the text length, then append the new confidences.
-      if (newLength <= asrYsProbs.length) {
-        asrYsProbs = asrYsProbs.sublist(0, newLength)..addAll(newTailYsProbs);
-      }
-    } else {
-      // If the backtrack was larger than the buffer (rare error), completely overwrite it.
-      asrWindow = newTail;
-      asrTimestamps = newTailTimestamps;
-      asrYsProbs = newTailYsProbs;
+  void syncStream(Map message) {
+    int msgAyahNumber = message['ayahNumber'] as int? ?? 0;
+    if (msgAyahNumber != 0 && currentAyahNumber != 0 && msgAyahNumber != currentAyahNumber) {
+      debugLog('🚫 [WORKER] Dropping syncStream for mismatched ayah $msgAyahNumber (current is $currentAyahNumber)');
+      return;
     }
-    debugLog(
-      '⏪ [ASR REWRITE] Backtrack $backtrack chars | New Tail: "$newTail" | Buffer: "$asrWindow"',
-    );
+
+    String newAsr = message['asr'];
+    List<double> newTimestamps = List<double>.from(message['timestamps']);
+    List<double> newYsProbs = List<double>.from(message['ysProbs'] ?? []);
+    bool isNewSegment = message['isNewSegment'] ?? false;
+
+    if (isNewSegment) {
+      asrConsumedTokenCount = 0;
+      debugLog('🔄 [SYNC] New ASR segment started. Consumed tokens reset to 0.');
+    }
+
+    currentSegmentAsr = newAsr;
+    currentSegmentTimestamps = newTimestamps;
+    currentSegmentYsProbs = newYsProbs;
+
     _processSequence();
   }
 
   /// --------------------------------------------------------------------------
   /// The Core Orchestration Loop
   /// --------------------------------------------------------------------------
-  /// This loop is where the magic happens. It takes the giant buffer of messy
-  /// audio, slices a smart "Lookahead Window" out of the Reference Ayah, and
-  /// asks the Math Engine if there's a match.
-  ///
-  /// If there IS a match, it commits the match, slices the garbage out of the
-  /// audio buffer, and loops again immediately (in case the user read really fast
-  /// and there are 2 words hiding inside the audio buffer!).
   void _processSequence() {
     bool matchedSomething;
     do {
       matchedSomething = false;
 
-      // If we finished the Ayah, do nothing.
-      if (targetWordCursor > wordBoundaries.length - 1) {
-        mainSendPort.add({'event': 'ayah_completed'});
-        break;
+      if (targetWordCursor >= wordBoundaries.length - 1) break;
+
+      List<PhonemeToken> rawTokens = QuranNormalizer.chunkPhonemesWithIndices(currentSegmentAsr);
+      List<PhonemeToken> cleanTokens = rawTokens
+          .where((t) => t.text.trim().isNotEmpty && t.text != '<blank>' && t.text != 'ؙ')
+          .toList();
+
+      if (cleanTokens.length < asrConsumedTokenCount) {
+        asrConsumedTokenCount = cleanTokens.length;
       }
 
-      List<String> asrChunks = QuranNormalizer.chunkPhonemes(asrWindow);
-      if (asrChunks.isEmpty) break;
+      List<PhonemeToken> unconsumedTokens = cleanTokens.sublist(asrConsumedTokenCount);
 
-      int m = asrChunks.length;
+      if (unconsumedTokens.isEmpty) break;
 
-      // -----------------------------------------------------------------------
+      int m = unconsumedTokens.length;
+
       // Buffer Management (Garbage Collection)
-      // -----------------------------------------------------------------------
-      // If the user sat there coughing or talking to their friend for 10 seconds,
-      // the audio buffer will fill up with garbage. If it gets too large, the
-      // DP Engine will lag. We aggressively truncate the buffer to a max size.
-      int maxAsrChunks = 50;
+      int maxAsrChunks = 150;
       if (m > maxAsrChunks) {
-        int chunksToDrop = m - maxAsrChunks;
-        int charsToDrop = 0;
-        for (int k = 0; k < chunksToDrop; k++) {
-          charsToDrop += asrChunks[k].length;
-        }
-
-        asrWindow = asrWindow.substring(charsToDrop);
-        if (charsToDrop <= asrTimestamps.length) {
-          asrTimestamps = asrTimestamps.sublist(charsToDrop);
-        } else {
-          asrTimestamps = [];
-        }
-
-        asrChunks = asrChunks.sublist(chunksToDrop);
-        m = asrChunks.length;
-        debugLog(
-          '🗑️ [BUFFER GC] Dropped $chunksToDrop oldest chunks to prevent lag (Max $maxAsrChunks reached)',
+         int chunksToDrop = m - maxAsrChunks;
+         asrConsumedTokenCount += chunksToDrop;
+         unconsumedTokens = unconsumedTokens.sublist(chunksToDrop);
+         m = unconsumedTokens.length;
+         debugLog(
+          '🗑️ [BUFFER GC] Dropped $chunksToDrop oldest tokens to prevent lag (Max $maxAsrChunks reached)',
         );
       }
 
       int winStartChunk = -1;
       int winEndChunk = refChunks.length;
 
-      // -----------------------------------------------------------------------
       // Dynamic Lookahead Windowing
-      // -----------------------------------------------------------------------
-      // We don't want to compare the tiny audio buffer against the ENTIRE AYAH.
-      // That is mathematically expensive. Instead, we estimate how many words
-      // the user could have possibly spoken based on the size of the audio buffer.
-      // We assume ~5 phonemes per word on average.
-      int estWords = max(1, (m / 5.0).round());
-      int lookaheadWords = trackingStrictness == 'easy' ? 0 : 2;
+      int currentRefPhonemes = 0;
+      int endWordLimit = targetWordCursor;
 
-      int endWordLimit = targetWordCursor + estWords + lookaheadWords;
+      for (int i = 0; i < refChunks.length; i++) {
+        if (chunkToWordMap[i] == targetWordCursor && winStartChunk == -1) {
+          winStartChunk = i;
+          break;
+        }
+      }
+
+      if (winStartChunk != -1) {
+        for (int i = winStartChunk; i < refChunks.length; i++) {
+          currentRefPhonemes++;
+          endWordLimit = chunkToWordMap[i];
+          if (currentRefPhonemes >= m) {
+            break;
+          }
+        }
+      }
+
+      int lookaheadWords = trackingStrictness == 'easy' ? 0 : 2;
+      endWordLimit += lookaheadWords;
+
       if (trackingStrictness == 'easy') {
-        endWordLimit = targetWordCursor; // Current word only
+        endWordLimit = targetWordCursor;
       }
       if (endWordLimit > wordBoundaries.length - 1) {
         endWordLimit = wordBoundaries.length - 1;
       }
 
-      // We slice the Reference text starting precisely at the word we are expecting,
-      // and ending at our dynamic lookahead limit.
       for (int i = 0; i < refChunks.length; i++) {
         if (chunkToWordMap[i] == targetWordCursor && winStartChunk == -1) {
           winStartChunk = i;
@@ -445,40 +397,47 @@ class DictationSequencer {
       );
       List<bool> targetEndBd = endBd.sublist(winStartChunk, winEndChunk + 1);
 
-      // Strictness determines the acceptable penalty threshold.
-      // Easy is strictly capped at 0.35 to completely block False Greens (reading the wrong word).
       double threshold = trackingStrictness == 'easy'
           ? 0.35
           : (trackingStrictness == 'strict' ? 0.15 : 0.25);
 
-      // In Easy Mode, we dynamically lower the penalty for stuttering (Insertions)
-      // and swallowing letters (Deletions) down to 0.65. This forgives beginners
-      // for these common mistakes without raising the main threshold that blocks gibberish.
       double dynamicCostDel = trackingStrictness == 'easy' ? 0.65 : 1.0;
       double dynamicCostIns = trackingStrictness == 'easy' ? 0.65 : 1.0;
 
-      // -----------------------------------------------------------------------
-      // The Engine Call
-      // -----------------------------------------------------------------------
+      // [HADR MODE] Dynamic Strictness for Fast Readers
+      double averagePhonemeDuration = 0.15;
+      int unconsumedCharStart = _getCharIndexForToken(cleanTokens, asrConsumedTokenCount);
+      if (unconsumedCharStart < currentSegmentTimestamps.length) {
+          double totalDur = 0;
+          int durCount = 0;
+          for (int c = unconsumedCharStart; c < currentSegmentTimestamps.length; c++) {
+              totalDur += currentSegmentTimestamps[c];
+              durCount++;
+          }
+          if (durCount > 0) {
+              averagePhonemeDuration = totalDur / durCount;
+          }
+      }
+
+      if (averagePhonemeDuration < 0.08 && trackingStrictness != 'easy') {
+          dynamicCostDel = 0.75;
+      }
+
       final stopwatch = Stopwatch()..start();
 
-      // We ask the purely mathematical ForwardDictationMatcher to find a path.
+      List<String> unconsumedStrings = unconsumedTokens.map((t) => t.text).toList();
+
       AlignmentResult? result = _matcher.align(
-        currentAsrChunks: asrChunks,
+        currentAsrChunks: unconsumedStrings,
         targetWindow: targetWindow,
         targetStartBd: targetStartBd,
         targetEndBd: targetEndBd,
         targetWordIds: targetWordIds,
         expectedWord: targetWordCursor,
-        asrYsProbs: asrYsProbs,
+        asrYsProbs: _getUnconsumedYsProbs(cleanTokens, asrConsumedTokenCount),
         threshold: threshold,
         costDel: dynamicCostDel,
         costIns: dynamicCostIns,
-        // EDGE-BOUND TAIL STABILITY RULE:
-        // Only active during Tajweed mode. If true, the DP engine refuses to commit
-        // to a match if the word is pushed against the leading edge of the audio stream
-        // and ends in a deletion, because the user might just be holding a long vowel (Madd).
-        // It forces the engine to wait for the final consonant to arrive.
         requireStableTail: isTajweed,
         debugLog: debugLog,
       );
@@ -486,22 +445,19 @@ class DictationSequencer {
       stopwatch.stop();
       if (result != null || stopwatch.elapsedMilliseconds > 2) {
         debugLog(
-          '⏱️ [ISOLATE] DP Matrix calculated in ${stopwatch.elapsedMilliseconds}ms',
+          '⏱️ [WORKER] DP Matrix calculated in ${stopwatch.elapsedMilliseconds}ms',
         );
       }
 
-      // If a path was successfully found below the penalty threshold...
       if (result != null) {
-        // ...we finalize the match and clean out the used audio buffer.
         _commitMatch(
           result,
-          asrChunks,
+          unconsumedTokens,
+          cleanTokens,
           targetWindow,
           targetWordIds,
           winStartChunk,
         );
-        // We set this to true so the loop runs AGAIN instantly!
-        // This allows multi-word highlights if the buffer was full.
         matchedSomething = true;
       }
     } while (matchedSomething);
@@ -510,28 +466,24 @@ class DictationSequencer {
   /// --------------------------------------------------------------------------
   /// Match Finalization & Tajweed Routing
   /// --------------------------------------------------------------------------
-  /// A match was successful!
-  /// This method slices the exact subset of the audio that matched, maps it
-  /// to the exact words, routes it through the Tajweed ErrorExplainer if needed,
-  /// and fires the highlight message to the UI.
   void _commitMatch(
     AlignmentResult result,
-    List<String> asrChunks,
+    List<PhonemeToken> unconsumedTokens,
+    List<PhonemeToken> fullCleanTokens,
     List<String> targetWindow,
     List<int> targetWordIds,
     int winStartChunk,
   ) {
     int n = targetWindow.length;
 
-    // Determine exactly which word(s) this match belonged to.
     int matchedWordStart =
         targetWordIds[result.bestStartJ < n ? result.bestStartJ : n - 1];
     int matchedWordEnd = targetWordIds[result.bestJ - 1];
 
-    List<String> matchedAsrSlice = asrChunks.sublist(
+    List<String> matchedAsrSlice = unconsumedTokens.sublist(
       result.bestStartI,
       result.bestI,
-    );
+    ).map((t) => t.text).toList();
     List<String> matchedRefSlice = targetWindow.sublist(
       result.bestStartJ,
       result.bestJ,
@@ -539,7 +491,6 @@ class DictationSequencer {
 
     List<PhonemeGroupAlignment> localAlignments = result.trace;
 
-    // Convert the local window indices into global Ayah indices for the ErrorExplainer.
     List<PhonemeGroupAlignment> globalAlignments = localAlignments.map((a) {
       return PhonemeGroupAlignment(
         opType: a.opType,
@@ -553,7 +504,6 @@ class DictationSequencer {
     Map<int, String> wordPredStrMap = {};
     Map<int, List<double>> wordPredTsMap = {};
 
-    // Group the ASR sounds and timestamps strictly into their respective word bins.
     for (var align in localAlignments) {
       if (align.refIdx < 0 || align.predIdx < 0) continue;
       int absRefIdx = winStartChunk + result.bestStartJ + align.refIdx;
@@ -563,16 +513,17 @@ class DictationSequencer {
       if (wId < matchedWordStart || wId > matchedWordEnd) continue;
 
       int absPredIdx = result.bestStartI + align.predIdx;
-      String chunk = asrChunks[absPredIdx];
+      String chunk = unconsumedTokens[absPredIdx].text;
       wordPredStrMap[wId] = (wordPredStrMap[wId] ?? '') + chunk;
 
-      int charStart = 0;
-      for (int k = 0; k < absPredIdx; k++) charStart += asrChunks[k].length;
+      int globalTokenIdx = asrConsumedTokenCount + absPredIdx;
+      int charStart = _getCharIndexForToken(fullCleanTokens, globalTokenIdx);
+      
       for (int c = 0; c < chunk.length; c++) {
-        if (charStart + c < asrTimestamps.length) {
+        if (charStart + c < currentSegmentTimestamps.length) {
           wordPredTsMap
               .putIfAbsent(wId, () => [])
-              .add(asrTimestamps[charStart + c]);
+              .add(currentSegmentTimestamps[charStart + c]);
         }
       }
     }
@@ -582,77 +533,39 @@ class DictationSequencer {
       acceptedWordsTimestamps[w] = wordPredTsMap[w] ?? [];
     }
 
-    // -------------------------------------------------------------------------
     // [Tajweed] Primary Evaluation Block
-    // -------------------------------------------------------------------------
-    // If Tajweed mode is on, we send the perfectly aligned paths directly to the
-    // professional ErrorExplainer rules engine.
     Map<int, List<ReciterError>>? tajweedErrors;
     if (isTajweed) {
-      tajweedErrors = ErrorExplainer.evaluatePreAlignedWords(
-        alignments:
-            globalAlignments, // The exact operations (equal, replace, insert, delete)
-        globalRefChunks: refChunks, // Full reference text
-        refChunkToWordMap: chunkToWordMap, // Mapping chunks to word IDs
-        currentAsrChunks: matchedAsrSlice, // The actual sounds the user spoke
-        // Pass only the raw timestamps that belong to the user's spoken string slice
-        trackingTimestamps: asrTimestamps.sublist(
-          asrChunks
-              .sublist(0, result.bestStartI)
-              .fold(0, (sum, c) => sum + c.length),
-        ),
+      int globalStartIdx = asrConsumedTokenCount + result.bestStartI;
+      int charStart = _getCharIndexForToken(fullCleanTokens, globalStartIdx);
+      int safeStartIdx = min(charStart, currentSegmentTimestamps.length);
 
+      tajweedErrors = ErrorExplainer.evaluatePreAlignedWords(
+        alignments: globalAlignments,
+        globalRefChunks: refChunks,
+        refChunkToWordMap: chunkToWordMap,
+        currentAsrChunks: matchedAsrSlice,
+        trackingTimestamps: currentSegmentTimestamps.sublist(safeStartIdx),
         bestAsrStartIdx: 0,
         targetChunkCursor: 0,
         startWordId: matchedWordStart,
         nextWordId: matchedWordEnd + 1,
         totalAyahWords: wordBoundaries.length - 1,
-
-        // [Tajweed] Confidence-Gating Parameter
-        // Protects the UI from spamming false-positive red errors if the
-        // microphone quality or acoustic match was poor.
-        // We strictly use the `pureAcousticScore` here so Tajweed is not artificially
-        // suppressed when the user simply skips a word (which inflates the global score).
         matchScore: result.pureAcousticScore,
-
-        // [Tajweed] Cross-Word Context Parameter
-        // Passes the final sound of the previous word so the explainer can
-        // verify rules like Idgham that occur across word spaces.
         previousWordTail: lastMatchedPhoneme,
-
-        // Pass the strictness setting to filter output errors based on user preference
         trackingStrictness: trackingStrictness,
       );
     }
 
-    // -------------------------------------------------------------------------
-    // Event Emission to UI
-    // -------------------------------------------------------------------------
-
-    // If the user skipped a word (e.g., they read Word 3, but the cursor was at Word 1),
-    // the system correctly identifies it. We loop over all skipped words and explicitly
-    // send them to the UI flagged as `is_red` (skipped/missed).
     for (int w = targetWordCursor; w <= matchedWordEnd; w++) {
-      // A word is skipped if it was before the matched path, OR if the DP engine
-      // dropped it for failing the strictness threshold (poorly pronounced/hallucinated).
       bool isSkipped =
           (w < matchedWordStart) ||
           !result.words.any((match) => match.wordId == w);
 
-      // ════════════════════════════════════════════════════════════════════════════
-      // [ANDROID ASR FAULT DETECTION "THE SHIELD"]
-      // ════════════════════════════════════════════════════════════════════════════
-      // The DP Engine just told us this word failed strictness, which means `isSkipped` 
-      // is currently TRUE. By default, this means we are about to emit a Red event.
-      // HOWEVER, before we emit it, we look inside the `shieldedWords` array.
+      // [ASR FAULT DETECTION "THE SHIELD"]
       if (isSkipped && result.shieldedWords.contains(w)) {
-        // We found the word inside the Shield array! This means the Math Engine proved 
-        // that the microphone glitched and the user is NOT to blame. 
-        // We use `continue` to instantly skip the rest of the loop.
-        // The Red event is NEVER fired, and the UI word safely stays Grey!
         continue;
       }
-      // ════════════════════════════════════════════════════════════════════════════
 
       if (isSkipped) {
         String skippedWordStr = '';
@@ -667,7 +580,6 @@ class DictationSequencer {
         serializedErrors = tajweedErrors[w]!.map((e) => e.toMap()).toList();
       }
 
-      // This is the message the UI listens to!
       mainSendPort.add({
         'event': 'highlight',
         'word_id': w,
@@ -678,37 +590,35 @@ class DictationSequencer {
       });
     }
 
-    // Move the cursor forward past the words we just successfully processed.
     targetWordCursor = matchedWordEnd + 1;
+    asrConsumedTokenCount += result.bestI;
 
-    // -------------------------------------------------------------------------
-    // Buffer Slicing
-    // -------------------------------------------------------------------------
-    // We chop off all the garbage audio + the successfully matched audio from the buffer.
-    // The next loop iteration will start perfectly fresh.
-    int charSliceIdx = 0;
-    for (int k = 0; k < result.bestI; k++) charSliceIdx += asrChunks[k].length;
-
-    asrWindow = asrWindow.substring(charSliceIdx);
-    if (charSliceIdx <= asrTimestamps.length) {
-      asrTimestamps = asrTimestamps.sublist(charSliceIdx);
-    } else {
-      asrTimestamps = [];
-    }
-
-    // [Tajweed] Save the very last phoneme of this successful match to bridge to the next word
     if (matchedRefSlice.isNotEmpty) {
       lastMatchedPhoneme = matchedRefSlice.last;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helper Math
+  // ---------------------------------------------------------------------------
+  
+  int _getCharIndexForToken(List<PhonemeToken> tokens, int tokenIndex) {
+     if (tokenIndex >= tokens.length) return currentSegmentAsr.length;
+     return tokens[tokenIndex].originalIndex;
+  }
+
+  List<double> _getUnconsumedYsProbs(List<PhonemeToken> cleanTokens, int consumedCount) {
+     int charStart = _getCharIndexForToken(cleanTokens, consumedCount);
+     if (charStart < currentSegmentYsProbs.length) {
+        return currentSegmentYsProbs.sublist(charStart);
+     }
+     return [];
   }
 }
 
 /// ────────────────────────────────────────────────────────────────────────────
 /// Worker Entrypoint
 /// ────────────────────────────────────────────────────────────────────────────
-/// This is the raw C-level entrypoint for the background Isolate thread.
-/// It establishes the reverse communication port back to the UI thread, and
-/// creates the Sequencer to start handling commands.
 void _alignmentWorker(Sink<dynamic> mainSendPort, Stream<dynamic> commandStream) {
   final sequencer = DictationSequencer(mainSendPort);
 
@@ -721,14 +631,11 @@ void _alignmentWorker(Sink<dynamic> mainSendPort, Stream<dynamic> commandStream)
         List<String> tokens = (message['tokens'] as List).cast<String>();
         PhonemeMatrix.preheat(tokens);
         break;
-      case IsolateCommands.feed:
-        sequencer.feed(message);
+      case IsolateCommands.syncStream:
+        sequencer.syncStream(message);
         break;
       case IsolateCommands.setAyah:
         sequencer.setAyah(message);
-        break;
-      case IsolateCommands.replaceTail:
-        sequencer.replaceTail(message);
         break;
       case IsolateCommands.setTajweedMode:
         sequencer.isTajweed = message['isTajweed'];
@@ -737,7 +644,6 @@ void _alignmentWorker(Sink<dynamic> mainSendPort, Stream<dynamic> commandStream)
         sequencer.trackingStrictness = message['strictness'];
         break;
       case IsolateCommands.shutdown:
-        // Streams close automatically
         break;
     }
   });

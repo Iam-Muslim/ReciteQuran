@@ -1,28 +1,25 @@
 /// بسم الله الرحمن الرحيم
 ///
-/// ReciteQuran — Real-time Quran recitation tracking app.
+/// ReciteQuran — Real-time Quran recitation tracking app (Web).
 ///
 /// Architecture:
 ///   main.dart → _Orchestrator (manages engine + audio + controller)
 ///            → TrackingScreen (UI)
 ///
 /// The _Orchestrator initializes:
-///   1. Microphone permissions
-///   2. Sherpa-ONNX ASR engine (in a background Isolate)
+///   1. Microphone permissions / Audio session
+///   2. Sherpa-ONNX WebAssembly ASR engine
 ///   3. Quran metadata (quran.json)
 ///   4. HighlightingController (bridges ASR → UI)
 ///
 /// Recording flow:
-///   AudioProcessor captures mic → feeds chunks to Controller →
-///   Controller sends to SherpaEngine (Isolate) → gets transcription →
-///   matches words against expected Quran text → updates highlighting
+///   AudioProcessor captures mic → Sherpa WASM engine generates transcription →
+///   Controller matches words against expected Quran text → updates highlighting
 library;
 
-// import 'dart:io';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'state/app_state.dart';
 import 'engine/sherpa_engine.dart';
@@ -31,6 +28,7 @@ import 'audio/audio_processor.dart';
 import 'data/quran_data.dart';
 import 'ui/tracking_screen.dart';
 import 'tracking/ayah_search/voice_search_controller.dart';
+import 'utils/debug_logger.dart';
 
 void main() async {
   runZonedGuarded(
@@ -45,7 +43,7 @@ void main() async {
       runApp(const QuranApp());
     },
     (error, stack) {
-      debugPrint('Uncaught Error: $error');
+      DebugLogger.logSimple('Error', 'Uncaught Error: $error');
     },
     zoneSpecification: ZoneSpecification(
       print: (Zone self, ZoneDelegate parent, Zone zone, String line) {
@@ -124,7 +122,7 @@ class _OrchestratorState extends State<_Orchestrator> {
   bool _isInit = true;
   bool _isRecording = false;
   String _initStatus = 'Starting…';
-  bool _isToggling = false; // Prevents double-tap hardware crashes
+  bool _isToggling = false; // Prevents double-tap crashes
   bool _isLoadingEngine = false;
   bool _isVoiceSearching = false;
   String _voiceSearchAsrText = '';
@@ -139,7 +137,7 @@ class _OrchestratorState extends State<_Orchestrator> {
     // Global subscription for Voice Search text
     _engine.transcriptionStream.listen((res) {
       if (_isRecording && res.isFinal && mounted) {
-        debugPrint('[Orchestrator] Auto-stopping recording due to Sherpa Endpoint (50s silence)');
+        DebugLogger.logSimple('Orchestrator', 'Auto-stopping recording due to Sherpa Endpoint (silence)');
         _toggleRecord();
       }
 
@@ -154,9 +152,7 @@ class _OrchestratorState extends State<_Orchestrator> {
             // Unique match found! Bypass VAD and jump immediately.
             _stopVoiceSearch(precalculatedResult: rtResult);
           } else if (res.isFinal && _voiceSearchAsrText.trim().isNotEmpty) {
-            debugPrint(
-              '[VoiceSearch] Auto-stopping search due to Sherpa Endpoint (silence detected)',
-            );
+            DebugLogger.logSimple('VoiceSearch', 'Auto-stopping search due to Sherpa Endpoint (silence detected)');
             _stopVoiceSearch();
           }
         });
@@ -164,11 +160,6 @@ class _OrchestratorState extends State<_Orchestrator> {
     });
 
     _init();
-    _checkForUpdates();
-  }
-
-  Future<void> _checkForUpdates() async {
-    // No-op for web
   }
 
   @override
@@ -182,13 +173,9 @@ class _OrchestratorState extends State<_Orchestrator> {
   /// Each step updates the splash screen status text.
   Future<void> _init() async {
     try {
-      if (mounted) setState(() => _initStatus = 'Requesting permissions…');
-      // On the web, the record plugin natively requests permissions when starting the stream.
-      // We don't need permission_handler here.
-
       if (mounted) setState(() => _initStatus = 'Preparing ASR engine…');
       await _engine.preExtractAssets();
-      _engine.initialize(); // Fire-and-forget in background Isolate
+      _engine.initialize(); // Async initialization
 
       if (mounted) setState(() => _initStatus = 'Loading Quran database…');
       final service = QuranMetadataService();
@@ -202,8 +189,7 @@ class _OrchestratorState extends State<_Orchestrator> {
         engine: _engine,
         repository: _repo!,
         isTajweed: AppState.instance.currentMode == AppMode.tajweed,
-        // Flush stale audio on ayah transitions to prevent cross-ayah
-        // ghosting (old words matching new ayah's text).
+        // Flush stale audio on ayah transitions to prevent cross-ayah ghosting
         onAyahChanged: () {
           _audio.clearBuffer();
           _engine.resetBuffer();
@@ -212,10 +198,11 @@ class _OrchestratorState extends State<_Orchestrator> {
 
       if (mounted) setState(() => _isInit = false);
     } catch (e) {
-      debugPrint('❌ INIT: $e');
+      DebugLogger.logSimple('Init', '❌ INIT: $e');
       if (mounted) setState(() => _initStatus = 'Error: $e');
-      if (mounted)
+      if (mounted) {
         setState(() => _isInit = false); // Ensure we don't get stuck!
+      }
     }
   }
 
@@ -226,52 +213,42 @@ class _OrchestratorState extends State<_Orchestrator> {
 
     try {
       if (_isRecording) {
-        // Get any remaining audio in the pipeline
         await _audio.stopAndGetAudio();
-        // if (tail.isNotEmpty) {
-        //   _ctrl?.feed(tail, isFinal: true);
-        //   // Allow the background Isolate time to finish inference
-        //   await Future.delayed(const Duration(milliseconds: 500));
-        // }
-
         _engine.resetBuffer();
         _ctrl?.finalize();
-        if (mounted)
+        if (mounted) {
           setState(() {
             _isRecording = false;
           });
+        }
       } else {
-        // Ensure engine is ready (may still be initializing in background)
         if (!_engine.isInitialized) {
-          // Trigger initialize just in case, but DON'T await
           _engine.initialize();
         }
 
         _engine.resetBuffer();
 
-        // Instant UI feedback before hardware mic starts
         if (mounted) setState(() => _isRecording = true);
 
         if (_ctrl != null) {
           _ctrl!.startRecordingSession();
           _audio
               .start(
-                isAtAyahBoundary: () => _ctrl?.isAtAyahBoundary() ?? false,
-                onChunk: (chunk, isFinal) =>
-                    _ctrl?.feed(chunk, isFinal: isFinal),
+                onChunk: (chunk, isFinal) {},
               )
               .catchError((e) {
-                debugPrint('❌ AUDIO ERROR: $e');
+                DebugLogger.logSimple('Audio', '❌ AUDIO ERROR: $e');
                 if (mounted) setState(() => _isRecording = false);
               });
         }
       }
     } catch (e) {
-      debugPrint('❌ RECORD ERROR: $e');
-      if (mounted)
+      DebugLogger.logSimple('Record', '❌ RECORD ERROR: $e');
+      if (mounted) {
         setState(() {
           _isRecording = false;
         });
+      }
     } finally {
       _isToggling = false;
     }
@@ -320,10 +297,10 @@ class _OrchestratorState extends State<_Orchestrator> {
             if (DateTime.now().millisecondsSinceEpoch -
                     _lastVoiceActivityTime >=
                 800) {
-              debugPrint(
-                '[VoiceSearch] 800ms silence detected. Forcing search stop.',
+              DebugLogger.logSimple(
+                'VoiceSearch',
+                '800ms silence detected. Forcing search stop.',
               );
-              _engine.transcribe(Uint8List(0), isFinal: true);
               _voiceSearchSilenceTimer?.cancel();
             }
           }
@@ -333,21 +310,17 @@ class _OrchestratorState extends State<_Orchestrator> {
       _audio
           .start(
             onChunk: (chunk, isFinal) {
-              _engine.transcribe(chunk, isFinal: isFinal);
-
               if (_isVoiceSearching && !isFinal) {
                 _lastVoiceActivityTime = DateTime.now().millisecondsSinceEpoch;
               }
             },
           )
           .catchError((e) {
-            debugPrint('❌ AUDIO ERROR in Voice Search: $e');
+            DebugLogger.logSimple('Audio', '❌ AUDIO ERROR in Voice Search: $e');
             if (mounted) setState(() => _isVoiceSearching = false);
           });
-
-      // Note: transcriptionStream listen is now handled in initState to prevent duplicates.
     } catch (e) {
-      debugPrint('❌ VOICE SEARCH START ERROR: $e');
+      DebugLogger.logSimple('VoiceSearch', '❌ VOICE SEARCH START ERROR: $e');
       if (mounted) setState(() => _isVoiceSearching = false);
     } finally {
       _isToggling = false;
@@ -405,7 +378,7 @@ class _OrchestratorState extends State<_Orchestrator> {
         }
       }
     } catch (e) {
-      debugPrint('❌ VOICE SEARCH STOP ERROR: $e');
+      DebugLogger.logSimple('VoiceSearch', '❌ VOICE SEARCH STOP ERROR: $e');
     } finally {
       _isToggling = false;
     }
@@ -428,7 +401,7 @@ class _OrchestratorState extends State<_Orchestrator> {
               child: Text(
                 'وَلَقَدْ يَسَّرْنَا الْقُرْآنَ لِلذِّكْرِ فَهَلْ مِن مُّدَّكِرٍ',
                 style: TextStyle(
-                  fontFamily: 'QPC_Hafs',
+                  fontFamily: 'HafsSmart',
                   color: c.text.withValues(alpha: 0.6),
                   fontSize: 22,
                   height: 2.0,

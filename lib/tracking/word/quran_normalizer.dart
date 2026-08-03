@@ -11,8 +11,15 @@
 // normalized through the same pipeline before Levenshtein comparison.
 //
 // normalize_aya defaults from quran-transcript (used for tasmeea matching):
-//   remove_spaces=True, remove_tashkeel=True,
-//   ignore_alef_maksoora=True, remove_small_alef=True
+// remove_spaces=True, remove_tashkeel=True,
+// ignore_alef_maksoora=True, remove_small_alef=True
+
+class PhonemeToken {
+  final String text;
+  final int originalIndex;
+
+  PhonemeToken(this.text, this.originalIndex);
+}
 
 class QuranNormalizer {
   // ── Tashkeel (harakat + shadda + sukun + tanween) ──────────────────────────
@@ -116,6 +123,10 @@ class QuranNormalizer {
   static final String _residualsStr =
       r'\u064B\u064C\u064D\u064E\u064F\u0650\u0651\u0652\u06EB\u0686\u065E\u06E3\u0619\u06DC\u06EA\u0640';
 
+  static bool isResidual(String char) {
+    return RegExp('^[$_residualsStr]\$').hasMatch(char);
+  }
+
   // ── Regex: identical non-residual chars + optional trailing residuals ─────────────
   // This matches Python's: `(?:core_chars+)[residuals]?`
   // We use backreference `\2` to group identical consecutive base characters.
@@ -152,6 +163,16 @@ class QuranNormalizer {
     return _chunkRegex
         .allMatches(phoneticScript)
         .map((m) => m.group(1)!)
+        .toList();
+  }
+
+  /// Same as `chunkPhonemes`, but returns the exact original character index
+  /// where this chunk began in the `phoneticScript`. This guarantees O(1)
+  /// mapping for acoustic timestamps and confidence arrays without latency.
+  static List<PhonemeToken> chunkPhonemesWithIndices(String phoneticScript) {
+    return _chunkRegex
+        .allMatches(phoneticScript)
+        .map((m) => PhonemeToken(m.group(1)!, m.start))
         .toList();
   }
 }

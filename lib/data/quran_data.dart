@@ -191,10 +191,6 @@ class QuranRepository {
     if (ayah >= 1 && ayah < verses.length) {
       return verses[ayah]; // 0-indexed internally
     }
-    final nextSurah = getSurah(surah + 1);
-    if (nextSurah.isNotEmpty) {
-      return nextSurah.first;
-    }
     return null;
   }
 }

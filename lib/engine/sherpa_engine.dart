@@ -1,12 +1,12 @@
 // ignore_for_file: avoid_web_libraries_in_flutter
 import 'dart:async';
 import 'dart:convert';
-
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
-
+import '../utils/debug_logger.dart';
 
 class TranscriptionResult {
   final String text;
@@ -15,6 +15,7 @@ class TranscriptionResult {
   final List<String> tokens;
   final List<double> timestamps;
   final List<double> ysProbs;
+  final int streamEpoch;
 
   TranscriptionResult({
     required this.text,
@@ -23,6 +24,7 @@ class TranscriptionResult {
     this.tokens = const [],
     this.timestamps = const [],
     this.ysProbs = const [],
+    this.streamEpoch = 0,
   });
 }
 
@@ -38,16 +40,16 @@ external JSBoolean _initSherpaRecognizer();
 @JS('fetchSherpaModel')
 external JSPromise _fetchSherpaModel(JSString url);
 
-
-
 /// Web-specific implementation of SherpaEngine using Official Sherpa WebAssembly JS.
 class SherpaEngine {
   final StreamController<TranscriptionResult> _outputController =
       StreamController<TranscriptionResult>.broadcast();
 
   bool _isInitialized = false;
+  int _currentStreamEpoch = 0;
 
   bool get isInitialized => _isInitialized;
+  int get currentStreamEpoch => _currentStreamEpoch;
   
   Stream<TranscriptionResult> get transcriptionStream =>
       _outputController.stream;
@@ -66,7 +68,7 @@ class SherpaEngine {
         final probsList = List<double>.from((data['ys_probs'] ?? []).map((e) => (e as num).toDouble()));
         
         if (probsList.isNotEmpty) {
-           print("[SherpaDart] 🎯 Tokens: $tokensList | Confidence (ysProbs): $probsList");
+           DebugLogger.logSimple('SherpaDart', '🎯 Tokens: $tokensList | Confidence (ysProbs): $probsList');
         }
 
         _outputController.add(TranscriptionResult(
@@ -76,69 +78,68 @@ class SherpaEngine {
           tokens: tokensList,
           timestamps: List<double>.from((data['timestamps'] ?? []).map((e) => (e as num).toDouble())),
           ysProbs: probsList,
+          streamEpoch: _currentStreamEpoch,
         ));
       } catch (e) {
-        print("[SherpaDart] Error parsing JSON result: $e");
+        DebugLogger.logSimple('SherpaDart', 'Error parsing JSON result: $e');
       }
     }.toJS;
     
     globalContext.setProperty('dartSherpaOnResult'.toJS, jsOnResult);
 
-    print("[SherpaDart] Waiting for Sherpa WebAssembly memory to load...");
+    DebugLogger.logSimple('SherpaDart', 'Waiting for Sherpa WebAssembly memory to load...');
 
     // Wait for the WASM engine to start
     while (!_isWasmModuleLoaded().toDart) {
       await Future.delayed(const Duration(milliseconds: 500));
     }
     
-    print("[SherpaDart] WASM Memory loaded. Loading models from Flutter assets...");
+    DebugLogger.logSimple('SherpaDart', 'WASM Memory loaded. Loading models from Flutter assets...');
 
     try {
         JSUint8Array modelBytes;
         final host = Uri.base.host;
         if (host != 'localhost' && host != '127.0.0.1' && host.isNotEmpty) {
-            print("[SherpaDart] Production detected on $host. Fetching ONNX model from GitHub Releases...");
+            DebugLogger.logSimple('SherpaDart', 'Production detected on $host. Fetching ONNX model...');
             final url = '/download-model'.toJS;
             modelBytes = await _fetchSherpaModel(url).toDart as JSUint8Array;
         } else {
-            print("[SherpaDart] Local environment detected. Loading ONNX model directly via Javascript fetch to bypass Chrome cache limits...");
-            // Use absolute path based on base-href to fetch the asset directly
-            final url = '/recite/assets/assets/model/quran_phoneme_zipformer.int8.onnx'.toJS;
-            modelBytes = await _fetchSherpaModel(url).toDart as JSUint8Array;
+            DebugLogger.logSimple('SherpaDart', 'Local environment detected. Loading ONNX model...');
+            final localUrl = Uri.base.resolve('assets/assets/model/zipformer_p_arabic_v2.int8.onnx').toString();
+            modelBytes = await _fetchSherpaModel(localUrl.toJS).toDart as JSUint8Array;
         }
         
-        _writeSherpaAssetToVFS('quran_phoneme_zipformer.int8.onnx'.toJS, modelBytes);
-        print("[SherpaDart] Model written to VFS.");
+        _writeSherpaAssetToVFS('zipformer_p_arabic_v2.int8.onnx'.toJS, modelBytes);
+        DebugLogger.logSimple('SherpaDart', 'Model written to VFS.');
 
         ByteData tokensData = await rootBundle.load('assets/model/tokens.txt');
         _writeSherpaAssetToVFS('quran_tokens.txt'.toJS, tokensData.buffer.asUint8List().toJS);
-        print("[SherpaDart] Tokens written to VFS.");
+        DebugLogger.logSimple('SherpaDart', 'Tokens written to VFS.');
 
-        print("[SherpaDart] Initializing Sherpa Recognizer...");
+        DebugLogger.logSimple('SherpaDart', 'Initializing Sherpa Recognizer...');
         bool success = _initSherpaRecognizer().toDart;
         
         if (success) {
-            print("[SherpaDart] Sherpa WebAssembly initialized successfully!");
+            DebugLogger.logSimple('SherpaDart', 'Sherpa WebAssembly initialized successfully!');
             _isInitialized = true;
         } else {
-            print("[SherpaDart] FATAL JS ERROR: Failed to create recognizer engine!");
+            DebugLogger.logSimple('SherpaDart', 'FATAL JS ERROR: Failed to create recognizer engine!');
         }
     } catch (e) {
-        print("[SherpaDart] FATAL ERROR loading models: $e");
+        DebugLogger.logSimple('SherpaDart', 'FATAL ERROR loading models: $e');
     }
   }
 
-  bool transcribe(Uint8List audioChunk, {bool isFinal = false}) {
-    // Obsolete: Audio capture and transcription is now handled entirely within Javascript.
+  bool transcribe(Float32List audioChunk, {bool isFinal = false}) {
+    // Handled in Web through JS AudioProcessor hook
     return true; 
   }
 
   void resetBuffer() {
-    // Handled natively by Javascript AudioProcessor hook
+    _currentStreamEpoch++;
   }
 
   void destroy() {
-    // Cannot fully destroy the WASM module easily in this architecture, 
     globalContext.setProperty('dartSherpaOnResult'.toJS, null);
   }
 }

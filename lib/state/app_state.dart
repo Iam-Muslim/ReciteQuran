@@ -10,6 +10,7 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/debug_logger.dart';
 
 // Supported UI languages.
 enum AppLanguage { ar, en }
@@ -80,9 +81,6 @@ class AppState extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('blurMode', isBlurMode);
   }
-
-
-
 
   int autoScrollSpeed = 2; // 2 = 1.0x (index in new array)
 
@@ -172,8 +170,6 @@ class AppState extends ChangeNotifier {
       }
       isBlurMode = prefs.getBool('blurMode') ?? false;
 
-
-
       autoScrollSpeed = prefs.getInt('autoScrollSpeed') ?? 2;
       fontSize = prefs.getDouble('fontSize') ?? 28.0;
 
@@ -186,7 +182,7 @@ class AppState extends ChangeNotifier {
 
       notifyListeners();
     } catch (e) {
-      debugPrint('Failed to load settings: $e');
+      DebugLogger.logSimple('AppState', 'Failed to load settings: $e');
     }
   }
 }

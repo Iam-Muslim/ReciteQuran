@@ -33,6 +33,40 @@ import 'dart:typed_data';
 /// We want the tracker to forgive small phonetic mistakes so it can keep moving
 /// forward smoothly. (Strict Tajweed checking happens later in ErrorExplainer).
 class SubCostTable {
+  /// A clean, organized array of phoneme pairs that the Sherpa ASR model frequently
+  /// confuses due to acoustic similarity or mic muffling.
+  /// This list can be expanded without bloating the logic below.
+  static final List<Set<String>> _sherpaAcousticNeighbors = [
+    // Original extensive acoustic neighbor list for robustness against False Reds
+    // on cheap Android microphones:
+    {'س', 'ص'}, // Sin / Sad
+    {'ت', 'ط'}, // Ta / Tta
+    {'ذ', 'ظ'}, // Thal / Zha
+    {'د', 'ض'}, // Dal / Dha
+    {'ه', 'ح'}, // Ha / Hha
+    {'غ', 'خ'}, // Ghayn / Kha
+    {'ك', 'ق'}, // Kaf / Qaf
+    {'ء', 'ع'}, // Hamza / Ayn
+    {'ن', 'م'}, // Nun / Mim (Nasal confusion)
+    {'ن', 'ل'}, // Nun / Lam (Liquid confusion)
+    {'ز', 'ذ'}, // Zay / Thal
+    {'س', 'ث'}, // Sin / Tha
+    {'ظ', 'ض'}, // Zha / Dha
+    {'ن', 'ں'}, // Nun / Noon Ghunna
+    {'م', '۾'}, // Mim / Mim variants
+    {'ه', 'ت'}, // Ta-Marbuta / Ta (Wasl vs Waqf confusion)
+    {'و', 'ُ'}, // Waw / Damma (Madd confusion)
+    {'ي', 'ِ'}, // Ya / Kasra (Madd confusion)
+    {'ا', 'َ'}, // Alif / Fatha (Madd confusion)
+    {'ى', 'َ'}, // Alif Maqsura / Fatha
+    {'ت', 'د'}, // Ta / Dal (Sherpa bias)
+    {'ج', 'ش'}, // Jeem / Shin (Sherpa bias)
+    {'ف', 'ث'}, // Fa / Tha (Sherpa bias)
+    {'ي', 'ۦ'}, // Ya / Small Ya (Uthmani Quranic script)
+    {'و', 'ۥ'}, // Waw / Small Waw (Uthmani Quranic script)
+    {'ى', 'ي'}, // Alif Maqsura / Ya
+  ];
+
   /// Calculates the exact float penalty for substituting [c1] (ASR) with [c2] (Reference).
   ///
   /// Returns:
@@ -80,14 +114,18 @@ class SubCostTable {
     }
 
     // -------------------------------------------------------------------------
-    // Rule 5: The Alif Maqsura & Ya Forgiveness Zone
-    // In many scripts (especially Uthmani), 'ي' (Ya) and 'ى' (Alif Maqsura) are
-    // visually or phonetically interchangeable at the ends of words.
-    // If the mismatch is just between these two, we forgive it.
+    // Rule 5: The Ya & Waw Madd Variant Forgiveness Zone
+    // In Quranic Uthmani text, 'ي' (Ya), 'ى' (Alif Maqsura), and 'ۦ' (Small Ya)
+    // represent the same long/short vowel sound depending on script convention.
+    // Similarly, 'و' (Waw) and 'ۥ' (Small Waw) represent the same sound.
     // -------------------------------------------------------------------------
-    if (!sameBase &&
-        (base1 == 'ي' || base1 == 'ى') &&
-        (base2 == 'ي' || base2 == 'ى')) {
+    final yaFamily = const ['ي', 'ى', 'ۦ', 'ۧ'];
+    if (!sameBase && yaFamily.contains(base1) && yaFamily.contains(base2)) {
+      sameBase = true;
+    }
+
+    final wawFamily = const ['و', 'ۥ', 'ۨ'];
+    if (!sameBase && wawFamily.contains(base1) && wawFamily.contains(base2)) {
       sameBase = true;
     }
 
@@ -106,7 +144,6 @@ class SubCostTable {
     // Rule 7: Shadda & Maddah (Length Penalty)
     // If we determined above that the Base letters are the same, we still need
     // to check if one has a Shadda/Maddah and the other doesn't.
-    // Missing a Shadda or shortening a Maddah gets a penalty of 0.55.
     // -------------------------------------------------------------------------
     if (sameBase) {
       // Shaddas and Maddahs are represented as repeated letters (e.g. 'ببِ' or 'يييي').
@@ -121,10 +158,18 @@ class SubCostTable {
       for (int i = 0; i < c2.length; i++) {
         if (c2.codeUnitAt(i) == base2Code) count2++;
       }
-      
+
       if (count1 != count2) {
-        // Missing a Shadda (e.g., 'بِ' vs 'ببِ') or cutting a Maddah short ('يي' vs 'يييي').
-        return 0.55; 
+        // Check if it's a vowel (Maddah) or consonant (Shadda)
+        final vowels = const ['ا', 'و', 'ي', 'ى', 'ۦ', 'ۥ', '۪', 'ں'];
+        if (vowels.contains(base1)) {
+          // Maddah length variation. Very common and often perfectly legal (e.g. 2, 4, 6 beats).
+          return 0.15; // Low penalty for Madd length mismatch
+        }
+        // Missing or extra Shadda (e.g. 'بِ' vs 'ببِ' or 'رَ' vs 'ررَ').
+        // Low penalty for tracking alignment so dropped Shaddahs in fast speech don't
+        // abort the word match (Tajweed ErrorExplainer evaluates strictness separately).
+        return 0.25;
       }
 
       // If the lengths match but the strings are different, it is a wrong Tashkeel.
@@ -144,26 +189,11 @@ class SubCostTable {
     // highly accurate with vowels (Tashkeel).
     // If the vowel matches perfectly, we give a highly forgiving 0.25 penalty.
     // If the vowel is wrong, we apply a harsh 0.60 penalty to stop False Greens.
-    if (isPair('س', 'ص') || // Sin / Sad
-        isPair('ت', 'ط') || // Ta / Tta
-        isPair('ذ', 'ظ') || // Thal / Zha
-        isPair('د', 'ض') || // Dal / Dha
-        isPair('ه', 'ح') || // Ha / Hha
-        isPair('غ', 'خ') || // Ghayn / Kha
-        isPair('ك', 'ق') || // Kaf / Qaf
-        isPair('ء', 'ع') || // Hamza / Ayn
-        isPair('ن', 'م') || // Nun / Mim (Nasal confusion)
-        isPair('ن', 'ل') || // Nun / Lam (Liquid confusion)
-        isPair('ز', 'ذ') || // Zay / Thal
-        isPair('س', 'ث') || // Sin / Tha
-        isPair('ظ', 'ض') || // Zha / Dha
-        isPair('ن', 'ں') || // Nun / Noon Ghunna
-        isPair('م', '۾') || // Mim / Mim variants
-        isPair('ه', 'ت') || // Ta-Marbuta / Ta (Wasl vs Waqf confusion)
-        isPair('و', 'ُ') || // Waw / Damma (Madd confusion)
-        isPair('ي', 'ِ') || // Ya / Kasra (Madd confusion)
-        isPair('ا', 'َ') || // Alif / Fatha (Madd confusion)
-        isPair('ى', 'َ')) { // Alif Maqsura / Fatha
+    bool isNeighbor = _sherpaAcousticNeighbors.any(
+      (pair) => isPair(pair.elementAt(0), pair.elementAt(1)),
+    );
+
+    if (isNeighbor) {
       // The user's ASR is excellent at catching Tashkeel, even if it mixes up the consonant.
       // We extract the vowels (everything after the first base character) to check them.
       bool harakatMatch = false;
@@ -180,10 +210,10 @@ class SubCostTable {
       if (harakatMatch) {
         // The consonant is a neighbor, but the vowel is a PERFECT match!
         // We restore this to your original 0.25 because the ASR constantly confuses them.
-        return 0.25; 
+        return 0.25;
       } else {
-        // The consonant is a neighbor AND the vowel is wrong. 
-        return 0.60; 
+        // The consonant is a neighbor AND the vowel is wrong.
+        return 0.60;
       }
     }
 
@@ -249,7 +279,7 @@ class PhonemeMatrix {
         needsRebuild = true;
       }
     }
-    
+
     if (needsRebuild) {
       _rebuildMatrix();
     }

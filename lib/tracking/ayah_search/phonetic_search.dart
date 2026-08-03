@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/services.dart';
 
@@ -124,49 +123,6 @@ class PhoneticSearch {
       );
     }
 
-    _isLoaded = true;
-  }
-
-  /// For testing without Flutter bindings
-  void forceLoadLocalForTest(String refPath, String npyPath) {
-    _refPhNorm = File(refPath).readAsStringSync().trim();
-    Uint8List bytes = File(npyPath).readAsBytesSync();
-    ByteData npyData = ByteData.view(bytes.buffer);
-
-    int offset = 0;
-    final magic = [0x93, 0x4E, 0x55, 0x4D, 0x50, 0x59]; // "\x93NUMPY"
-    for (int i = 0; i < 6; i++) {
-      if (npyData.getUint8(offset++) != magic[i]) {
-        throw Exception("Invalid NPY file: bad magic number");
-      }
-    }
-
-    int majorVer = npyData.getUint8(offset++);
-    offset++; // minorVer
-
-    int headerLen;
-    if (majorVer == 1) {
-      headerLen = npyData.getUint16(offset, Endian.little);
-      offset += 2;
-    } else if (majorVer == 2 || majorVer == 3) {
-      headerLen = npyData.getUint32(offset, Endian.little);
-      offset += 4;
-    } else {
-      throw Exception("Unsupported NPY version: $majorVer");
-    }
-
-    offset += headerLen;
-    int remainingBytes = npyData.lengthInBytes - offset;
-    int numElements = remainingBytes ~/ 2;
-    
-    int byteOffset = npyData.offsetInBytes + offset;
-    if (byteOffset % 2 != 0) {
-      Uint8List unaligned = npyData.buffer.asUint8List(byteOffset, remainingBytes);
-      Uint8List aligned = Uint8List.fromList(unaligned);
-      _indexArray = aligned.buffer.asUint16List();
-    } else {
-      _indexArray = npyData.buffer.asUint16List(byteOffset, numElements);
-    }
     _isLoaded = true;
   }
 

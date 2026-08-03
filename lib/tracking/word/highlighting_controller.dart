@@ -6,34 +6,30 @@
 //   SherpaEngine → transcriptionStream → HighlightingController → UI
 //
 // Matching system:
-//   Uses PhoneticWordTracker (ported from quran-transcript/src/quran_transcript/
-//   tasmeea.py + utils.py) to match the accumulating ASR phonetic stream
+//   Uses PhoneticWordTracker to match the accumulating ASR phonetic stream
 //   against the expected Uthmani words of the current ayah word-by-word.
-//
-//   The ASR model outputs phonetic Arabic (e.g. "بِسمِللَااهِ") that accumulates
-//   over time. PhoneticWordTracker normalizes both sides (QuranNormalizer,
-//   ported from normalize_aya()) and uses Levenshtein distance to commit
-//   words as correct/wrong one at a time.
 //
 // Word-order constraint (Tarteel-style):
 //   - Words must match IN ORDER. A wrong/skipped word turns red immediately.
 //   - Advancing to the next ayah is automatic when all words are resolved.
 //   - The user selects the start surah+ayah; tracker proceeds sequentially.
+//
 
 import 'dart:async';
 import 'dart:math';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../../state/app_state.dart';
 import '../../engine/sherpa_engine.dart';
 import '../../data/quran_data.dart';
-import '../../state/app_state.dart';
 import '../tajweed/error_explainer.dart';
 import 'phoneme_alignment.dart';
+import 'quran_normalizer.dart';
+import '../../utils/debug_logger.dart';
 
 // ── State machine ────────────────────────────────────────────────────────────
 
-/// The three states the live recitation tracker can be in.
+/// The two states the live recitation tracker can be in.
 ///
 /// [discovery] — engine is idle / stopped.
 /// [tracking]  — actively listening and matching words.
@@ -84,7 +80,7 @@ class VerseSpanMatch {
 
 // ── Main controller ──────────────────────────────────────────────────────────
 
-class WebHighlightingController extends ChangeNotifier {
+class HighlightingController extends ChangeNotifier {
   final SherpaEngine _engine;
   final QuranRepository repository;
   final VoidCallback? onAyahChanged;
@@ -94,7 +90,7 @@ class WebHighlightingController extends ChangeNotifier {
     if (isTajweed == active) return;
     isTajweed = active;
     if (_isolateStarted) {
-      _aligner.setTajweedMode(active);
+      _alignmentIsolate.setTajweedMode(active);
     }
     notifyListeners();
   }
@@ -119,33 +115,37 @@ class WebHighlightingController extends ChangeNotifier {
 
   final ValueNotifier<int> globalRevision = ValueNotifier(0);
 
-  final PhonemeAlignmentWeb _aligner = PhonemeAlignmentWeb();
+  final PhonemeAlignmentIsolate _alignmentIsolate = PhonemeAlignmentIsolate();
   bool _isolateStarted = false;
 
   StreamSubscription? _engineSub;
-  StreamSubscription? _wordSub;
-  StreamSubscription? _ayahSub;
+  StreamSubscription<Map<String, dynamic>>? _wordSub;
 
   int _lastResetTime = 0;
   String _lastProcessedText = '';
   bool _expectingNewSegment = false;
   int? _pendingClearAyah;
 
-  WebHighlightingController({
+  /// Tracks how many words from the NEXT ayah were already consumed via lookahead
+  /// during the current ayah's DP matching. When we advance to the next ayah,
+  /// we pass this as `startWordCursor` so the matcher skips those already-matched words.
+  int _lookaheadWordsConsumed = 0;
+
+  HighlightingController({
     required this.repository,
     required SherpaEngine engine,
     this.onAyahChanged,
     this.isTajweed = true,
   }) : _engine = engine {
+    AppState.instance.addListener(_onAppStateChanged);
     _initIsolate();
     _engineSub = _engine.transcriptionStream.listen(_onResult);
-    AppState.instance.addListener(_onAppStateChanged);
     reset();
   }
 
   void _onAppStateChanged() {
     if (_isolateStarted) {
-      _aligner.setTrackingStrictness(
+      _alignmentIsolate.setTrackingStrictness(
         AppState.instance.trackingStrictness.name,
       );
     }
@@ -156,15 +156,14 @@ class WebHighlightingController extends ChangeNotifier {
     AppState.instance.removeListener(_onAppStateChanged);
     _engineSub?.cancel();
     _wordSub?.cancel();
-    _ayahSub?.cancel();
-    _aligner.stop();
+    _alignmentIsolate.stop();
     super.dispose();
   }
 
   Future<void> _initIsolate() async {
-    await _aligner.start();
+    await _alignmentIsolate.start();
     _isolateStarted = true;
-
+    
     try {
       String tokensStr = await rootBundle.loadString('assets/model/tokens.txt');
       List<String> tokens = [];
@@ -174,27 +173,26 @@ class WebHighlightingController extends ChangeNotifier {
           tokens.add(parts[0].trim());
         }
       }
-      _aligner.setup(tokens);
+      _alignmentIsolate.setup(tokens);
     } catch (e) {
-      debugPrint('Failed to load tokens for matrix preheat: $e');
+      DebugLogger.logSimple('HighlightingController', 'Failed to load tokens for matrix preheat: $e');
     }
-
-    _wordSub = _aligner.wordStream.listen(_onIsolateWordMatched);
-    _ayahSub = _aligner.ayahCompletedStream.listen(_onAyahCompleted);
+    
+    _wordSub = _alignmentIsolate.wordStream.listen(_onIsolateWordMatched);
 
     if (_currentMatch != null) {
-      _setWebAyah(_currentMatch!.verse);
+      _setIsolateAyah(_currentMatch!.verse);
     }
   }
 
-  void _setWebAyah(QuranVerse verse, {bool forceClear = false}) {
+  void _setIsolateAyah(QuranVerse verse, {bool forceClear = false}) {
     String combinedTextPhoneme = verse.textPhoneme;
     List<String> combinedPhonemeWords = List.from(verse.phonemeWords);
 
     String strictness = AppState.instance.trackingStrictness.name;
     int lookaheadWords = strictness == 'strict'
-        ? 1
-        : (strictness == 'easy' ? 3 : 2);
+        ? 3
+        : (strictness == 'easy' ? 0 : 2); // default
 
     final nextVerse = repository.getNextVerse(verse.surah, verse.ayah);
     if (nextVerse != null) {
@@ -205,12 +203,17 @@ class WebHighlightingController extends ChangeNotifier {
       }
     }
 
-    _aligner.setAyah(
+    _alignmentIsolate.setAyah(
       combinedTextPhoneme,
       _calculateBoundaries(combinedPhonemeWords),
       isTajweed: isTajweed,
       forceClear: forceClear,
-      trackingStrictness: strictness,
+      trackingStrictness: AppState.instance.trackingStrictness.name,
+      // On auto-advance (forceClear=false), tell the isolate how many words of
+      // this new ayah were already consumed as lookahead in the previous ayah.
+      // The matcher will start at that word position instead of word 0.
+      startWordCursor: forceClear ? 0 : _lookaheadWordsConsumed,
+      ayahNumber: verse.ayah,
     );
   }
 
@@ -223,6 +226,12 @@ class WebHighlightingController extends ChangeNotifier {
     bool isRed = event['is_red'] as bool? ?? false;
     String cleanAsr = event['clean_asr'] as String? ?? '';
 
+    // Track lookahead words: any wordId ≥ the actual ayah's word count
+    // is a lookahead word belonging to the NEXT ayah.
+    final int actualWordCount = targetAyah.phonemeWords.length;
+    if (wordId >= actualWordCount) {
+      _lookaheadWordsConsumed = (wordId - actualWordCount) + 1;
+    }
 
     if (!(_greenWordsByVerse[ayahNum]?.contains(wordId) ?? false) &&
         !(_redWordsByVerse[ayahNum]?.contains(wordId) ?? false) &&
@@ -234,18 +243,23 @@ class WebHighlightingController extends ChangeNotifier {
       }
 
       // =========================================================================
-      // Process Tajweed Errors received from Web Worker
+      // Instant Tajweed Evaluation
       // =========================================================================
-      if (isTajweed && cleanAsr.isNotEmpty && event['tajweed_errors'] != null) {
-        List<dynamic> errList = event['tajweed_errors'];
-        if (errList.isNotEmpty) {
-          List<ReciterError> decodedErrors = errList.map((e) => ReciterError.fromMap(e as Map<String, dynamic>)).toList();
-          
-          if (_greenWordsByVerse[ayahNum]?.contains(wordId) ?? false) {
-             _greenWordsByVerse[ayahNum]?.remove(wordId);
-             (_yellowWordsByVerse[ayahNum] ??= {}).add(wordId);
+      if (isTajweed && cleanAsr.isNotEmpty) {
+        if (event['tajweed_errors'] != null) {
+          final List<dynamic> rawErrors = event['tajweed_errors'];
+          final List<ReciterError> wordErrors = rawErrors
+              .map((e) => ReciterError.fromMap(Map<String, dynamic>.from(e)))
+              .toList();
+
+          if (wordErrors.isNotEmpty) {
+            if (_greenWordsByVerse[ayahNum]?.contains(wordId) ?? false) {
+              _greenWordsByVerse[ayahNum]?.remove(wordId);
+              (_yellowWordsByVerse[ayahNum] ??= {}).add(wordId);
+              (_errorsByVerse[ayahNum] ??= {})[wordId] = wordErrors;
+              notifyListeners();
+            }
           }
-          (_errorsByVerse[ayahNum] ??= {})[wordId] = decodedErrors;
         }
       }
 
@@ -258,10 +272,7 @@ class WebHighlightingController extends ChangeNotifier {
           targetAyah.ayah,
         );
         if (nextVerse != null) {
-          // Delay very slightly to let the UI paint the last word green before jumping
-          Future.delayed(const Duration(milliseconds: 50), () {
-            forceActiveAyah(nextVerse);
-          });
+          forceActiveAyah(nextVerse);
         } else {
           finalize();
         }
@@ -271,33 +282,16 @@ class WebHighlightingController extends ChangeNotifier {
     }
   }
 
-  void _onAyahCompleted(Map<String, dynamic> event) {
-    if (_currentMatch == null) return;
-    String rawAsr = event['raw_asr'] as String? ?? '';
-    print('[HighlightingController] Ayah completed with raw ASR: $rawAsr');
-
-    // Final sweep logic is now handled fully in the background worker thread.
-  }
-
   // ── Public accessors ──────────────────────────────────────────────────────
 
-  WebHighlightingController get tracker => this;
+  HighlightingController get tracker => this;
   TrackerState get state => _state;
   VerseMatch? get currentMatchedVerse => _currentMatch;
   Set<int> get completedAyahs => _completedAyahs;
   bool get softWarningActive => false;
 
   int? get activeWordIndex {
-    return null; // Tracking is now fully async in isolate
-  }
-
-  bool isAtAyahBoundary() {
-    if (_currentMatch == null) return true;
-    int ayahNum = _currentMatch!.verse.ayah;
-    bool hasGreen = _greenWordsByVerse[ayahNum]?.isNotEmpty ?? false;
-    bool hasRed = _redWordsByVerse[ayahNum]?.isNotEmpty ?? false;
-    bool hasYellow = _yellowWordsByVerse[ayahNum]?.isNotEmpty ?? false;
-    return !hasGreen && !hasRed && !hasYellow;
+    return null; // Tracking is now fully async
   }
 
   // ── Word color queries ────────────────────────────────────────────────────
@@ -324,17 +318,13 @@ class WebHighlightingController extends ChangeNotifier {
     return _redWordsByVerse[ayah]?.contains(pIdx) ?? false;
   }
 
-  /// Yellow not used in base mode — kept for Tajweed mode extension.
   bool isWordYellow(int ayah, int wordIndex) {
     int pIdx = _mapToPhonemeIndex(ayah, wordIndex);
     return _yellowWordsByVerse[ayah]?.contains(pIdx) ?? false;
   }
 
-  /// Get errors for a word if any
   List<ReciterError>? getWordErrors(int ayah, int wordIndex) {
     int pIdx = _mapToPhonemeIndex(ayah, wordIndex);
-
-    // Fallback to persisted errors (from post-ayah processing or baseline copy)
     return _errorsByVerse[ayah]?[pIdx];
   }
 
@@ -378,10 +368,11 @@ class WebHighlightingController extends ChangeNotifier {
       activeAyah.value = ayah;
 
       if (_isolateStarted) {
-        _setWebAyah(verse, forceClear: true);
+        _setIsolateAyah(verse, forceClear: true);
       }
 
       _engine.resetBuffer();
+      _lastProcessedText = '';
       _lastResetTime = DateTime.now().millisecondsSinceEpoch;
       _pendingClearAyah = ayah;
       onAyahChanged?.call();
@@ -402,7 +393,7 @@ class WebHighlightingController extends ChangeNotifier {
 
   // ── Audio pipeline ────────────────────────────────────────────────────────
 
-  void feed(Uint8List audioChunk, {bool isFinal = false}) {
+  void feed(Float32List audioChunk, {bool isFinal = false}) {
     if (_state == TrackerState.discovery) return;
     _engine.transcribe(audioChunk, isFinal: isFinal);
   }
@@ -419,7 +410,7 @@ class WebHighlightingController extends ChangeNotifier {
     }
     activeAyah.value = _currentMatch?.verse.ayah;
     if (_currentMatch != null && _isolateStarted) {
-      _setWebAyah(_currentMatch!.verse, forceClear: true);
+      _setIsolateAyah(_currentMatch!.verse, forceClear: true);
     }
     _engine.resetBuffer();
     _lastProcessedText = '';
@@ -444,10 +435,8 @@ class WebHighlightingController extends ChangeNotifier {
       clearHighlightsFromAyah(activeAyah.value!);
     }
 
-    // CRITICAL: Synchronize Isolate state! Since we cleared the UI highlights,
-    // the isolate must also reset its word cursor back to 0 for this Ayah.
     if (_currentMatch != null && _isolateStarted) {
-      _setWebAyah(_currentMatch!.verse, forceClear: true);
+      _setIsolateAyah(_currentMatch!.verse, forceClear: true);
     }
 
     _engine.resetBuffer();
@@ -463,7 +452,7 @@ class WebHighlightingController extends ChangeNotifier {
   void unloadEngine() {
     _state = TrackerState.discovery;
     _engine.destroy();
-    _aligner.stop();
+    _alignmentIsolate.stop();
     notifyListeners();
   }
 
@@ -476,14 +465,18 @@ class WebHighlightingController extends ChangeNotifier {
     _state = TrackerState.tracking;
     _currentMatch = VerseMatch(verse: verse, score: 1.0);
     activeAyah.value = verse.ayah;
+    _lastProcessedText = '';
 
     if (_isolateStarted) {
-      _setWebAyah(verse);
+      _setIsolateAyah(verse, forceClear: false);
+      _lookaheadWordsConsumed = 0;
     }
 
-    // We intentionally DO NOT reset the ASR engine here.
-    // This allows seamless continuous recitation across ayahs without boundary clipping.
     notifyListeners();
+  }
+
+  void flushAndResetForNextAyah() {
+    _lookaheadWordsConsumed = 0;
   }
 
   // ── Internal ──────────────────────────────────────────────────────────────
@@ -492,105 +485,106 @@ class WebHighlightingController extends ChangeNotifier {
     if (_state == TrackerState.discovery) return;
     if (_currentMatch == null) return;
 
-    if (result.startTime < _lastResetTime) {
+    if (result.startTime < _lastResetTime ||
+        result.streamEpoch != _engine.currentStreamEpoch) {
       return;
     }
 
     List<double> charDurations = [];
+    List<double> charYsProbs = [];
     StringBuffer asrTextBuffer = StringBuffer();
 
-    if (result.tokens.isEmpty && result.text.isNotEmpty) {
-      String cleanText = result.text.replaceAll(' ', '');
-      asrTextBuffer.write(cleanText);
-    } else {
-      const double lookaheadDelay = 0.320;
-      List<Map<String, dynamic>> rawStarts = [];
+    const double lookaheadDelay = 0.320;
+    List<Map<String, dynamic>> rawStarts = [];
+    double lastBlankTs = -1.0;
 
-      for (
-        int i = 0;
-        i < min(result.tokens.length, result.timestamps.length);
-        i++
-      ) {
-        String tok = result.tokens[i].replaceAll(' ', '');
-        if (tok.isEmpty ||
-            tok == '<blank>' ||
-            tok == '<blk>' ||
-            tok == '<eps>' ||
-            tok == 'eps') {
+    for (
+      int i = 0;
+      i < min(result.tokens.length, result.timestamps.length);
+      i++
+    ) {
+      String tok = result.tokens[i].replaceAll(' ', '');
+      double realTs = max(0.0, result.timestamps[i] - lookaheadDelay);
+
+      if (tok.isEmpty ||
+          tok == '<blank>' ||
+          tok == '<blk>' ||
+          tok == '<eps>' ||
+          tok == 'eps') {
+        lastBlankTs = realTs;
+        continue;
+      }
+      
+      double prob = 0.0;
+      if (result.ysProbs.length > i) {
+        prob = result.ysProbs[i];
+        if (prob < -2.0) {
           continue;
         }
-        double realTs = max(0.0, result.timestamps[i] - lookaheadDelay);
-        rawStarts.add({'tok': tok, 'ts': realTs});
+      }
+      
+      rawStarts.add({'tok': tok, 'ts': realTs, 'lastBlankBefore': lastBlankTs, 'prob': prob});
+    }
+
+    for (int i = 0; i < rawStarts.length; i++) {
+      String token = rawStarts[i]['tok'] as String;
+      double spikeTime = rawStarts[i]['ts'] as double;
+      double lastBlankBefore = rawStarts[i]['lastBlankBefore'] as double;
+      double prob = rawStarts[i]['prob'] as double;
+
+      double prevSpikeTime = (i == 0)
+          ? max(0.0, spikeTime - 0.15)
+          : rawStarts[i - 1]['ts'] as double;
+          
+      if (lastBlankBefore > prevSpikeTime) {
+        prevSpikeTime = lastBlankBefore;
       }
 
-      for (int i = 0; i < rawStarts.length; i++) {
-        String token = rawStarts[i]['tok'] as String;
-        double spikeTime = rawStarts[i]['ts'] as double;
+      double rawGap = max(0.04, spikeTime - prevSpikeTime);
 
-        // 1. Calculate raw gap from previous token's spike time (excluding <blank> transition gaps)
-        double prevSpikeTime = (i == 0)
-            ? max(0.0, spikeTime - 0.15)
-            : rawStarts[i - 1]['ts'] as double;
-        double rawGap = max(0.04, spikeTime - prevSpikeTime);
+      bool isMaddCarrier =
+          token.contains('ا') ||
+          token.contains('و') ||
+          token.contains('ي') ||
+          token.contains('ۥ') ||
+          token.contains('ۦ');
+      bool isDoubledOrNasal =
+          (token.length >= 2 && token[0] == token[1]) ||
+          token.contains('ن') ||
+          token.contains('م') ||
+          token.contains('ں') ||
+          token.contains('۾');
 
-        // 2. Classify token type based on tokens.txt structure to set acoustic ceiling
-        bool isMaddCarrier =
-            token.contains('ا') ||
-            token.contains('و') ||
-            token.contains('ي') ||
-            token.contains('ۥ') ||
-            token.contains('ۦ');
-        bool isDoubledOrNasal =
-            (token.length >= 2 && token[0] == token[1]) ||
-            token.contains('ن') ||
-            token.contains('م') ||
-            token.contains('ں') ||
-            token.contains('۾');
+      double maxAllowedDur;
+      if (isMaddCarrier) {
+        maxAllowedDur = max(0.35, token.length * 1.50);
+      } else if (isDoubledOrNasal) {
+        maxAllowedDur = max(0.40, token.length * 0.40);
+      } else {
+        maxAllowedDur = 0.40; 
+      }
 
-        // 3. Clamp maximum allowed duration to prevent <blank> transition silence from bloating tokens
-        double maxAllowedDur;
-        if (isMaddCarrier) {
-          maxAllowedDur = max(
-            0.35,
-            token.length * 1.50,
-          ); // Elongated vowels expand up to rawGap
-        } else if (isDoubledOrNasal) {
-          maxAllowedDur = max(
-            0.20,
-            min(0.38, token.length * 0.15),
-          ); // Shaddah / Ghunnah ceiling
-        } else {
-          maxAllowedDur = max(
-            0.06,
-            min(0.14, token.length * 0.07),
-          ); // Short consonants max out at ~140ms
-        }
+      double tokenDur = max(0.04, min(rawGap, maxAllowedDur));
 
-        double tokenDur = max(0.04, min(rawGap, maxAllowedDur));
+      double totalWeight = 0.0;
+      List<double> charWeights = [];
+      for (int j = 0; j < token.length; j++) {
+        String ch = token[j];
+        double w = QuranNormalizer.isResidual(ch) ? 0.0 : 1.0;
+        charWeights.add(w);
+        totalWeight += w;
+      }
+      
+      if (totalWeight == 0.0) {
+        for (int j = 0; j < token.length; j++) charWeights[j] = 1.0;
+        totalWeight = token.length.toDouble();
+      }
 
-        // 4. Distribute token duration across characters using Phonetic Weighting
-        double totalWeight = 0.0;
-        List<double> charWeights = [];
-        for (int j = 0; j < token.length; j++) {
-          String ch = token[j];
-          double w = 1.0;
-          if (ch == 'ا' || ch == 'و' || ch == 'ي' || ch == 'ۥ' || ch == 'ۦ') {
-            w = 4.0; // Madd letters hold sound much longer
-          } else if (ch == 'ن' || ch == 'م' || ch == 'ں' || ch == '۾') {
-            w = 2.5; // Nasals hold resonance longer
-          } else {
-            w = 1.0; // Consonants and diacritics are quick bursts
-          }
-          charWeights.add(w);
-          totalWeight += w;
-        }
-
-        for (int j = 0; j < token.length; j++) {
-          asrTextBuffer.write(token[j]);
-          // The duration is distributed proportionally based on the character's phonetic weight.
-          double charDur = tokenDur * (charWeights[j] / totalWeight);
-          charDurations.add(charDur);
-        }
+      for (int j = 0; j < token.length; j++) {
+        asrTextBuffer.write(token[j]);
+        double charDur = tokenDur * (charWeights[j] / totalWeight);
+        charDurations.add(charDur);
+        charYsProbs.add(prob);
       }
     }
 
@@ -605,19 +599,14 @@ class WebHighlightingController extends ChangeNotifier {
 
     if (asrText.isEmpty) {
       _lastProcessedText = '';
-      if (result.isFinal) {
-        _expectingNewSegment = true;
-      }
       return;
     }
 
+    bool isNewSegment = false;
     if (_expectingNewSegment) {
-      _lastProcessedText = '';
+      isNewSegment = true;
       _expectingNewSegment = false;
-    }
-
-    // Detect if the ASR engine started a completely new segment (e.g. after final=true)
-    if (!asrText.startsWith(_lastProcessedText)) {
+    } else if (!asrText.startsWith(_lastProcessedText)) {
       int commonLen = 0;
       int minLen = min(_lastProcessedText.length, asrText.length);
       for (int i = 0; i < minLen; i++) {
@@ -628,53 +617,23 @@ class WebHighlightingController extends ChangeNotifier {
         }
       }
 
-      // If it shares almost nothing with the old text, it's a new segment, not a tail correction.
       if (commonLen == 0 || (commonLen < 5 && _lastProcessedText.length > 20)) {
-        _lastProcessedText = '';
+        isNewSegment = true;
       }
     }
 
-    String newText = asrText;
-    List<double> newTimestamps = charDurations;
-    if (newText.startsWith(_lastProcessedText)) {
-      newText = newText.substring(_lastProcessedText.length);
-      if (charDurations.length >= _lastProcessedText.length) {
-        newTimestamps = charDurations.sublist(_lastProcessedText.length);
-      } else {
-        newTimestamps = [];
-      }
-      if (newText.isNotEmpty && _isolateStarted) {
-        _aligner.feed(newText, newTimestamps);
-      }
-    } else {
-      // The ASR rewrote the past (corrected itself).
-      // Find the longest common prefix to know where the rewrite started.
-      int commonLen = 0;
-      int minLen = min(_lastProcessedText.length, asrText.length);
-      for (int i = 0; i < minLen; i++) {
-        if (_lastProcessedText[i] == asrText[i]) {
-          commonLen++;
-        } else {
-          break;
-        }
-      }
-
-      int backtrackChars = _lastProcessedText.length - commonLen;
-      String newTail = asrText.substring(commonLen);
-      List<double> newTailTimestamps = [];
-      if (charDurations.length >= commonLen) {
-        newTailTimestamps = charDurations.sublist(commonLen);
-      }
-
-      if (_isolateStarted) {
-        _aligner.replaceTail(backtrackChars, newTail, newTailTimestamps);
-      }
+    if (asrText.isNotEmpty && _isolateStarted) {
+      _alignmentIsolate.syncStream(
+        asrText,
+        charDurations,
+        charYsProbs,
+        isNewSegment,
+        _currentMatch?.verse.ayah ?? 0,
+      );
     }
 
     _lastProcessedText = asrText;
-
-    if (result.isFinal) {
-      _expectingNewSegment = true;
-    }
   }
 }
+
+typedef WebHighlightingController = HighlightingController;

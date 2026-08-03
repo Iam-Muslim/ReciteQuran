@@ -41,6 +41,7 @@
 //    - Identity: Single consonant (Length 1). No duration checking required.
 // ═══════════════════════════════════════════════════════════════════════════════
 import 'tajweed_rules.dart';
+import '../../utils/debug_logger.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 1: DATA MODELS & ENUMS
@@ -334,7 +335,7 @@ class ErrorExplainer {
         String ruleInfo = e.expectedRule != null
             ? ' | Rule: ${e.expectedRule!.name.en}'
             : '';
-        print(
+        DebugLogger.log('Error',
           '🚨 [ERROR LOG] Word "$wordStr" ($wIdx) | ${e.errorType.name.toUpperCase()} -> ${e.speechErrorType.name.toUpperCase()} (Exp: "${e.expectedPh}" vs Got: "${e.predictedPh}")$ruleInfo',
         );
       }
@@ -528,7 +529,7 @@ class ErrorExplainer {
       for (int i = 0; i < globalRefChunks.length; i++) {
         if (refChunkToWordMap[i] == wordIdx) wordStr += globalRefChunks[i];
       }
-      print('⏱️ [TAJWEED] Word "$wordStr" ($wordIdx) | $timingLog');
+      DebugLogger.log('Tajweed', '⏱️ [TAJWEED] Word "$wordStr" ($wordIdx) | $timingLog');
       timingChecksDesc.add(timingLog);
       if (!hasValidDuration) {
         String durDesc = durStatus == TajweedDurationStatus.defect
