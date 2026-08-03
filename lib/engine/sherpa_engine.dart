@@ -97,19 +97,20 @@ class SherpaEngine {
     DebugLogger.logSimple('SherpaDart', 'WASM Memory loaded. Loading models from Flutter assets...');
 
     try {
+        const String modelFileName = 'zipformer_p_arabic_v2.int8.onnx';
         JSUint8Array modelBytes;
         final host = Uri.base.host;
         final String modelUrl;
         if (host != 'localhost' && host != '127.0.0.1' && host.isNotEmpty) {
             DebugLogger.logSimple('SherpaDart', 'Production detected on $host. Fetching ONNX model...');
-            modelUrl = '/download-model';
+            modelUrl = '/download-model?model=$modelFileName';
         } else {
             DebugLogger.logSimple('SherpaDart', 'Local environment detected. Fetching ONNX model...');
-            modelUrl = 'https://github.com/Iam-Muslim/ReciteQuran/releases/download/v1.1.0/zipformer_p_arabic_v2.int8.onnx';
+            modelUrl = 'https://github.com/Iam-Muslim/ReciteQuran/releases/download/v1.1.0/$modelFileName';
         }
         modelBytes = await _fetchSherpaModel(modelUrl.toJS).toDart as JSUint8Array;
         
-        _writeSherpaAssetToVFS('zipformer_p_arabic_v2.int8.onnx'.toJS, modelBytes);
+        _writeSherpaAssetToVFS(modelFileName.toJS, modelBytes);
         DebugLogger.logSimple('SherpaDart', 'Model written to VFS.');
 
         ByteData tokensData = await rootBundle.load('assets/model/tokens.txt');

@@ -4,5 +4,6 @@ export async function onRequest(context) {
     const response = new Response(githubResponse.body, githubResponse);
     response.headers.set('Access-Control-Allow-Origin', '*');
     response.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     return response;
 }

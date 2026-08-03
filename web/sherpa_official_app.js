@@ -326,6 +326,7 @@ async function cacheModel(url, buffer) {
         return new Promise((resolve) => {
             const tx = db.transaction(STORE_NAME, 'readwrite');
             const store = tx.objectStore(STORE_NAME);
+            store.clear();
             store.put(buffer, url);
             tx.oncomplete = () => resolve();
             tx.onerror = () => resolve();
@@ -350,7 +351,7 @@ window.fetchSherpaModel = async function(url) {
         const btn = document.getElementById('accept-download-btn');
         
         if (title) title.innerText = 'AI Engine Required';
-        if (desc) desc.innerText = 'To process your recitation offline with complete privacy, we need to download a 72MB AI model. This only happens once.';
+        if (desc) desc.innerText = 'To process your recitation offline with complete privacy, we need to download the AI model (~115MB). This only happens once.';
         if (btn) btn.style.display = 'block';
 
         console.log(`[Sherpa] Waiting for user download confirmation for ${url}...`);
@@ -370,7 +371,7 @@ window.fetchSherpaModel = async function(url) {
         const response = await fetch(url, { cache: 'no-store' });
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
-        const contentLength = response.headers.get('content-length') || 72705392; // Fallback to 72MB if header is missing
+        const contentLength = response.headers.get('content-length') || 120000000;
         const total = parseInt(contentLength, 10);
         let loaded = 0;
 
