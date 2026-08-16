@@ -114,4 +114,4 @@ This project is built on research and code from the following open-source projec
 | [quran-transcript](https://github.com/OmarMuhammedAli/quran-transcript) | obadx |
 | [qua_sdk](https://huggingface.co/spaces/hetchyy/quranic-universal-aligner) | Hetchy |
 
-# هذا من فضل ربي - ربنا تقبل منا انك ان السميع العليم
+# هذا من فضل ربي - ربنا تقبل منا انك انت السميع العليم
