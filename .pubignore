@@ -1,0 +1,7 @@
+.idea/
+.vscode/
+.github/
+example/build/
+example/.dart_tool/
+assets/model/*.onnx
+assets/model/*.tmp

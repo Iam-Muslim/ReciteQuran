@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="استمع وتتبع تلاوة القرآن الكريم بالذكاء الاصطناعي على جهازك بدون إنترنت.">
+  <meta name="theme-color" content="#059669">
+
+  <!-- iOS Safari meta tags & icons -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="اتلو القران">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon-precomposed" href="apple-touch-icon-precomposed.png">
+  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="icons/Icon-192.png">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Recite Quran - اتلو القران">
+  <meta property="og:description" content="استمع وتتبع تلاوة القرآن الكريم بالذكاء الاصطناعي على جهازك بدون إنترنت.">
+  <meta property="og:image" content="icons/Icon-512.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon.png"/>
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/Icon-192.png"/>
+
+  <title>Recite Quran - اتلو القران</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    /* Modern Splash Screen Styles */
+    #splash-overlay {
+      position: fixed;
+      inset: 0;
+      background: #fdfaf6; /* Matches React landing page */
+      z-index: 99999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Arabic", sans-serif;
+      transition: opacity 0.5s ease;
+    }
+    .splash-card {
+      background: white;
+      padding: 2.25rem 2rem;
+      border-radius: 1.5rem;
+      box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.08), 0 8px 10px -6px rgb(0 0 0 / 0.04);
+      max-width: 25rem;
+      width: 90%;
+      text-align: center;
+      border: 1px solid #f3f4f6;
+    }
+    .splash-icon {
+      width: 60px;
+      height: 60px;
+      margin: 0 auto 1.25rem auto;
+    }
+    .splash-title-ar {
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: #171717;
+      margin-bottom: 0.15rem;
+      direction: rtl;
+    }
+    .splash-title-en {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #6b7280;
+      margin-bottom: 0.85rem;
+    }
+    .splash-desc-ar {
+      font-size: 0.9rem;
+      color: #374151;
+      margin-bottom: 0.4rem;
+      line-height: 1.6;
+      direction: rtl;
+    }
+    .splash-desc-en {
+      font-size: 0.8rem;
+      color: #6b7280;
+      margin-bottom: 1.5rem;
+      line-height: 1.5;
+    }
+    .desc-divider {
+      height: 1px;
+      background: #f3f4f6;
+      margin: 0.6rem auto;
+      width: 50%;
+    }
+    .splash-btn {
+      background: #059669; /* Emerald 600 */
+      color: white;
+      border: none;
+      padding: 0.875rem 1.5rem;
+      border-radius: 9999px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      width: 100%;
+      transition: all 0.2s;
+      box-shadow: 0 4px 6px -1px rgb(5 150 105 / 0.2);
+    }
+    .splash-btn:hover { background: #047857; transform: scale(1.02); }
+    
+    /* Progress Bar */
+    #progress-container {
+      display: none;
+      width: 100%;
+    }
+    .progress-bar-bg {
+      width: 100%;
+      height: 0.75rem;
+      background: #ecfdf5;
+      border-radius: 9999px;
+      overflow: hidden;
+      margin-bottom: 0.75rem;
+    }
+    #progress-bar-fill {
+      height: 100%;
+      background: #059669;
+      width: 0%;
+      transition: width 0.1s linear;
+    }
+    #progress-text {
+      font-size: 0.85rem;
+      color: #059669;
+      font-weight: 700;
+    }
+
+    /* PWA Install Banner */
+    .pwa-banner {
+      position: fixed;
+      bottom: 1.25rem;
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(100% - 2rem);
+      max-width: 28rem;
+      background: rgba(255, 255, 255, 0.98);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid #e5e7eb;
+      border-radius: 1.25rem;
+      box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.12), 0 8px 10px -6px rgb(0 0 0 / 0.08);
+      padding: 0.875rem 1.15rem;
+      z-index: 2147483647;
+      pointer-events: auto;
+      animation: pwaSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes pwaSlideUp {
+      from { transform: translate(-50%, 100%); opacity: 0; }
+      to { transform: translate(-50%, 0); opacity: 1; }
+    }
+    .pwa-banner-content {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .pwa-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 0.65rem;
+      flex-shrink: 0;
+    }
+    .pwa-text {
+      flex: 1;
+      text-align: right;
+      direction: rtl;
+    }
+    .pwa-title-ar {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 0.1rem;
+    }
+    .pwa-subtitle {
+      font-size: 0.75rem;
+      color: #4b5563;
+      line-height: 1.3;
+    }
+    .pwa-subtitle-en {
+      font-size: 0.675rem;
+      color: #9ca3af;
+      direction: ltr;
+      text-align: left;
+      margin-top: 0.1rem;
+    }
+    .pwa-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      flex-shrink: 0;
+    }
+    .pwa-btn {
+      background: #059669;
+      color: white;
+      border: none;
+      padding: 0.5rem 0.875rem;
+      border-radius: 9999px;
+      font-weight: 700;
+      font-size: 0.8rem;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .pwa-btn:hover {
+      background: #047857;
+    }
+    .pwa-close-btn {
+      background: transparent;
+      border: none;
+      color: #9ca3af;
+      font-size: 1.1rem;
+      cursor: pointer;
+      padding: 0.25rem;
+      line-height: 1;
+    }
+    .pwa-close-btn:hover {
+      color: #374151;
+    }
+  </style>
+</head>
+<body>
+  <div id="splash-overlay">
+    <div class="splash-card">
+      <img src="icons/Icon-192.png" alt="Recite Quran" class="splash-icon" onerror="this.onerror=null; this.src='/app_icon.png';" />
+      
+      <div id="prompt-section">
+        <h2 class="splash-title-ar">جارٍ التحميل...</h2>
+        <div class="splash-title-en">Loading...</div>
+        <p class="splash-desc-ar">يرجى الانتظار بينما يتم تجهيز التطبيق...</p>
+        <div class="desc-divider"></div>
+        <p class="splash-desc-en">Please wait while the app prepares...</p>
+        <button id="accept-download-btn" class="splash-btn" style="display: none;">موافق • Accept</button>
+      </div>
+
+      <div id="progress-container">
+        <h2 class="splash-title-ar">جارٍ التحميل...</h2>
+        <div class="splash-title-en">Loading...</div>
+        <p class="splash-desc-ar" style="margin-bottom: 0.25rem;">يرجى عدم إغلاق هذه الصفحة.</p>
+        <p class="splash-desc-en" style="margin-bottom: 1rem;">Please do not close this tab.</p>
+        <div class="progress-bar-bg">
+          <div id="progress-bar-fill"></div>
+        </div>
+        <div id="progress-text">0%</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PWA Install Banner (Android / Chrome / Desktop) -->
+  <div id="pwa-install-banner" class="pwa-banner" style="display: none;">
+    <div class="pwa-banner-content">
+      <img src="icons/Icon-192.png" alt="App Icon" class="pwa-icon" onerror="this.onerror=null; this.src='/app_icon.png';" />
+      <div class="pwa-text">
+        <div class="pwa-title-ar">أضف التطبيق للشاشة الرئيسية</div>
+        <div class="pwa-subtitle">للاستخدام السريع وبدون إنترنت في أي وقت</div>
+        <div class="pwa-subtitle-en">Add to Home Screen for quick offline access</div>
+      </div>
+      <div class="pwa-actions">
+        <button id="pwa-install-btn" class="pwa-btn">إضافة • Add</button>
+        <button id="pwa-close-btn" class="pwa-close-btn" aria-label="Close">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PWA iOS Safari Install Banner -->
+  <div id="pwa-ios-banner" class="pwa-banner" style="display: none;">
+    <div class="pwa-banner-content">
+      <img src="icons/Icon-192.png" alt="App Icon" class="pwa-icon" onerror="this.onerror=null; this.src='/app_icon.png';" />
+      <div class="pwa-text">
+        <div class="pwa-title-ar">أضف التطبيق للشاشة الرئيسية</div>
+        <div class="pwa-subtitle">
+          اضغط على زر المشاركة 
+          <svg viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width: 1.15em; height: 1.15em; vertical-align: -0.22em; display: inline-block;">
+            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+            <polyline points="16 6 12 2 8 6"></polyline>
+            <line x1="12" y1="2" x2="12" y2="15"></line>
+          </svg>
+          ثم اختر <strong>"إضافة إلى الصفحة الرئيسية"</strong>
+          <svg viewBox="0 0 24 24" fill="none" stroke="#111827" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width: 1.05em; height: 1.05em; vertical-align: -0.18em; display: inline-block;">
+            <rect x="3" y="3" width="18" height="18" rx="4" ry="4"></rect>
+            <line x1="12" y1="8" x2="12" y2="16"></line>
+            <line x1="8" y1="12" x2="16" y2="12"></line>
+          </svg>
+        </div>
+        <div class="pwa-subtitle-en">
+          Tap Share 
+          <svg viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width: 1.05em; height: 1.05em; vertical-align: -0.2em; display: inline-block;">
+            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+            <polyline points="16 6 12 2 8 6"></polyline>
+            <line x1="12" y1="2" x2="12" y2="15"></line>
+          </svg>
+          below, then select <strong>"Add to Home Screen"</strong>
+          <svg viewBox="0 0 24 24" fill="none" stroke="#111827" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width: 0.95em; height: 0.95em; vertical-align: -0.15em; display: inline-block;">
+            <rect x="3" y="3" width="18" height="18" rx="4" ry="4"></rect>
+            <line x1="12" y1="8" x2="12" y2="16"></line>
+            <line x1="8" y1="12" x2="16" y2="12"></line>
+          </svg>
+        </div>
+      </div>
+      <div class="pwa-actions">
+        <button id="pwa-ios-close-btn" class="pwa-close-btn" aria-label="Close">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="pwa_install.js"></script>
+  <script src="sherpa-onnx-asr.js?v=6"></script>
+  <script src="sherpa_official_app.js?v=6"></script>
+  <script src="sherpa-onnx-wasm-main-asr.js?v=6"></script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

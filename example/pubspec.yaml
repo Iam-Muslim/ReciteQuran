@@ -1,0 +1,42 @@
+name: recite_quran_example
+description: "Interactive demo and sample app for the recite_quran package"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  recite_quran:
+    path: ../
+  audio_session: ^0.2.4
+  flutter_displaymode: ^0.7.0
+  in_app_update: ^5.0.0
+  path_provider: ^2.1.5
+  permission_handler: ^13.0.1
+  record: ^7.1.1
+  share_plus: ^13.1.0
+  shared_preferences: ^2.2.0
+  sherpa_onnx: ^1.13.5
+  super_sliver_list: ^0.4.1
+  wakelock_plus: ^1.6.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/fonts/HafsSmart_08.ttf
+    - assets/icon/app_icon.png
+
+  fonts:
+    - family: HafsSmart
+      fonts:
+        - asset: assets/fonts/HafsSmart_08.ttf
