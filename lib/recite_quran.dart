@@ -5,20 +5,20 @@ import 'package:flutter/foundation.dart';
 
 import 'data/quran_data.dart';
 import 'engine/sherpa_engine.dart';
-import 'data/model_loader.dart';
 import 'tracking/word/highlighting_controller.dart';
 
 export 'audio/audio_processor.dart';
-export 'data/model_loader.dart';
 export 'data/quran_data.dart';
 export 'engine/sherpa_engine.dart' show SherpaEngine, TranscriptionResult;
 export 'tracking/ayah_search/voice_search_controller.dart';
-export 'tracking/tajweed/error_explainer.dart' show ErrorCategory, SpeechErrorType, ReciterError;
+export 'tracking/tajweed/error_explainer.dart'
+    show ErrorCategory, SpeechErrorType, ReciterError;
 export 'tracking/tajweed/tajweed_rules.dart' show TajweedDurationStatus;
 export 'tracking/tracker_config.dart';
 export 'tracking/word/dictation_matcher.dart' show WordMatchResult;
 export 'tracking/word/highlighting_controller.dart';
-export 'tracking/word/phoneme_alignment_isolate.dart' show WordMatchedEvent, DebugLogEvent;
+export 'tracking/word/phoneme_alignment_isolate.dart'
+    show WordMatchedEvent, DebugLogEvent;
 export 'utils/debug_logger.dart';
 
 /// Type alias for QuranRepository.
@@ -42,6 +42,7 @@ class ReciteQuran {
   TrackerConfig _config;
   bool _isTajweed;
   bool _isInitialized = false;
+  bool _isDisposed = false;
   int _targetSurah = 0;
 
   StreamSubscription? _engineSub;
@@ -52,7 +53,7 @@ class ReciteQuran {
   final StreamController<String> _transcriptController =
       StreamController<String>.broadcast();
 
-  // ── Public Streams ──
+  // ── Public Streams & State ──
 
   /// Stream of matched word events (Green matches, Red errors, Neutral skips).
   Stream<WordMatchedEvent> get onWordMatched => _wordEventController.stream;
@@ -72,6 +73,9 @@ class ReciteQuran {
   /// Whether the engine and background isolate have been initialized.
   bool get isInitialized => _isInitialized;
 
+  /// Whether the instance has been disposed.
+  bool get isDisposed => _isDisposed;
+
   ReciteQuran({
     required this.repository,
     SherpaEngine? engine,
@@ -85,34 +89,22 @@ class ReciteQuran {
 
   // ── 1. Initialization ──
 
-  /// Initializes the ASR engine, acoustic models, and background isolate pipeline.
-  ///
-  /// If the ONNX model is not present, it will automatically download or extract it.
-  Future<void> initialize({
-    String? onnxModelPath,
-    String? bundledAssetPath,
-    String downloadUrl = ModelLoader.defaultRemoteModelUrl,
-    void Function(double progress)? onDownloadProgress,
-  }) async {
+  /// Initializes the on-device ASR engine and background phoneme alignment isolate.
+  Future<void> initialize() async {
+    if (_isDisposed) {
+      throw StateError('Cannot initialize a disposed ReciteQuran instance.');
+    }
     if (_isInitialized) return;
 
-    // 1. Resolve ONNX Model Path
-    await ModelLoader.prepareModelPath(
-      customFilePath: onnxModelPath,
-      bundledAssetPath: bundledAssetPath,
-      downloadUrl: downloadUrl,
-      onDownloadProgress: onDownloadProgress,
-    );
-
-    // 2. Initialize Sherpa Engine
+    // 1. Initialize Sherpa Engine
     await _engine.initialize();
 
-    // 3. Start Background Alignment Isolate
+    // 2. Start Background Alignment Isolate
     await _isolate.start();
     _isolate.updateConfig(_config);
     _isolate.setTajweedMode(_isTajweed);
 
-    // 4. Subscribe to Streams
+    // 3. Subscribe to Streams
     _wordSub = _isolate.wordStream.listen(_wordEventController.add);
     _engineSub = _engine.transcriptionStream.listen(_onTranscriptionResult);
 
@@ -127,12 +119,14 @@ class ReciteQuran {
     int startGlobalWord = 0,
     bool forceClear = true,
   }) {
+    if (_isDisposed) return;
     _targetSurah = surahNumber;
     final words = repository.getSurahWords(surahNumber);
     if (words.isEmpty) return;
 
     final List<String> phonemeWords = words.map((w) => w.phoneme).toList();
-    final List<List<WordTajweedRule>> wordRules = words.map((w) => w.rules).toList();
+    final List<List<WordTajweedRule>> wordRules =
+        words.map((w) => w.rules).toList();
     final List<int> boundaries = _calculateBoundaries(phonemeWords);
     final String fullPhonemes = phonemeWords.join('');
 
@@ -149,6 +143,7 @@ class ReciteQuran {
 
   /// Jumps the tracking cursor to a specific word index.
   void jumpToWord(int globalWordIndex) {
+    if (_isDisposed) return;
     _isolate.jumpToWord(globalWordIndex);
   }
 
@@ -156,22 +151,26 @@ class ReciteQuran {
 
   /// Feeds a normalized float audio chunk [-1.0, 1.0] (16 kHz mono) into the ASR recognizer.
   bool feedAudioChunk(Float32List chunk, {bool isFinal = false}) {
+    if (_isDisposed) return false;
     return _engine.transcribe(chunk, isFinal: isFinal);
   }
 
   /// Resets the internal recognition buffer.
   void resetBuffer() {
+    if (_isDisposed) return;
     _engine.resetBuffer();
   }
 
   /// Toggles Tajweed evaluation on/off.
   void setTajweedMode(bool active) {
+    if (_isDisposed) return;
     _isTajweed = active;
     _isolate.setTajweedMode(active);
   }
 
   /// Updates difficulty and math thresholds dynamically at runtime.
   void updateConfig(TrackerConfig newConfig) {
+    if (_isDisposed) return;
     _config = newConfig;
     _tokenProcessor.config = newConfig;
     _isolate.updateConfig(newConfig);
@@ -180,6 +179,7 @@ class ReciteQuran {
   // ── 4. Internal Message Pump ──
 
   void _onTranscriptionResult(TranscriptionResult result) {
+    if (_isDisposed) return;
     if (result.text.isNotEmpty) {
       _transcriptController.add(result.text);
     }
@@ -206,11 +206,23 @@ class ReciteQuran {
   // ── 5. Cleanup ──
 
   void dispose() {
+    if (_isDisposed) return;
+    _isDisposed = true;
+    _isInitialized = false;
+
     _engineSub?.cancel();
+    _engineSub = null;
     _wordSub?.cancel();
+    _wordSub = null;
+
     _engine.destroy();
     _isolate.stop();
-    _wordEventController.close();
-    _transcriptController.close();
+
+    if (!_wordEventController.isClosed) {
+      _wordEventController.close();
+    }
+    if (!_transcriptController.isClosed) {
+      _transcriptController.close();
+    }
   }
 }

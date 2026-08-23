@@ -66,11 +66,24 @@ class PhoneticSearch {
     if (_isLoaded) return;
 
     // Load reference phoneme string
-    _refPhNorm = await rootBundle.loadString('assets/model/ref_norm_ph.txt');
+    try {
+      _refPhNorm = await rootBundle.loadString(
+        'packages/recite_quran/assets/model/ref_norm_ph.txt',
+      );
+    } catch (_) {
+      _refPhNorm = await rootBundle.loadString('assets/model/ref_norm_ph.txt');
+    }
     _refPhNorm = _refPhNorm.trim();
 
     // Load NPY index file
-    ByteData npyData = await rootBundle.load('assets/model/ph_index.npy');
+    ByteData npyData;
+    try {
+      npyData = await rootBundle.load(
+        'packages/recite_quran/assets/model/ph_index.npy',
+      );
+    } catch (_) {
+      npyData = await rootBundle.load('assets/model/ph_index.npy');
+    }
 
     // An NPY file starts with a Magic string "\x93NUMPY"
     // Then 1 byte major version, 1 byte minor version.

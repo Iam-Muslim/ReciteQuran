@@ -229,9 +229,15 @@ class QuranMetadataService {
 
     String phonemeData = '{}';
     try {
-      phonemeData = await rootBundle.loadString(
-        'assets/model/ordered_quran_phonemes.json',
-      );
+      try {
+        phonemeData = await rootBundle.loadString(
+          'packages/recite_quran/assets/model/ordered_quran_phonemes.json',
+        );
+      } catch (_) {
+        phonemeData = await rootBundle.loadString(
+          'assets/model/ordered_quran_phonemes.json',
+        );
+      }
     } catch (e, stack) {
       // Re-throw so the Orchestrator can show an error instead of silently breaking the matching system
       print('CRITICAL ERROR loading quran phonemes: $e\n$stack');

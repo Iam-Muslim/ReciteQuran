@@ -77,7 +77,12 @@ class SherpaEngine {
     }
 
     // Load asset on the main thread where ServicesBinding is initialized
-    final ByteData data = await rootBundle.load(assetPath);
+    ByteData data;
+    try {
+      data = await rootBundle.load('packages/recite_quran/$assetPath');
+    } catch (_) {
+      data = await rootBundle.load(assetPath);
+    }
     final Uint8List bytes = data.buffer.asUint8List(
       data.offsetInBytes,
       data.lengthInBytes,

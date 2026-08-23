@@ -133,7 +133,14 @@ class SherpaEngine {
       _writeSherpaAssetToVFS(modelFileName.toJS, modelBytes);
       DebugLogger.logSimple('SherpaDart', 'Model written to VFS.');
 
-      ByteData tokensData = await rootBundle.load('assets/model/tokens.txt');
+      ByteData tokensData;
+      try {
+        tokensData = await rootBundle.load(
+          'packages/recite_quran/assets/model/tokens.txt',
+        );
+      } catch (_) {
+        tokensData = await rootBundle.load('assets/model/tokens.txt');
+      }
       _writeSherpaAssetToVFS(
         'quran_tokens.txt'.toJS,
         tokensData.buffer.asUint8List().toJS,
