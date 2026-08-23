@@ -1,4 +1,4 @@
-// bin/model_loader.dart
+// bin/download_model.dart
 import 'dart:async';
 import 'dart:io';
 
@@ -6,9 +6,9 @@ import 'dart:io';
 // MODEL ASSET MANUAL DOWNLOADER & PUBSPEC CONFIGURATOR (DEVELOPER CLI TOOL)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Manages manual downloading of the ONNX acoustic model into project assets
+/// Manages downloading of the ONNX acoustic model into project assets
 /// and automatic configuration of pubspec.yaml.
-class ModelLoader {
+class ModelDownloader {
   /// Default ONNX model filename.
   static const String defaultModelFileName = 'zipformer_p_arabic_v3.int8.onnx';
 
@@ -187,7 +187,7 @@ class ModelLoader {
   }
 }
 
-/// CLI Entry point for: `dart run recite_quran:model_loader`
+/// CLI Entry point for: `dart run recite_quran:download_model`
 void main(List<String> args) async {
-  await ModelLoader.downloadModelToAssets();
+  await ModelDownloader.downloadModelToAssets();
 }

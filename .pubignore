@@ -1,7 +1,19 @@
 .idea/
 .vscode/
 .github/
-example/build/
-example/.dart_tool/
+.dart_tool/
+build/
+bin/screenshots/
 assets/model/*.onnx
 assets/model/*.tmp
+
+# Example heavy files & binaries
+example/build/
+example/.dart_tool/
+example/assets/*.onnx
+example/assets/model/*.onnx
+example/assets/model/*.tmp
+example/web/*.wasm
+example/ios/Flutter/ephemeral/
+example/ios/**/xcuserdata/
+example/windows/flutter/ephemeral/

@@ -8,5 +8,5 @@
   - Shaddah consonant closure & timing verification.
 * Cross-platform support (Android, iOS, Windows, macOS, Linux, and Web).
 * Automated on-demand model downloader and caching via `ModelLoader`.
-* Developer CLI tool for pre-bundling models: `dart run recite_quran:download_model`.
+* Developer CLI tool for pre-bundling models: `dart run recite_quran:model_loader`.
 * Configurable difficulty matrix (`TrackerConfig.normal()`, `.easy()`, `.strict()`).

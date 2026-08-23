@@ -4,9 +4,7 @@
 
 # ReciteQuran — اتلو القران
 ### Real-Time On-Device Quran Karim Recitation Tracking & Tajweed Verification
-<p align="center">
-<img height="280" src="bin/screenshots/1-ar.png" alt="ReciteQuran Preview" /><img height="280" src="bin/screenshots/2-ar.png" alt="ReciteQuran Preview" /><img height="280" src="bin/screenshots/4-ar.png" alt="ReciteQuran Preview" />
-</p>
+
 
 
 [![pub package](https://img.shields.io/badge/pub.dev-recite__quran%20v1.0.0-blue.svg)](https://pub.dev/packages/recite_quran)
@@ -108,7 +106,7 @@ The neural acoustic model (`zipformer_p_arabic_v3.int8.onnx`, ~72MB) is hosted o
 Run this single setup command from your Flutter project root:
 
 ```bash
-dart run recite_quran:model_loader
+dart run recite_quran:download_model
 ```
 
 This command automatically:
@@ -429,7 +427,7 @@ The complete, production-ready sample application is located in the [`example/`]
 ```bash
 cd example
 flutter pub get
-dart run recite_quran:model_loader
+dart run recite_quran:download_model
 flutter run -d windows   # or -d android / -d chrome
 ```
 
@@ -439,7 +437,7 @@ flutter run -d windows   # or -d android / -d chrome
 
 ### 1. "Missing ONNX model on disk" error
 * **Cause:** The neural model has not been downloaded to your project assets.
-* **Fix:** Run `dart run recite_quran:model_loader` in your project root and ensure `assets/model/zipformer_p_arabic_v3.int8.onnx` is listed in your `pubspec.yaml`.
+* **Fix:** Run `dart run recite_quran:download_model` in your project root and ensure `assets/model/zipformer_p_arabic_v3.int8.onnx` is listed in your `pubspec.yaml`.
 
 ### 2. Microphone does not detect Arabic breathy sounds (like `هـ` or `ح`)
 * **Cause:** System-level aggressive noise cancellation or echo suppression is filtering speech.
