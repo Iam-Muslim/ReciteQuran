@@ -66,7 +66,7 @@ sealed class IsolateCommand {
             acousticConfusionCost: (map['acousticConfusionCost'] as num?)?.toDouble() ?? 0.25,
             standardInsertionCost: (map['standardInsertionCost'] as num?)?.toDouble() ?? 0.75,
             standardDeletionCost: (map['standardDeletionCost'] as num?)?.toDouble() ?? 1.0,
-            harakatDurationSeconds: (map['harakatDurationSeconds'] as num?)?.toDouble() ?? 0.250,
+            harakatDurationSeconds: (map['harakatDurationSeconds'] as num?)?.toDouble() ?? 0.200,
             maxTokenDurationAllowed: (map['maxTokenDurationAllowed'] as num?)?.toDouble() ?? 2.5,
             lookaheadDelay: (map['lookaheadDelay'] as num?)?.toDouble() ?? 0.320,
             hideExpectedAsrNoise: map['hideExpectedAsrNoise'] as bool? ?? true,

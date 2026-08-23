@@ -3,7 +3,11 @@
 # وما أَسأَلُكُم عَلَيهِ مِن أَجرٍ إِن أَجرِيَ إِلّا عَلىٰ رَبِّ العالَمينَ
 
 # ReciteQuran — اتلو القران
-### Real-Time On-Device Quran Recitation Tracking & Deterministic Tajweed Verification
+### Real-Time On-Device Quran Karim Recitation Tracking & Tajweed Verification
+<p align="center">
+<img height="280" src="bin/screenshots/1-ar.png" alt="ReciteQuran Preview" /><img height="280" src="bin/screenshots/2-ar.png" alt="ReciteQuran Preview" /><img height="280" src="bin/screenshots/4-ar.png" alt="ReciteQuran Preview" />
+</p>
+
 
 [![pub package](https://img.shields.io/badge/pub.dev-recite__quran%20v1.0.0-blue.svg)](https://pub.dev/packages/recite_quran)
 [![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Web-green.svg)](https://pub.dev/packages/recite_quran)
@@ -21,13 +25,17 @@
 - [Platform Prerequisites (Microphone Setup)](#-platform-prerequisites-microphone-setup)
 - [Installation & Model Setup](#-installation--model-setup)
 - [Quick Start Guide](#-quick-start-guide)
+- [🎨 UI Integration & Color Highlighting (Green / Yellow / Red)](#-ui-integration--color-highlighting-green--yellow--red)
+  - [Word State & Color Resolution](#word-state--color-resolution)
+  - [Building a Highlighting Mushaf Widget](#building-a-highlighting-mushaf-widget)
+  - [Tajweed Error BottomSheet / Dialog](#tajweed-error-bottomsheet--dialog)
 - [Core Features & Guides](#-core-features--guides)
   - [1. Real-Time Word Tracking](#1-real-time-word-tracking-green--red-matching)
   - [2. Deterministic Tajweed Verification](#2-deterministic-tajweed-verification)
   - [3. Voice Navigation & Ayah Search (6,236 Ayahs)](#3-voice-navigation--ayah-search-6236-ayahs)
   - [4. Difficulty Presets & Config Tuning](#4-difficulty-presets--config-tuning)
 - [Complete API Reference](#-complete-api-reference)
-- [Interactive Sample App](#-interactive-sample-app)
+- [📁 Example App Code Architecture](#-example-app-code-architecture)
 - [Troubleshooting & FAQ](#-troubleshooting--faq)
 - [Sacred Covenant & License (لوجه الله تعالى)](#-sacred-covenant--license-لوجه-الله-تعالى)
 - [Acknowledgments](#-acknowledgments)
@@ -75,37 +83,12 @@
       ▼                                  ▼
 ┌───────────────────────────┐      ┌───────────────────────────┐
 │ WordMatchedEvent (UI)     │      │ Tajweed Duration Checks   │
-│ Green / Red / Neutral     │      │ Madd, Ghunnah, Shaddah    │
+│ Green / Red / Yellow      │      │ Madd, Ghunnah, Shaddah    │
 └───────────────────────────┘      └───────────────────────────┘
 ```
 
 ---
 
-## 📱 Platform Prerequisites (Microphone Setup)
-
-### Android
-Add the microphone permission to `android/app/src/main/AndroidManifest.xml`:
-```xml
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.INTERNET" />
-</manifest>
-```
-
-### iOS / macOS
-Add the microphone usage description to `ios/Runner/Info.plist` and `macos/Runner/Info.plist`:
-```xml
-<key>NSMicrophoneUsageDescription</key>
-<string>This app requires microphone access to listen to your Quran recitation and track words in real time.</string>
-```
-
-For macOS, also enable audio input in `macos/Runner/DebugProfile.entitlements` and `Release.entitlements`:
-```xml
-<key>com.apple.security.device.audio-input</key>
-<true/>
-```
-
----
 
 ## 📦 Installation & Model Setup
 
@@ -168,15 +151,15 @@ void main() async {
   // 5. Listen to real-time word match events
   tracker.onWordMatched.listen((WordMatchedEvent event) {
     if (event.isRed) {
-      print('❌ Word #${event.wordId} skipped or mispronounced');
+      print(' Word #${event.wordId} skipped or mispronounced');
     } else {
-      print('✅ Matched Word #${event.wordId} (Score: ${(event.score * 100).toInt()}%)');
+      print(' Matched Word #${event.wordId} (Score: ${(event.score * 100).toInt()}%)');
       
       // Inspect Tajweed duration diagnostics (if any)
       if (event.tajweedErrors != null && event.tajweedErrors!.isNotEmpty) {
         for (final errorMap in event.tajweedErrors!) {
           final error = ReciterError.fromMap(errorMap);
-          print('⚠️ Tajweed rule: ${error.expectedRule?.name.ar} | Status: ${error.durationStatus}');
+          print(' Tajweed rule: ${error.expectedRule?.name.ar} | Status: ${error.durationStatus}');
         }
       }
     }
@@ -199,6 +182,128 @@ void main() async {
 
 ---
 
+## 🎨 UI Integration & Color Highlighting (Green / Yellow / Red)
+
+### Word State & Color Resolution
+When users recite, each word transitions through a clear 3-color state machine:
+
+| Color | Status | Condition in `WordMatchedEvent` | Meaning |
+| :--- | :---: | :--- | :--- |
+| 🟢 **Green** | **PASS** | `isRed == false && (tajweedErrors == null \|\| tajweedErrors.isEmpty)` | Pronounced correctly with valid Tajweed duration. |
+| 🟡 **Yellow** | **WARNING** | `isRed == false && tajweedErrors.isNotEmpty` | Correct word, but held Madd/Ghunnah too short (`defect`) or too long (`surplus`). |
+| 🔴 **Red** | **FAIL** | `isRed == true` | Word was skipped or mispronounced (omission / substitution). |
+| ⚪ **Default** | **UNSPOKEN** | Not yet emitted by stream | Upcoming unrecited Quran text. |
+
+---
+
+### Building a Highlighting Mushaf Widget
+
+Here is how to connect `onWordMatched` to a Flutter `StatefulWidget` using `RichText` and `TextSpan`:
+
+```dart
+class QuranAyahView extends StatefulWidget {
+  final List<ContinuousQuranWord> words;
+  final ReciteQuran tracker;
+
+  const QuranAyahView({super.key, required this.words, required this.tracker});
+
+  @override
+  State<QuranAyahView> createState() => _QuranAyahViewState();
+}
+
+class _QuranAyahViewState extends State<QuranAyahView> {
+  final Map<int, WordMatchedEvent> _matchedWords = {};
+
+  @override
+  void initState() {
+    super.initState();
+    widget.tracker.onWordMatched.listen((event) {
+      setState(() {
+        _matchedWords[event.wordId] = event;
+      });
+    });
+  }
+
+  Color _resolveColor(int wordIndex) {
+    final match = _matchedWords[wordIndex];
+    if (match == null) return Colors.black87; // Unspoken word
+    if (match.isRed) return Colors.red;        // 🔴 Skipped / Mispronounced
+    if (match.tajweedErrors != null && match.tajweedErrors!.isNotEmpty) {
+      return Colors.amber.shade700;           // 🟡 Tajweed Duration Warning
+    }
+    return Colors.green.shade600;              // 🟢 Perfect Match
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: RichText(
+        text: TextSpan(
+          children: widget.words.map((w) {
+            return TextSpan(
+              text: '${w.uthmani} ',
+              style: TextStyle(
+                fontFamily: 'HafsSmart',
+                fontSize: 26,
+                color: _resolveColor(w.globalIndex),
+              ),
+              recognizer: TapGestureRecognizer()
+                ..onTap = () {
+                  final match = _matchedWords[w.globalIndex];
+                  if (match != null && match.tajweedErrors != null && match.tajweedErrors!.isNotEmpty) {
+                    _showTajweedErrorDialog(context, match.tajweedErrors!);
+                  }
+                },
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+}
+```
+
+---
+
+### Tajweed Error BottomSheet / Dialog
+
+When a user taps a 🟡 **Yellow word**, display the exact Tajweed rule breakdown:
+
+```dart
+void _showTajweedErrorDialog(BuildContext context, List<Map<String, dynamic>> errors) {
+  showModalBottomSheet(
+    context: context,
+    builder: (context) {
+      return Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('تنبيه تجويد (Tajweed Notice)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            ...errors.map((errorMap) {
+              final error = ReciterError.fromMap(errorMap);
+              final String statusText = error.durationStatus == TajweedDurationStatus.defect
+                  ? 'نقص في المد / الغنة (Held too short)'
+                  : 'زيادة في المد / الغنة (Held too long)';
+              return ListTile(
+                leading: const Icon(Icons.warning_amber_rounded, color: Colors.amber),
+                title: Text(error.expectedRule?.name.ar ?? 'حكم تجويد'),
+                subtitle: Text('$statusText\nExpected: ${error.expectedDuration}s | Actual: ${error.actualDuration}s'),
+              );
+            }),
+          ],
+        ),
+      );
+    },
+  );
+}
+```
+
+---
+
 ## 🎯 Core Features & Guides
 
 ### 1. Real-Time Word Tracking (Green / Red Matching)
@@ -209,51 +314,23 @@ The tracking engine processes the user's recitation sequentially using semi-glob
 * **Anchor Advancement**: When a match occurs, the alignment window automatically advances to the next word.
 * **Partial Words**: If a user is currently pronouncing a long word, the engine holds state until the full word is articulated.
 
-```dart
-tracker.onWordMatched.listen((event) {
-  final int wordIndex = event.wordId;
-  final bool isError = event.isRed;
-  final double similarity = event.score; // 0.0 to 1.0
-  final String cleanAsr = event.cleanAsr;
-});
-```
-
 ---
 
 ### 2. Deterministic Tajweed Verification
 
 When `isTajweed: true` is enabled, each matched word evaluates acoustic duration timestamps against canonical Tajweed rules:
 
-```dart
-tracker.onWordMatched.listen((event) {
-  if (event.tajweedErrors != null) {
-    for (final map in event.tajweedErrors!) {
-      final ReciterError error = ReciterError.fromMap(map);
-      
-      print('Rule Name (Arabic): ${error.expectedRule?.name.ar}');
-      print('Rule Name (English): ${error.expectedRule?.name.en}');
-      print('Expected Duration: ${error.expectedDuration} seconds');
-      print('Actual Recited Duration: ${error.actualDuration} seconds');
-      print('Status: ${error.durationStatus}'); 
-      // TajweedDurationStatus.defect  (نقص - held too short)
-      // TajweedDurationStatus.surplus (زيادة - held too long)
-      // TajweedDurationStatus.valid   (صحيح)
-    }
-  }
-});
-```
-
 #### Covered Tajweed Rules:
-| Rule ID | Rule Name | Description | Target Harakat |
-| :--- | :--- | :--- | :--- |
-| **1** | Normal Madd (`المد الطبيعي`) | Natural 2-beat vowel elongation | 2 Harakat (0.50s) |
-| **2** | Monfasel Madd (`المد المنفصل`) | Separated elongation before Hamzah | 4 Harakat (1.00s) |
-| **3** | Mottasel Madd (`المد المتصل`) | Connected elongation with Hamzah | 4 Harakat (1.00s) |
-| **4** | Aared Lil-Sukoon (`المد العارض للسكون`) | Optional pause elongation | 4 Harakat (1.00s) |
-| **5** | Leen Madd (`مد اللين`) | Soft vowel pause elongation | 4 Harakat (1.00s) |
-| **6** | Lazem Madd (`المد اللازم`) | Compulsory 6-beat elongation | 6 Harakat (1.50s) |
-| **9** | Shaddah (`الشدة`) | Consonant closure & doubling hold | ~1.5 Harakat (0.375s) |
-| **10** | Mushaddad Ghunnah (`النون والميم المشددتان`) | Nasal resonance holding on `نّ` and `مّ` | 2 Harakat (0.50s) |
+| Rule ID | Rule Name | Description | Target Harakat | Normal Target (`0.20s`) |
+| :--- | :--- | :--- | :--- | :--- |
+| **1** | Normal Madd (`المد الطبيعي`) | Natural 2-beat vowel elongation | 2 Harakat | **0.40s** |
+| **2** | Monfasel Madd (`المد المنفصل`) | Separated elongation before Hamzah | 4 Harakat | **0.80s** |
+| **3** | Mottasel Madd (`المد المتصل`) | Connected elongation with Hamzah | 4 Harakat | **0.80s** |
+| **4** | Aared Lil-Sukoon (`المد العارض للسكون`) | Optional pause elongation | 4 Harakat | **0.80s** |
+| **5** | Leen Madd (`مد اللين`) | Soft vowel pause elongation | 4 Harakat | **0.80s** |
+| **6** | Lazem Madd (`المد اللازم`) | Compulsory 6-beat elongation | 6 Harakat | **1.20s** |
+| **9** | Shaddah (`الشدة`) | Consonant closure & doubling hold | ~1.5 Harakat | **0.30s** |
+| **10** | Mushaddad Ghunnah (`النون والميم المشددتان`) | Nasal resonance holding on `نّ` and `مّ` | 2 Harakat | **0.40s** |
 
 ---
 
@@ -284,16 +361,16 @@ tracker.onTranscript.listen((transcript) async {
 
 ### 4. Difficulty Presets & Config Tuning
 
-Adjust the dynamic alignment sensitivity at runtime:
+Adjust the dynamic alignment sensitivity and Harakat duration at runtime:
 
 ```dart
-// 1. Easy Mode (Recommended for children, beginners, or noisy environments):
+// 1. Easy Mode (0.150s / Harakah - For children, beginners, or noisy environments):
 tracker.updateConfig(TrackerConfig.easy());
 
-// 2. Normal Mode (Default balanced calibration):
+// 2. Normal Mode (0.200s / Harakah - Default balanced calibration):
 tracker.updateConfig(TrackerConfig.normal());
 
-// 3. Strict Mode (Recommended for certification / strict exams):
+// 3. Strict Mode (0.250s / Harakah - For certification / strict exams):
 tracker.updateConfig(TrackerConfig.strict());
 
 // 4. Custom Parameter Tuning:
@@ -302,7 +379,7 @@ tracker.updateConfig(
     defaultMaxPathCost: 0.30,        // DTW distance threshold (0.0 to 1.0)
     shortWordPathCost: 0.25,         // Stricter threshold for 1-3 letter words
     acousticConfusionCost: 0.25,     // Cost for phonetically similar Arabic sounds
-    harakatDurationSeconds: 0.250,   // Base beat speed in seconds (Tadweer calibration)
+    harakatDurationSeconds: 0.200,   // Base beat speed in seconds (200ms)
     maxSkipWords: 2,                 // Maximum words to lookahead on omission
   ),
 );
@@ -326,17 +403,28 @@ tracker.updateConfig(
 | `onTranscript` | `Stream<String>` emitting live phoneme transcriptions. |
 | `dispose()` | Gracefully releases all Isolates, audio controllers, and memory. |
 
-### `AudioProcessor`
-| Method | Description |
-| :--- | :--- |
-| `start({required Function(Float32List, bool) onChunk})` | Initializes microphone session (16 kHz, Mono, PCM) and streams audio. |
-| `stop()` | Stops recording and releases hardware microphone session. |
+### `WordMatchedEvent`
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `wordId` | `int` | Global 0-indexed word position within the active Surah. |
+| `score` | `double` | Acoustic match confidence score (`0.0` to `1.0`). |
+| `cleanAsr` | `String` | Matched phoneme substring produced by ASR. |
+| `isRed` | `bool` | `true` if the word was skipped or mispronounced. |
+| `isNeutral` | `bool` | `true` if the word was neutrally skipped. |
+| `tajweedErrors` | `List<Map<String, dynamic>>?` | Detailed Tajweed timing issues for this word. |
 
 ---
 
-## 📱 Interactive Sample App
+## 📁 Example App Code Architecture
 
-A complete, production-ready Flutter app demonstrating real-time highlighting, Tajweed error modal dialogs, audio waveforms, and auto-scrolling is located in the [`example/`](example/) directory.
+The complete, production-ready sample application is located in the [`example/`](example/) directory:
+
+| File in `example/` | What it demonstrates |
+| :--- | :--- |
+| [`example/lib/ui/tracking_screen.dart`](example/lib/ui/tracking_screen.dart) | Full screen layout with mic button, auto-scrolling, and Surah picker. |
+| [`example/lib/ui/widgets/helpers/verse_span_builder.dart`](example/lib/ui/widgets/helpers/verse_span_builder.dart) | High-performance `InlineSpan` builder with Green/Yellow/Red color resolution. |
+| [`example/lib/ui/widgets/dialogs/error_detail_dialog.dart`](example/lib/ui/widgets/dialogs/error_detail_dialog.dart) | Interactive Tajweed diagnostic bottom-sheet popup. |
+| [`example/lib/ui/widgets/mic_bar.dart`](example/lib/ui/widgets/mic_bar.dart) | Audio waveform visualizer and push-to-talk voice search. |
 
 ```bash
 cd example

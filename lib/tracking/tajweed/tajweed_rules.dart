@@ -15,8 +15,8 @@
 
 class TajweedTimingConfig {
   /// Base duration of a single Harakah (vowel beat unit) in seconds.
-  /// Standard Tadweer calibration is 0.25s (250ms).
-  static const double harakahBaseSeconds = 0.25;
+  /// Standard Tadweer calibration is 0.20s (200ms).
+  static const double harakahBaseSeconds = 0.20;
 
   /// ── 1. Shaddah (الشدة) Duration Threshold ──
   /// Required minimum acoustic holding time for doubled consonants (1.5 Harakat = 0.375s).
