@@ -1,7 +1,7 @@
 <div align="center">
 
 # وما أَسأَلُكُم عَلَيهِ مِن أَجرٍ إِن أَجرِيَ إِلّا عَلىٰ رَبِّ العالَمينَ
-
+الحمد لله
 # ReciteQuran — اتلو القران
 ### Real-Time On-Device Quran Karim Recitation Tracking & Tajweed Verification
 
@@ -23,7 +23,7 @@
 - [Platform Prerequisites (Microphone Setup)](#-platform-prerequisites-microphone-setup)
 - [Installation & Model Setup](#-installation--model-setup)
 - [Quick Start Guide](#-quick-start-guide)
-- [🎨 UI Integration & Color Highlighting (Green / Yellow / Red)](#-ui-integration--color-highlighting-green--yellow--red)
+- [ UI Integration & Color Highlighting (Green / Yellow / Red)](#-ui-integration--color-highlighting-green--yellow--red)
   - [Word State & Color Resolution](#word-state--color-resolution)
   - [Building a Highlighting Mushaf Widget](#building-a-highlighting-mushaf-widget)
   - [Tajweed Error BottomSheet / Dialog](#tajweed-error-bottomsheet--dialog)
@@ -33,7 +33,7 @@
   - [3. Voice Navigation & Ayah Search (6,236 Ayahs)](#3-voice-navigation--ayah-search-6236-ayahs)
   - [4. Difficulty Presets & Config Tuning](#4-difficulty-presets--config-tuning)
 - [Complete API Reference](#-complete-api-reference)
-- [📁 Example App Code Architecture](#-example-app-code-architecture)
+- [ Example App Code Architecture](#-example-app-code-architecture)
 - [Troubleshooting & FAQ](#-troubleshooting--faq)
 - [Sacred Covenant & License (لوجه الله تعالى)](#-sacred-covenant--license-لوجه-الله-تعالى)
 - [Acknowledgments](#-acknowledgments)
@@ -44,18 +44,18 @@
 
 **`recite_quran`** is a high-performance, real-time on-device speech-to-text alignment and Tajweed evaluation engine for Flutter.
 
-* 🎙️ **Continuous Word Tracking**: Zero-lag real-time word alignment powered by semi-global Dynamic Time Warping (DTW) and causal Zipformer CTC acoustic models.
-* 📏 **Deterministic Tajweed Rules**:
+*  **Continuous Word Tracking**: Zero-lag real-time word alignment powered by semi-global Dynamic Time Warping (DTW) and causal Zipformer CTC acoustic models.
+* **Deterministic Tajweed Rules**:
   * **Madd Rules (1–7)**: Validates elongation duration (2, 4, 6 Harakat) against acoustic timestamps.
   * **Mushaddad Ghunnah (10)**: Verifies 2-Harakah nasal holding on Mushaddad Noon (`نّ`) & Meem (`مّ`).
   * **Shaddah (9)**: Inspects consonant closure duration (~1.5 Harakat) and doubling.
-* 🔎 **Instant Voice Navigation**: Recite any verse or phrase to instantly search across all 6,236 Ayahs via phonetic N-gram indexing.
-* 🔒 **100% Private & Offline**: All audio processing and neural network inference occur on-device. No cloud APIs, no network latency, and no user data transmission.
-* ⚡ **Cross-Platform Multi-Threading**: Heavy acoustic decoding and DTW matching run on background Dart Isolates (Native) and Web Workers/WASM (Web) to keep the UI at a buttery 60/120 FPS.
+*  **Instant Voice Navigation**: Recite any verse or phrase to instantly search across all Ayahs.
+*  **100% Private & Offline**
+*  **Cross-Platform Multi-Threading**
 
 ---
 
-## 🏗️ Architecture & Data Pipeline
+##  Architecture & Data Pipeline
 
 ```
 ┌─────────────────────────┐
@@ -88,7 +88,7 @@
 ---
 
 
-## 📦 Installation & Model Setup
+##  Installation & Model Setup
 
 ### 1. Add Dependency
 Add `recite_quran` to your `pubspec.yaml`:
@@ -180,7 +180,7 @@ void main() async {
 
 ---
 
-## 🎨 UI Integration & Color Highlighting (Green / Yellow / Red)
+##  UI Integration & Color Highlighting (Green / Yellow / Red)
 
 ### Word State & Color Resolution
 When users recite, each word transitions through a clear 3-color state machine:
@@ -302,7 +302,7 @@ void _showTajweedErrorDialog(BuildContext context, List<Map<String, dynamic>> er
 
 ---
 
-## 🎯 Core Features & Guides
+##  Core Features & Guides
 
 ### 1. Real-Time Word Tracking (Green / Red Matching)
 
@@ -385,7 +385,7 @@ tracker.updateConfig(
 
 ---
 
-## 📚 Complete API Reference
+##  Complete Reference
 
 ### `ReciteQuran` (Main Facade)
 | Method / Getter | Description |
@@ -433,7 +433,7 @@ flutter run -d windows   # or -d android / -d chrome
 
 ---
 
-## ❓ Troubleshooting & FAQ
+## ❓ Troubleshooting
 
 ### 1. "Missing ONNX model on disk" error
 * **Cause:** The neural model has not been downloaded to your project assets.
@@ -448,7 +448,7 @@ flutter run -d windows   # or -d android / -d chrome
 
 ---
 
-## 🤲 Sacred Covenant & License (لوجه الله تعالى)
+## License (لوجه الله تعالى)
 
 ### **مَا أَسْأَلُكُمْ عَلَيْهِ مِنْ أَجْرٍ ۖ إِنْ أَجْرِيَ إِلَّا عَلَىٰ رَبِّ الْعَالَمِينَ**
 
@@ -465,14 +465,12 @@ Before viewing, using, distributing, or modifying any part of this repository, y
 
 ---
 
-## 🙏 Acknowledgments
+##  Acknowledgments
 
 *Alhamdulillah (الحمد لله رب العالمين)* — this work builds upon open-source research and contributions from:
 - **[Zipformer Quran Streaming Model](https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3)** by Brother Mustafa
 - **[quran-transcript](https://github.com/OmarMuhammedAli/quran-transcript)** by Brother Abdullah Aml
 - **[Quranic Universal Aligner (qua_sdk)](https://huggingface.co/spaces/hetchyy/quranic-universal-aligner)** by Brother Ahmad Ibrahim
-- **[Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx)** by Next-Gen Kaldi Team
-
 ---
 
 <div align="center">
