@@ -487,7 +487,35 @@ class ErrorExplainer {
     final List<ReciterError> errors = [];
     final double hBase = config.harakatDurationSeconds;
 
-    // ── 1. Madd Rule Evaluation ──
+    // ── Phase 1: Base Character Verification (Letter Identity & Deletion) ──
+    if (span.refText.isNotEmpty) {
+      final bool isTajweedSpan = span.isMadd || span.isGhunnah || span.isShaddah;
+
+      if (predText.isEmpty || (!isTajweedSpan && hasDelete)) {
+        errors.add(
+          ReciterError(
+            errorType: ErrorCategory.normal,
+            speechErrorType: SpeechErrorType.delete,
+            expectedPh: span.refText,
+            predictedPh: '',
+          ),
+        );
+        return errors;
+      } else if (span.baseChar != predText[0]) {
+        // Base consonant / Madd vowel substituted (e.g. ي vs ت, ۦ vs ۥ)
+        errors.add(
+          ReciterError(
+            errorType: ErrorCategory.normal,
+            speechErrorType: SpeechErrorType.replace,
+            expectedPh: span.refText,
+            predictedPh: predText,
+          ),
+        );
+        return errors;
+      }
+    }
+
+    // ── Phase 2: Tajweed Duration Rules (Madd, Ghunnah, Shaddah) ──
     if (span.isMadd) {
       final rule = span.matchedWordRule != null
           ? _instantiateTajweedRule(span.matchedWordRule!)
@@ -500,9 +528,7 @@ class ErrorExplainer {
         errors.add(
           ReciterError(
             errorType: ErrorCategory.tajweed,
-            speechErrorType: hasDelete
-                ? SpeechErrorType.delete
-                : SpeechErrorType.replace,
+            speechErrorType: SpeechErrorType.replace,
             durationStatus: durStatus,
             expectedPh: span.refText,
             predictedPh: predText,
@@ -515,7 +541,6 @@ class ErrorExplainer {
       return errors;
     }
 
-    // ── 2. Mushaddad Ghunnah Evaluation ──
     if (span.isGhunnah) {
       final rule = span.matchedWordRule != null
           ? _instantiateTajweedRule(span.matchedWordRule!)
@@ -531,9 +556,7 @@ class ErrorExplainer {
         errors.add(
           ReciterError(
             errorType: ErrorCategory.tajweed,
-            speechErrorType: hasDelete
-                ? SpeechErrorType.delete
-                : SpeechErrorType.replace,
+            speechErrorType: SpeechErrorType.replace,
             durationStatus: durStatus,
             expectedPh: span.refText,
             predictedPh: predText,
@@ -546,24 +569,19 @@ class ErrorExplainer {
       return errors;
     }
 
-    // ── 3. Shaddah Evaluation ──
     if (span.isShaddah) {
       const rule = ShaddahRule();
       final double req = rule.getRequiredDuration(hBase);
 
-      // Check if ASR output contains consonant doubling
       final int predBaseCount = _countBaseOccurrences(predText, span.baseChar);
       final bool predDoubled = predBaseCount >= 2;
       final TajweedDurationStatus durStatus = rule.checkDurationStatus(spanDuration, hBase);
 
-      // Shaddah fails if consonant wasn't doubled or closure duration was too short
       if (!predDoubled || durStatus == TajweedDurationStatus.defect) {
         errors.add(
           ReciterError(
             errorType: ErrorCategory.tajweed,
-            speechErrorType: hasDelete
-                ? SpeechErrorType.delete
-                : SpeechErrorType.replace,
+            speechErrorType: SpeechErrorType.replace,
             durationStatus: durStatus,
             expectedPh: span.refText,
             predictedPh: predText,
@@ -576,22 +594,19 @@ class ErrorExplainer {
       return errors;
     }
 
-    // ── 4. Tashkeel / Harakat Evaluation on Base Consonants ──
-    if (span.refText.isNotEmpty && predText.isNotEmpty) {
-      final String refVowels = _extractVowels(span.refText);
-      final String predVowels = _extractVowels(predText);
+    // ── Phase 3: Tashkeel / Harakat Evaluation on Matching Base Consonants ──
+    final String refVowels = _extractVowels(span.refText);
+    final String predVowels = _extractVowels(predText);
 
-      // If base consonants match but vowel marks differ
-      if (span.baseChar == predText[0] && (refVowels.isNotEmpty || predVowels.isNotEmpty) && refVowels != predVowels) {
-        errors.add(
-          ReciterError(
-            errorType: ErrorCategory.tashkeel,
-            speechErrorType: SpeechErrorType.replace,
-            expectedPh: span.refText,
-            predictedPh: predText,
-          ),
-        );
-      }
+    if ((refVowels.isNotEmpty || predVowels.isNotEmpty) && refVowels != predVowels) {
+      errors.add(
+        ReciterError(
+          errorType: ErrorCategory.tashkeel,
+          speechErrorType: SpeechErrorType.replace,
+          expectedPh: span.refText,
+          predictedPh: predText,
+        ),
+      );
     }
 
     return errors;
@@ -673,6 +688,7 @@ class ErrorExplainer {
   }
 
   static int _getErrorPriority(ReciterError e) {
+    if (e.errorType == ErrorCategory.normal) return 0;
     if (e.errorType == ErrorCategory.tashkeel) return 1;
     if (e.expectedRule is MaddRule) return 2;
     if (e.expectedRule is MushaddadGhunnahRule) return 3;
