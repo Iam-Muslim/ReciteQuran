@@ -176,11 +176,10 @@ class PhoneticCostEngine {
     if (_isZeroCostMarker(code)) return 0.0;
 
     if (gRefIdx > 0 && code == fullPhonemes.codeUnitAt(gRefIdx - 1)) {
-      // Limit the repeated discount ONLY to vowels/Madd. 
-      // Deleting a repeated hard consonant (Shaddah) costs standardDeletionCost to prevent abuse.
-      if (code == 0x0627 || code == 0x0648 || code == 0x064A || code == 0x06E5 || code == 0x06E6) {
-        return acousticConfusionCost;
-      }
+      // In CTC, repeated phonetic features (like Madd vowels or Shaddah consonants)
+      // are often emitted as a single acoustic spike by the ASR model unless heavily emphasized.
+      // We apply an acoustic confusion discount so a single 'ب' can align with 'بب'.
+      return acousticConfusionCost;
     }
 
     return standardDeletionCost;
@@ -366,18 +365,40 @@ class QuranDictationMatcher {
     // ═════════════════════════════════════════════════════════════════════════
     bool isPartial = false;
     // Strict Frontier Rule: If Tajweed is ON, and we consumed the entire buffer (bestI == m),
-    // we ONLY wait if the error is at the very trailing edge of the word (a deletion or substitution of the last character).
-    // If the error was earlier in the word but the end matches perfectly, we commit immediately.
+    // we ONLY wait if a core consonant or vowel is missing/incomplete at the trailing edge.
+    // If the trailing error is merely Tashkeel/Waqf, the word is complete and commits immediately.
     if (isTajweed && bestI > 0 && bestI == m) {
-      int op = bt[bestI * stride + n];
-      if (op == 1) {
-        // Deletion at the end
+      int curJ = n;
+      int curI = bestI;
+      bool hasCoreConsonantMissing = false;
+
+      // 1. Check all trailing deletions at the stream frontier
+      while (curJ > 0 && curI == bestI && bt[curI * stride + curJ] == 1) {
+        final int rCode = fullPhonemes.codeUnitAt(refStart + curJ - 1);
+        final bool isRepeated = curJ > 1 && rCode == fullPhonemes.codeUnitAt(refStart + curJ - 2);
+        
+        // If the trailing deleted character is a core non-repeated consonant, the word is incomplete.
+        if (!PhoneticCostEngine.isTashkeel(rCode) &&
+            !PhoneticCostEngine._isZeroCostMarker(rCode) &&
+            !isRepeated) {
+          hasCoreConsonantMissing = true;
+          break;
+        }
+        curJ--;
+      }
+
+      if (hasCoreConsonantMissing) {
         isPartial = true;
-      } else if (op == 0) {
-        // Substitution at the end
-        int asrCode = asrText.codeUnitAt(bestI - 1);
-        int refCode = fullPhonemes.codeUnitAt(refStart + n - 1);
-        if (PhoneticCostEngine.getSubstitutionCost(asrCode, refCode) > 0.0) {
+      } else if (curJ > 0 && bt[curI * stride + curJ] == 0) {
+        // 2. Trailing substitution at the frontier
+        final int asrCode = asrText.codeUnitAt(bestI - 1);
+        final int refCode = fullPhonemes.codeUnitAt(refStart + curJ - 1);
+
+        // If both are Tashkeel (e.g. 'ُ' vs 'ِ'), it's a Tashkeel error on a completed word, NOT a partial stream
+        if (PhoneticCostEngine.isTashkeel(asrCode) &&
+            PhoneticCostEngine.isTashkeel(refCode)) {
+          isPartial = false;
+        } else if (PhoneticCostEngine.getSubstitutionCost(asrCode, refCode) > 0.0) {
           isPartial = true;
         }
       }

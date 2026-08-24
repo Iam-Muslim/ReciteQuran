@@ -268,6 +268,7 @@ class ErrorExplainer {
           spanDuration: totalSpanDuration,
           hasDelete: hasDelete,
           wordText: wordText,
+          wordRefEnd: wordRefEnd,
           config: config,
         );
 
@@ -482,6 +483,7 @@ class ErrorExplainer {
     required double spanDuration,
     required bool hasDelete,
     required String wordText,
+    required int wordRefEnd,
     TrackerConfig config = const TrackerConfig(),
   }) {
     final List<ReciterError> errors = [];
@@ -489,9 +491,7 @@ class ErrorExplainer {
 
     // ── Phase 1: Base Character Verification (Letter Identity & Deletion) ──
     if (span.refText.isNotEmpty) {
-      final bool isTajweedSpan = span.isMadd || span.isGhunnah || span.isShaddah;
-
-      if (predText.isEmpty || (!isTajweedSpan && hasDelete)) {
+      if (predText.isEmpty) {
         errors.add(
           ReciterError(
             errorType: ErrorCategory.normal,
@@ -598,15 +598,19 @@ class ErrorExplainer {
     final String refVowels = _extractVowels(span.refText);
     final String predVowels = _extractVowels(predText);
 
-    if ((refVowels.isNotEmpty || predVowels.isNotEmpty) && refVowels != predVowels) {
-      errors.add(
-        ReciterError(
-          errorType: ErrorCategory.tashkeel,
-          speechErrorType: SpeechErrorType.replace,
-          expectedPh: span.refText,
-          predictedPh: predText,
-        ),
-      );
+    if (refVowels.isNotEmpty || predVowels.isNotEmpty) {
+      // Stopping on Sukoon (no vowel) on the terminal letter of the word is valid Waqf, not a Tashkeel error
+      final bool isTerminalWaqf = span.refEnd == wordRefEnd && predVowels.isEmpty;
+      if (!isTerminalWaqf && refVowels != predVowels) {
+        errors.add(
+          ReciterError(
+            errorType: ErrorCategory.tashkeel,
+            speechErrorType: SpeechErrorType.replace,
+            expectedPh: span.refText,
+            predictedPh: predText,
+          ),
+        );
+      }
     }
 
     return errors;
