@@ -11,7 +11,7 @@ class WordTajweedRule {
   final int ruleId; // 1-7 (Madd), 9 (Shaddah), 10 (Mushaddad Ghunnah)
   final String nameAr;
   final String nameEn;
-  final int goldenLen; // in Harakat (1, 2, 4, 6)
+  final num goldenLen; // in Harakat (1, 1.5, 2, 4, 6)
 
   const WordTajweedRule({
     required this.ruleId,
@@ -31,7 +31,7 @@ class WordTajweedRule {
         ruleId: map['ruleId'] as int? ?? 0,
         nameAr: map['nameAr'] as String? ?? '',
         nameEn: map['nameEn'] as String? ?? '',
-        goldenLen: map['goldenLen'] as int? ?? 0,
+        goldenLen: (map['goldenLen'] as num?) ?? 0,
       );
 }
 

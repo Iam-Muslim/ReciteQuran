@@ -121,7 +121,7 @@ class ReciterError {
     final String type = map['type'] as String? ?? '';
     final String nameAr = map['nameAr'] as String? ?? '';
     final String nameEn = map['nameEn'] as String? ?? '';
-    final int goldenLen = map['goldenLen'] as int? ?? 2;
+    final num goldenLen = (map['goldenLen'] as num?) ?? 2;
 
     if (type == 'LazemMaddRule') return const LazemMaddRule();
     if (type == 'LeenMaddRule') return const LeenMaddRule();
