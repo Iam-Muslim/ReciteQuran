@@ -9,16 +9,17 @@ import 'tracking/word/highlighting_controller.dart';
 
 export 'audio/audio_processor.dart';
 export 'data/quran_data.dart';
-export 'engine/sherpa_engine.dart' show SherpaEngine, TranscriptionResult;
+export 'engine/sherpa_engine.dart';
+export 'tracking/ayah_search/fuzzy_search.dart';
+export 'tracking/ayah_search/phonetic_search.dart';
 export 'tracking/ayah_search/voice_search_controller.dart';
-export 'tracking/tajweed/error_explainer.dart'
-    show ErrorCategory, SpeechErrorType, ReciterError;
-export 'tracking/tajweed/tajweed_rules.dart' show TajweedDurationStatus;
+export 'tracking/tajweed/error_explainer.dart';
+export 'tracking/tajweed/tajweed_rules.dart';
 export 'tracking/tracker_config.dart';
-export 'tracking/word/dictation_matcher.dart' show WordMatchResult;
+export 'tracking/word/dictation_matcher.dart';
+export 'tracking/word/dictation_sequencer.dart';
 export 'tracking/word/highlighting_controller.dart';
-export 'tracking/word/phoneme_alignment_isolate.dart'
-    show WordMatchedEvent, DebugLogEvent;
+export 'tracking/word/phoneme_alignment_isolate.dart';
 export 'utils/debug_logger.dart';
 
 /// Type alias for QuranRepository.
