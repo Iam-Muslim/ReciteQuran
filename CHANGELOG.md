@@ -1,3 +1,8 @@
+## 1.0.1
+
+* **FIX**: Drastically improved DTW alignment stability on Waqf for short words containing Shaddah (e.g. `رَبِّ`) and Madd (e.g. `الرَّحِيمِ`).
+* **FIX**: Improved `ErrorExplainer` to correctly honor Waqf (Sukoon), preventing false `NORMAL -> DELETE` and `TASHKEEL` errors when pausing at the end of a word.
+
 ## 1.0.0
 
 * Initial open-source release of **`recite_quran`**.
