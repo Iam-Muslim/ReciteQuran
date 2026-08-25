@@ -17,3 +17,4 @@ example/web/*.wasm
 example/ios/Flutter/ephemeral/
 example/ios/**/xcuserdata/
 example/windows/flutter/ephemeral/
+test

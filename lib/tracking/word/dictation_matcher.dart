@@ -175,6 +175,8 @@ class PhoneticCostEngine {
 
     if (_isZeroCostMarker(code)) return 0.0;
 
+    if (_isHamzaVariant(code)) return acousticConfusionCost;
+
     if (gRefIdx > 0 && code == fullPhonemes.codeUnitAt(gRefIdx - 1)) {
       // In CTC, repeated phonetic features (like Madd vowels or Shaddah consonants)
       // are often emitted as a single acoustic spike by the ASR model unless heavily emphasized.
@@ -302,11 +304,12 @@ class QuranDictationMatcher {
         final double del = dp[row + j - 1] + delCost;
         final double ins = dp[prev + j] + insCost;
 
-        // We use `sub < del` instead of `sub <= del` to break ties in favor of deletions.
-        // This forces the DP to match EARLY and delete LATE, ensuring trailing omissions
-        // are correctly represented as `op == 1` (Deletion) at the end of the path,
-        // which makes the Strict Frontier rule work reliably.
-        if (sub < del && sub <= ins) {
+        // When Tajweed is OFF: `sub <= del` breaks ties in favor of match/sub.
+        // When Tajweed is ON: `sub < del` breaks ties in favor of deletions,
+        // ensuring trailing omissions are correctly represented as `op == 1` (Deletion)
+        // at the end of the path for the Strict Frontier rule.
+        final bool preferSub = !isTajweed;
+        if (preferSub ? (sub <= del && sub <= ins) : (sub < del && sub <= ins)) {
           dp[row + j] = sub;
           bt[row + j] = 0; // match/sub
         } else if (del <= ins) {
@@ -353,9 +356,10 @@ class QuranDictationMatcher {
     for (int i = 1; i <= m; i++) {
       final double norm = dp[i * stride + n] / effN;
       if (norm <= threshold) {
-        if (norm <= bestCost) { // Changed to <= to consume trailing vowels on tie
+        if (isTajweed ? (norm <= bestCost) : (norm < bestCost)) {
           bestI = i;
           bestCost = norm;
+          if (!isTajweed) break;
         }
       }
     }
