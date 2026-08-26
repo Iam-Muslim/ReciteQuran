@@ -97,7 +97,7 @@ Add `recite_quran` to your `pubspec.yaml`:
 dependencies:
   flutter:
     sdk: flutter
-  recite_quran: ^1.0.0
+  recite_quran: ^1.0.1
 ```
 
 ### 2. Download the Neural Model
@@ -463,7 +463,7 @@ Before viewing, using, distributing, or modifying any part of this repository, y
 3. **Pass-Through**:
    These terms are immutable and strictly pass on to any fork, derivative work, or redistributed component.
 
----
+---------
 
 ##  Acknowledgments
 
