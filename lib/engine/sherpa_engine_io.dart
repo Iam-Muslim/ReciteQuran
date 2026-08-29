@@ -299,22 +299,35 @@ class SherpaEngine {
               );
             }
 
+            // Hardware acceleration back end, one per platform:
+            //   Android → XNNPACK  (optimized CPU kernels)
+            //   iOS     → CoreML   (Apple Neural Engine / GPU)
+            //   other   → plain CPU
+            String accelName = '';
+            if (Platform.isAndroid) {
+              accelName = 'xnnpack';
+            } else if (Platform.isIOS) {
+              accelName = 'coreml';
+            }
+
+            // Poison-pill lock, one file per back end so a device that trips
+            // over XNNPACK doesn't also disqualify CoreML (and vice versa).
             final File lockFile = File(
-              '${File(modelPath).parent.path}/xnnpack_lock',
+              '${File(modelPath).parent.path}/${accelName}_lock',
             );
             String provider = 'cpu';
 
-            if (Platform.isAndroid) {
+            if (accelName.isNotEmpty) {
               if (lockFile.existsSync()) {
                 // A crash loop was detected! The app natively aborted (SIGILL/SIGSEGV)
-                // during the previous XNNPACK initialization. We must fallback to 'cpu'.
+                // during the previous accelerator initialization. We must fallback to 'cpu'.
                 provider = 'cpu';
               } else {
                 // First attempt. Create the poison pill lock file.
-                // If XNNPACK natively aborts, this file will remain on disk,
-                // protecting the next startup.
+                // If the accelerator natively aborts, this file will remain on
+                // disk, protecting the next startup.
                 lockFile.createSync();
-                provider = 'xnnpack';
+                provider = accelName;
               }
             }
 
@@ -324,14 +337,17 @@ class SherpaEngine {
               // XNNPACK lazily initializes its compute kernels — it probes
               // /proc/cpuinfo during the FIRST `decode()` call, not during
               // model loading. On LineageOS, the SIGILL fires at decode(),
-              // not at OnlineRecognizer(). If we delete the lock here, the
-              // crash won't be detected and we get an infinite crash loop.
+              // not at OnlineRecognizer(). CoreML defers work the same way: the
+              // ANE/GPU subgraph is compiled and first dispatched on decode(),
+              // so an unsupported-op abort surfaces there too. If we delete the
+              // lock here, the crash won't be detected and we get an infinite
+              // crash loop.
             } catch (e) {
               // Graceful Dart exception during model loading (not a native abort).
               if (lockFile.existsSync()) {
                 lockFile.deleteSync();
               }
-              if (Platform.isAndroid && provider == 'xnnpack') {
+              if (provider != 'cpu') {
                 // Fallback to CPU on standard initialization errors.
                 recognizer = tryCreateRecognizer('cpu');
               } else {
@@ -352,6 +368,8 @@ class SherpaEngine {
             if (lockFile.existsSync()) {
               lockFile.deleteSync();
             }
+
+            DebugLogger.logSimple('Engine', 'ASR provider in use: $provider');
 
             mainSendPort.send(const SherpaInitSuccessEvent());
           } catch (e) {
