@@ -299,22 +299,35 @@ class SherpaEngine {
               );
             }
 
+            // Hardware acceleration back end, one per platform:
+            //   Android → XNNPACK  (optimized CPU kernels)
+            //   iOS     → CoreML   (Apple Neural Engine / GPU)
+            //   other   → plain CPU
+            String accelName = '';
+            if (Platform.isAndroid) {
+              accelName = 'xnnpack';
+            } else if (Platform.isIOS) {
+              accelName = 'coreml';
+            }
+
+            // Poison-pill lock, one file per back end so a device that trips
+            // over XNNPACK doesn't also disqualify CoreML (and vice versa).
             final File lockFile = File(
-              '${File(modelPath).parent.path}/xnnpack_lock',
+              '${File(modelPath).parent.path}/${accelName}_lock',
             );
             String provider = 'cpu';
 
-            if (Platform.isAndroid) {
+            if (accelName.isNotEmpty) {
               if (lockFile.existsSync()) {
                 // A crash loop was detected! The app natively aborted (SIGILL/SIGSEGV)
-                // during the previous XNNPACK initialization. We must fallback to 'cpu'.
+                // during the previous accelerator initialization. We must fallback to 'cpu'.
                 provider = 'cpu';
               } else {
                 // First attempt. Create the poison pill lock file.
-                // If XNNPACK natively aborts, this file will remain on disk,
-                // protecting the next startup.
+                // If the accelerator natively aborts, this file will remain on
+                // disk, protecting the next startup.
                 lockFile.createSync();
-                provider = 'xnnpack';
+                provider = accelName;
               }
             }
 
@@ -324,14 +337,17 @@ class SherpaEngine {
               // XNNPACK lazily initializes its compute kernels — it probes
               // /proc/cpuinfo during the FIRST `decode()` call, not during
               // model loading. On LineageOS, the SIGILL fires at decode(),
-              // not at OnlineRecognizer(). If we delete the lock here, the
-              // crash won't be detected and we get an infinite crash loop.
+              // not at OnlineRecognizer(). CoreML defers work the same way: the
+              // ANE/GPU subgraph is compiled and first dispatched on decode(),
+              // so an unsupported-op abort surfaces there too. If we delete the
+              // lock here, the crash won't be detected and we get an infinite
+              // crash loop.
             } catch (e) {
               // Graceful Dart exception during model loading (not a native abort).
               if (lockFile.existsSync()) {
                 lockFile.deleteSync();
               }
-              if (Platform.isAndroid && provider == 'xnnpack') {
+              if (provider != 'cpu') {
                 // Fallback to CPU on standard initialization errors.
                 recognizer = tryCreateRecognizer('cpu');
               } else {
@@ -353,16 +369,18 @@ class SherpaEngine {
               lockFile.deleteSync();
             }
 
+            DebugLogger.logSimple('Engine', 'ASR provider in use: $provider');
+
             mainSendPort.send(const SherpaInitSuccessEvent());
           } catch (e) {
             mainSendPort.send(SherpaInitErrorEvent(e.toString()));
           }
 
         case SherpaRecognizeCommand(
-          :final chunk,
-          :final isFinal,
-          :final startTime,
-        ):
+            :final chunk,
+            :final isFinal,
+            :final startTime,
+          ):
           if (recognizer == null || stream == null) return;
 
           final rawBytesTemp = chunk.materialize().asUint8List();
@@ -399,13 +417,18 @@ class SherpaEngine {
           }
 
           if (isFinal || endpointDetected) {
+            // `partial` above was read from an already fully drained stream, so
+            // it IS the complete hypothesis for this utterance. Only the
+            // inputFinished() path can add anything to it, so only that path
+            // pays for a second drain + getResult().
+            OnlineRecognizerResult finalResult = partial;
             if (isFinal) {
               stream!.inputFinished();
+              while (recognizer!.isReady(stream!)) {
+                recognizer!.decode(stream!);
+              }
+              finalResult = recognizer!.getResult(stream!);
             }
-            while (recognizer!.isReady(stream!)) {
-              recognizer!.decode(stream!);
-            }
-            final finalResult = recognizer!.getResult(stream!);
 
             mainSendPort.send(
               SherpaTranscriptionEvent(
@@ -417,6 +440,42 @@ class SherpaEngine {
                 streamEpoch: isolateStreamEpoch,
               ),
             );
+
+            // Close the utterance off. sherpa-onnx requires this: its own C API
+            // documents the contract as
+            //   if (IsEndpoint(recognizer, stream)) { Reset(recognizer, stream); }
+            // and Reset is the only thing that clears the decoder's accumulated
+            // hypothesis and its trailing-silence counter.
+            //
+            // Without it the stream never starts a new utterance: IsEndpoint stays
+            // true for every subsequent chunk, so partial results are suppressed
+            // for the whole of each silence, and getResult() keeps returning one
+            // ever-growing transcript of everything heard since the session began.
+            //
+            // The consumer side is handled in the same change: AsrTokenProcessor
+            // already resets itself when a result's token prefix diverges, and
+            // HighlightingController now arms _expectingNewSegment on isFinal so
+            // the sequencer drops asrCharAnchor with the restarted hypothesis.
+            // Both halves are required -- resetting here alone would leave the
+            // anchor pointing past the end of the new, shorter hypothesis.
+            //
+            // The stream epoch is deliberately NOT bumped. This is a new utterance
+            // on the same stream, not a caller-initiated reset, and bumping it here
+            // would desynchronise the isolate from the main isolate's counter and
+            // make every later result look stale.
+            //
+            // Skipped when isFinal, because inputFinished() has permanently closed
+            // the stream to further input and the session is ending regardless.
+            //
+            // Reset only -- deliberately WITHOUT the 480ms silence pre-roll that
+            // SherpaResetCommand performs. That pre-roll belongs to a hard reset
+            // at a session or ayah boundary; injecting it after every endpoint
+            // was measured to stop word matching entirely, because each utterance
+            // then opens with silence the sequencer has to anchor past. sherpa's
+            // own documented contract for this site is a bare Reset().
+            if (endpointDetected && !isFinal) {
+              recognizer!.reset(stream!);
+            }
           }
 
         case SherpaFlushCommand():
