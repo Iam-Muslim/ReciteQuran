@@ -166,6 +166,11 @@ class DictationSequencer {
             }
 
             if (result.tokensConsumed > 0) {
+              // Lookahead Guard: Never allow a tiny 1-2 character leftover fragment from early break to skip words!
+              if (skip > 0 && result.tokensConsumed < 3) {
+                continue;
+              }
+
               // Ensure that merged words are actually legitimate boundary-merges (Wasl/Idgham)
               if (merge > 1 &&
                   !_isValidMerge(result, startW, endW, unconsumed)) {
