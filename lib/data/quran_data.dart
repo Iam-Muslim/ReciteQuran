@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 
@@ -95,10 +96,13 @@ class QuranVerse {
     Map<String, dynamic> json, {
     Map<String, dynamic>? globalRuleNames,
   }) {
-    final rawUthmani = json['aya_ui'] as String? ?? '';
+    final rawUthmani = json['aya_ui'] as String? ??
+        json['uthmani'] as String? ??
+        json['aya_text'] as String? ??
+        '';
     final rawWords = rawUthmani.trim().split(' ');
 
-    if (rawWords.length > 1) {
+    if (rawWords.length > 1 && json.containsKey('aya_ui')) {
       rawWords.removeLast();
     }
 
@@ -107,13 +111,18 @@ class QuranVerse {
         .where((s) => s.isNotEmpty)
         .toList();
 
-    String phonemeStr = json['aya_phoneme'] as String? ?? '';
+    String phonemeStr = json['aya_phoneme'] as String? ??
+        json['phoneme'] as String? ??
+        '';
     List<String> phonemeWords = [];
 
     if (json.containsKey('aya_phonemes_list')) {
       phonemeWords = List<String>.from(json['aya_phonemes_list']);
+    } else if (json.containsKey('phoneme_words')) {
+      phonemeWords = List<String>.from(json['phoneme_words']);
+    }
 
-      // Safety check: Pad if mismatch
+    if (phonemeWords.isNotEmpty) {
       if (phonemeWords.length < uthmaniWords.length) {
         phonemeWords.addAll(
           List.filled(uthmaniWords.length - phonemeWords.length, ''),
@@ -222,11 +231,33 @@ class QuranVerse {
 // We no longer parse the entire database upfront.
 // Verses are parsed lazily on demand from the decoded JSON map.
 class QuranMetadataService {
+  /// Optional absolute path to a custom phoneme JSON file on disk.
+  ///
+  /// Useful when phoneme data is downloaded on demand or selected dynamically
+  /// per riwaya. When null, defaults to loading the bundled asset.
+  QuranMetadataService({this.phonemeFilePath});
+
+  final String? phonemeFilePath;
+
   Map<String, dynamic>? _rawJson;
 
   Future<void> loadData() async {
     if (_rawJson != null) return;
 
+    final String phonemeData = phonemeFilePath != null
+        ? await File(phonemeFilePath!).readAsString()
+        : await _loadFromBundle();
+
+    // Decode synchronously on the main isolate.
+    // Spawning a 3rd concurrent isolate here (alongside the Sherpa isolate and the
+    // alignment isolate) pushes RSS to ~300MB+ during startup on 32-bit low-RAM
+    // devices (e.g. Redmi 2020), triggering the OOM killer.
+    // jsonDecode of the ~15MB Quran JSON takes < 200ms — acceptable for a one-time load.
+    _rawJson = jsonDecode(phonemeData) as Map<String, dynamic>;
+  }
+
+  /// Loads phoneme data from the rootBundle asset.
+  Future<String> _loadFromBundle() async {
     String phonemeData = '{}';
     try {
       try {
@@ -243,13 +274,7 @@ class QuranMetadataService {
       print('CRITICAL ERROR loading quran phonemes: $e\n$stack');
       rethrow;
     }
-
-    // Decode synchronously on the main isolate.
-    // Spawning a 3rd concurrent isolate here (alongside the Sherpa isolate and the
-    // alignment isolate) pushes RSS to ~300MB+ during startup on 32-bit low-RAM
-    // devices (e.g. Redmi 2020), triggering the OOM killer.
-    // jsonDecode of the ~15MB Quran JSON takes < 200ms — acceptable for a one-time load.
-    _rawJson = jsonDecode(phonemeData) as Map<String, dynamic>;
+    return phonemeData;
   }
 
   Map<String, dynamic>? get rawJson => _rawJson;

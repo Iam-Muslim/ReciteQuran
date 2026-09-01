@@ -65,4 +65,3 @@ migrate_working_dir/
 
 # Generated registrant
 lib/generated_plugin_registrant.dart
-test

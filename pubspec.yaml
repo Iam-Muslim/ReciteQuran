@@ -14,7 +14,7 @@ dependencies:
     sdk: flutter
   audio_session: ^0.2.4
   path_provider: ^2.1.5
-  record: ^7.1.1
+  record: ">=6.0.0 <8.0.0"
   sherpa_onnx: ^1.13.5
 
 dev_dependencies:
@@ -28,3 +28,4 @@ flutter:
     - assets/model/ordered_quran_phonemes.json
     - assets/model/ph_index.npy
     - assets/model/ref_norm_ph.txt
+    - assets/json/warsh-to-hafs.json
