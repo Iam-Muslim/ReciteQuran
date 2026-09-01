@@ -1,3 +1,9 @@
+## 1.0.2
+
+* **FIX**: Restored baseline DTW endpoint alignment in `QuranDictationMatcher` to ensure complete word phonetic consumption and eliminate trailing phoneme bleed.
+* **FIX**: Removed experimental lookahead guard in `DictationSequencer`.
+* **DOC**: Documented streaming alignment and fast-committing mechanisms in `QuranDictationMatcher`.
+
 ## 1.0.1
 
 * **FIX**: Drastically improved DTW alignment stability on Waqf for short words containing Shaddah (e.g. `رَبِّ`) and Madd (e.g. `الرَّحِيمِ`).
