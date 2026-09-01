@@ -304,12 +304,11 @@ class QuranDictationMatcher {
         final double del = dp[row + j - 1] + delCost;
         final double ins = dp[prev + j] + insCost;
 
-        // When Tajweed is OFF: `sub <= del` breaks ties in favor of match/sub.
-        // When Tajweed is ON: `sub < del` breaks ties in favor of deletions,
-        // ensuring trailing omissions are correctly represented as `op == 1` (Deletion)
-        // at the end of the path for the Strict Frontier rule.
-        final bool preferSub = !isTajweed;
-        if (preferSub ? (sub <= del && sub <= ins) : (sub < del && sub <= ins)) {
+        // We use `sub < del` instead of `sub <= del` to break ties in favor of deletions.
+        // This forces the DP to match EARLY and delete LATE, ensuring trailing omissions
+        // are correctly represented as `op == 1` (Deletion) at the end of the path,
+        // which makes the Strict Frontier rule work reliably.
+        if (sub < del && sub <= ins) {
           dp[row + j] = sub;
           bt[row + j] = 0; // match/sub
         } else if (del <= ins) {
@@ -324,6 +323,32 @@ class QuranDictationMatcher {
 
     // ═════════════════════════════════════════════════════════════════════════
     // 4. ENDPOINT DETECTION (CALIBRATED DYNAMIC THRESHOLD)
+    // ═════════════════════════════════════════════════════════════════════════
+    // ARCHITECTURAL GUIDE: HOW FAST / EARLY COMMITTING WORKS & HOW TO DO IT
+    // ─────────────────────────────────────────────────────────────────────────
+    // Fast committing aims to highlight words GREEN early before the reciter finishes
+    // elongated vowels (Madd) or trailing consonants (Waqf).
+    //
+    // WHY NAIVE EARLY BREAK (e.g., `if (!isTajweed) break;`) CAUSES BUGS:
+    // In continuous phoneme CTC streaming (no word spaces), stopping early leaves
+    // trailing phoneme fragments (e.g. "الفرقان" cut at "الفرق" leaves "ان" or "نننن").
+    // The next word (like "إن") or lookahead words (skip=1, 2, 3) immediately match
+    // those leftover phonemes, causing cascading false GREEN matches!
+    //
+    // HOW TO PROPERLY IMPLEMENT FAST COMMITTING IF DESIRED IN THE FUTURE:
+    // 1. In DP Tie-breaking:
+    //    `final bool preferSub = !isTajweed;`
+    //    `if (preferSub ? (sub <= del && sub <= ins) : (sub < del && sub <= ins))`
+    //    (Forces greedy match/sub instead of deletion when costs are tied).
+    // 2. In Endpoint Search:
+    //    `if (isTajweed ? (norm <= bestCost) : (norm < bestCost)) { bestI = i; bestCost = norm; if (!isTajweed) break; }`
+    // 3. MANDATORY Sequencer Support (to prevent leftover false matches):
+    //    - Absorb trailing consonant decay: consume contiguous repeated frames of
+    //      the word's ending phoneme (e.g. all trailing 'ن's from "الفرقان").
+    //    - Tail Reservation: if a word is committed early with missing letters (e.g. "ان"),
+    //      store `pendingTail = "ان"` in the sequencer and drain it from the next chunk
+    //      before allowing upcoming words to match.
+    //    - Lookahead Ban: forbid lookahead jumps (`skip > 0`) on short words (<= 3 chars).
     // ═════════════════════════════════════════════════════════════════════════
     int bestI = -1;
     double bestCost = double.infinity;
@@ -356,10 +381,9 @@ class QuranDictationMatcher {
     for (int i = 1; i <= m; i++) {
       final double norm = dp[i * stride + n] / effN;
       if (norm <= threshold) {
-        if (isTajweed ? (norm <= bestCost) : (norm < bestCost)) {
+        if (norm <= bestCost) { // Changed to <= to consume trailing vowels on tie
           bestI = i;
           bestCost = norm;
-          if (!isTajweed) break;
         }
       }
     }
