@@ -385,6 +385,80 @@ tracker.updateConfig(
 
 ---
 
+---
+
+### 5. Best-Drop LCS Word Omission Locator
+
+Accurately pinpoint dropped or forgotten words during recitation using the $O(N)$ 2-row dynamic programming Best-Drop algorithm:
+
+```dart
+import 'package:recite_quran/recite_quran.dart';
+
+final phonemesPerWord = [
+  'ءِننننَ',     // [0]
+  'شَاانِءَكَ', // [1]
+  'هُوَ',       // [2] (omitted by reciter)
+  'لءَبڇتَر',   // [3]
+];
+final emittedPhonemes = 'ءِننننَشَاانِءَكَلءَبڇتَر';
+
+final OmissionResult result = LcsOmissionDetector.detectOmission(
+  phonemesPerWord: phonemesPerWord,
+  emittedPhonemes: emittedPhonemes,
+);
+
+if (result.isOmissionDetected) {
+  print('⚠️ Omitted Word Index: ${result.omittedWordIndex}'); // Index 2 ("هُوَ")
+  print('Shortfall characters: ${result.shortfall}');
+  print('Confidence Gap: ${result.confidenceGap}');
+}
+```
+
+---
+
+### 6. Warsh-to-Hafs Cross-Riwaya Ayah Alignment
+
+Seamlessly track Warsh (Madani-last) reciters against Hafs acoustic models using verified Quranpedia verse mappings:
+
+```dart
+import 'package:recite_quran/recite_quran.dart';
+
+// Load the bundled mapping database
+final mapper = await WarshHafsMapper.loadFromBundle();
+
+// In Al-Fatiha, Warsh Ayah 1 covers Hafs Ayahs 1 & 2:
+final hafsAyahs = mapper.getHafsAyahs(1, 1); // [1, 2]
+final status = mapper.getMappingStatus(1, 1); // 'covers_multiple'
+
+// Reverse lookup from Hafs to Warsh:
+final warshAyahs = mapper.getWarshAyahs(1, 3); // [2]
+```
+
+---
+
+### 7. Built-in On-Demand Model Downloader
+
+Avoid adding ~85 MB into the initial app bundle by streaming neural model assets on demand with progress callbacks:
+
+```dart
+import 'package:recite_quran/recite_quran.dart';
+
+final downloader = ModelDownloader();
+
+if (!await downloader.isModelReady()) {
+  await downloader.downloadAssets(
+    onProgress: (progress, status) {
+      print('$status: ${(progress * 100).toInt()}%');
+    },
+  );
+}
+
+// Pass downloaded directory to SherpaEngine:
+final modelDir = await downloader.getModelDirectoryPath();
+final engine = SherpaEngine(assetOverrideDir: modelDir);
+```
+
+
 ##  Complete Reference
 
 ### `ReciteQuran` (Main Facade)
@@ -465,12 +539,16 @@ Before viewing, using, distributing, or modifying any part of this repository, y
 
 ---------
 
-##  Acknowledgments
+## 🤝 Acknowledgments & External Projects
 
-*Alhamdulillah (الحمد لله رب العالمين)* — this work builds upon open-source research and contributions from:
-- **[Zipformer Quran Streaming Model](https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3)** by Brother Mustafa
-- **[quran-transcript](https://github.com/OmarMuhammedAli/quran-transcript)** by Brother Abdullah Aml
-- **[Quranic Universal Aligner (qua_sdk)](https://huggingface.co/spaces/hetchyy/quranic-universal-aligner)** by Brother Ahmad Ibrahim
+*Alhamdulillah (الحمد لله رب العالمين)* — this package stands upon the shoulders of brilliant Islamic tech initiatives, researchers, and open-source projects:
+
+- **[Zipformer Quran Acoustic Model](https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3)** by Brother Mustafa & **[QuranLab](https://huggingface.co/Quran-Lab)** for the Zipformer causal streaming ASR model training and acoustic phoneme tokenization.
+- **[Quranpedia (موسوعة القرآن)](https://quranpedia.net)** for the verified Warsh-to-Hafs (Madani-last to Kufi) ayah cross-mapping dataset (`warsh-to-hafs.json`).
+- **[tasmee3-muaalem-findings / Seraj](https://github.com/omar-abuhfs)** (Dr. Omar Abu Hafs) for the Best-Drop LCS word omission detection research, formulations, and benchmark datasets.
+- **[Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx)** by the Next-gen Kaldi team for real-time on-device speech recognition inference.
+- **[quran-transcript](https://github.com/OmarMuhammedAli/quran-transcript)** by Brother Abdullah Aml.
+- **[Quranic Universal Aligner (qua_sdk)](https://huggingface.co/spaces/hetchyy/quranic-universal-aligner)** by Brother Ahmad Ibrahim.
 ---
 
 <div align="center">
