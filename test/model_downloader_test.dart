@@ -25,15 +25,11 @@ void main() {
       expect(isReady, isFalse);
     });
 
-    test('isModelReady returns true when all 3 files are present with sufficient size', () async {
+    test('isModelReady returns true when neural model file is present with sufficient size', () async {
       final modelFile = File('${tempDir.path}/${ModelDownloader.defaultModelFileName}');
-      final tokensFile = File('${tempDir.path}/${ModelDownloader.defaultTokensFileName}');
-      final phonemesFile = File('${tempDir.path}/${ModelDownloader.defaultPhonemesFileName}');
 
-      // Write mock files with required minimum sizes
+      // Write mock file with required minimum size (> 10MB)
       await modelFile.writeAsBytes(List.filled(11 * 1024 * 1024, 0));
-      await tokensFile.writeAsBytes(List.filled(1000, 0));
-      await phonemesFile.writeAsBytes(List.filled(2 * 1024 * 1024, 0));
 
       final isReady = await downloader.isModelReady();
       expect(isReady, isTrue);
@@ -41,8 +37,8 @@ void main() {
       final modelDirPath = await downloader.getModelDirectoryPath();
       expect(modelDirPath, equals(tempDir.path));
 
-      final phonemeFilePath = await downloader.getPhonemeFilePath();
-      expect(phonemeFilePath, equals('${tempDir.path}/${ModelDownloader.defaultPhonemesFileName}'));
+      final modelFilePath = await downloader.getModelFilePath();
+      expect(modelFilePath, equals(modelFile.path));
     });
 
     test('deleteAssets removes the storage directory', () async {

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:recite_quran/alignment/warsh_hafs_mapper.dart';
+import 'package:recite_quran/data/warsh_hafs_mapper.dart';
 
 void main() {
   group('WarshHafsMapper Tests', () {

@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-/// Status of on-demand neural model and phoneme assets.
+/// Status of on-demand neural model assets.
 enum ModelDownloadStatus {
   notDownloaded,
   downloading,
@@ -13,29 +13,20 @@ enum ModelDownloadStatus {
   error,
 }
 
-/// Utility for downloading, managing, and verifying neural ASR model and phoneme
-/// assets on demand, avoiding the need to bundle ~85MB into the initial app binary.
+/// Utility for downloading, managing, and verifying the neural ASR model asset
+/// on demand, avoiding the need to bundle ~69MB into the initial app binary.
+/// Tokens and phonemes remain bundled inside the app assets for offline stability.
 class ModelDownloader {
   static const String defaultModelFileName = 'zipformer_p_arabic_v3.int8.onnx';
-  static const String defaultTokensFileName = 'tokens.txt';
-  static const String defaultPhonemesFileName = 'ordered_quran_phonemes.json';
 
   static const String defaultModelUrl =
       'https://github.com/Iam-Muslim/Natlu/releases/download/models-latest/zipformer_p_arabic_v3.int8.onnx';
-  static const String defaultTokensUrl =
-      'https://raw.githubusercontent.com/Iam-Muslim/ReciteQuran/ReciteQuran-%D8%A7%D9%84%D8%AD%D9%85%D8%AF%D9%84%D9%84%D9%87/assets/model/tokens.txt';
-  static const String defaultPhonemesUrl =
-      'https://raw.githubusercontent.com/Iam-Muslim/ReciteQuran/ReciteQuran-%D8%A7%D9%84%D8%AD%D9%85%D8%AF%D9%84%D9%84%D9%87/assets/model/ordered_quran_phonemes.json';
 
   final String modelUrl;
-  final String tokensUrl;
-  final String phonemesUrl;
   final String? customStoragePath;
 
   ModelDownloader({
     this.modelUrl = defaultModelUrl,
-    this.tokensUrl = defaultTokensUrl,
-    this.phonemesUrl = defaultPhonemesUrl,
     this.customStoragePath,
   });
 
@@ -56,32 +47,16 @@ class ModelDownloader {
     return dir;
   }
 
-  /// Verifies whether all required neural model and phoneme files exist on disk.
+  /// Verifies whether the neural model file exists on disk and meets the size threshold.
   Future<bool> isModelReady() async {
     if (kIsWeb) return true;
     try {
       final dir = await getStorageDirectory();
       final modelFile = File(p.join(dir.path, defaultModelFileName));
-      final tokensFile = File(p.join(dir.path, defaultTokensFileName));
-      final phonemesFile = File(p.join(dir.path, defaultPhonemesFileName));
-
-      final bool modelExists =
-          await modelFile.exists() && (await modelFile.length()) > 10 * 1024 * 1024;
-      final bool tokensExist =
-          await tokensFile.exists() && (await tokensFile.length()) > 500;
-      final bool phonemesExist =
-          await phonemesFile.exists() && (await phonemesFile.length()) > 1024 * 1024;
-
-      return modelExists && tokensExist && phonemesExist;
+      return await modelFile.exists() && (await modelFile.length()) > 10 * 1024 * 1024;
     } catch (_) {
       return false;
     }
-  }
-
-  /// Returns the absolute file path to the downloaded phoneme JSON.
-  Future<String> getPhonemeFilePath() async {
-    final dir = await getStorageDirectory();
-    return p.join(dir.path, defaultPhonemesFileName);
   }
 
   /// Returns the absolute path to the directory containing model assets.
@@ -90,7 +65,13 @@ class ModelDownloader {
     return dir.path;
   }
 
-  /// Downloads all required neural model and phoneme assets with streaming progress reporting.
+  /// Returns the absolute path to the downloaded model file.
+  Future<String> getModelFilePath() async {
+    final dir = await getStorageDirectory();
+    return p.join(dir.path, defaultModelFileName);
+  }
+
+  /// Downloads the neural model asset with streaming progress reporting.
   ///
   /// [onProgress] delivers `(progress: 0.0 -> 1.0, message: 'Downloading...')`.
   Future<bool> downloadAssets({
@@ -106,35 +87,17 @@ class ModelDownloader {
     try {
       final dir = await getStorageDirectory();
 
-      // 1. Download Tokens (~5 KB)
-      onProgress?.call(0.02, 'Downloading tokens...');
-      await _downloadFile(
-        httpClient,
-        tokensUrl,
-        p.join(dir.path, defaultTokensFileName),
-      );
-
-      // 2. Download Phonemes JSON (~15 MB)
-      onProgress?.call(0.05, 'Downloading phonemes metadata...');
-      await _downloadFile(
-        httpClient,
-        phonemesUrl,
-        p.join(dir.path, defaultPhonemesFileName),
-      );
-
-      // 3. Download ONNX Neural Model (~68 MB)
-      onProgress?.call(0.20, 'Downloading neural acoustic model...');
+      onProgress?.call(0.0, 'Downloading neural acoustic model...');
       await _downloadFile(
         httpClient,
         modelUrl,
         p.join(dir.path, defaultModelFileName),
         onProgress: (ratio) {
-          final mapped = 0.20 + (ratio * 0.80);
-          onProgress?.call(mapped, 'Downloading neural acoustic model (${(ratio * 100).toInt()}%)...');
+          onProgress?.call(ratio, 'Downloading neural acoustic model (${(ratio * 100).toInt()}%)...');
         },
       );
 
-      onProgress?.call(1.0, 'Assets ready');
+      onProgress?.call(1.0, 'Model ready');
       return true;
     } catch (e) {
       onProgress?.call(0.0, 'Download failed: $e');
