@@ -74,8 +74,10 @@ class ModelDownloader {
   /// Downloads the neural model asset with streaming progress reporting.
   ///
   /// [onProgress] delivers `(progress: 0.0 -> 1.0, message: 'Downloading...')`.
+  /// [isCancelled] optional polling callback; aborts the download if it returns `true`.
   Future<bool> downloadAssets({
     void Function(double progress, String status)? onProgress,
+    bool Function()? isCancelled,
     http.Client? client,
   }) async {
     if (kIsWeb) {
@@ -92,6 +94,7 @@ class ModelDownloader {
         httpClient,
         modelUrl,
         p.join(dir.path, defaultModelFileName),
+        isCancelled: isCancelled,
         onProgress: (ratio) {
           onProgress?.call(ratio, 'Downloading neural acoustic model (${(ratio * 100).toInt()}%)...');
         },
@@ -121,6 +124,7 @@ class ModelDownloader {
     http.Client client,
     String url,
     String targetPath, {
+    bool Function()? isCancelled,
     void Function(double ratio)? onProgress,
   }) async {
     final tempPath = '$targetPath.tmp';
@@ -129,8 +133,10 @@ class ModelDownloader {
       await tempFile.delete();
     }
 
-    final request = http.Request('GET', Uri.parse(url));
-    final response = await client.send(request);
+    final request = http.Request('GET', Uri.parse(url))..followRedirects = true;
+    final response = await client
+        .send(request)
+        .timeout(const Duration(seconds: 30));
 
     if (response.statusCode != 200) {
       throw HttpException('Failed to download $url (Status: ${response.statusCode})');
@@ -142,15 +148,32 @@ class ModelDownloader {
 
     try {
       await response.stream.listen((chunk) {
+        if (isCancelled?.call() == true) {
+          throw HttpException('Download cancelled by user.');
+        }
         sink.add(chunk);
         receivedBytes += chunk.length;
         if (totalBytes > 0 && onProgress != null) {
           onProgress(receivedBytes / totalBytes);
         }
-      }).asFuture();
+      }).asFuture().timeout(const Duration(minutes: 10));
       await sink.flush();
+    } catch (_) {
+      await sink.close();
+      if (await tempFile.exists()) {
+        await tempFile.delete();
+      }
+      rethrow;
     } finally {
       await sink.close();
+    }
+
+    // Verify downloaded binary is a valid complete model (> 10 MB)
+    if (await tempFile.length() < 10 * 1024 * 1024) {
+      if (await tempFile.exists()) {
+        await tempFile.delete();
+      }
+      throw StateError('Downloaded model file is incomplete or corrupted.');
     }
 
     final targetFile = File(targetPath);

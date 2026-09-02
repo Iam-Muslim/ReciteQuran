@@ -59,10 +59,16 @@ class WarshHafsMapper {
     return WarshHafsMapper._(json);
   }
 
+  static WarshHafsMapper? _cachedInstance;
+
   /// Loads the bundled Warsh-to-Hafs mapping JSON asset.
+  /// Subsequent calls return the cached in-memory instance to avoid re-parsing JSON.
   static Future<WarshHafsMapper> loadFromBundle({
     String assetPath = 'assets/json/warsh-to-hafs.json',
   }) async {
+    if (_cachedInstance != null) {
+      return _cachedInstance!;
+    }
     String jsonString;
     try {
       jsonString = await rootBundle.loadString('packages/recite_quran/$assetPath');
@@ -70,7 +76,8 @@ class WarshHafsMapper {
       jsonString = await rootBundle.loadString(assetPath);
     }
     final json = jsonDecode(jsonString) as Map<String, dynamic>;
-    return WarshHafsMapper._(json);
+    _cachedInstance = WarshHafsMapper._(json);
+    return _cachedInstance!;
   }
 
   /// Returns the corresponding Hafs ayah number(s) for a given Warsh ayah.
