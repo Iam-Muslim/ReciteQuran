@@ -42,6 +42,11 @@
 
 ## 🌟 Overview
 
+> [!NOTE]
+> **Important Architectural Note on Riwayat & Qira'at Support:**
+> The neural acoustic Zipformer model (`Quran-Lab/zipformer_p-arabic-v3`) was trained exclusively on Hafs recitation audio. When users recite according to other Riwayat (e.g. Warsh, Qalun, Al-Duri, etc.), the engine uses the canonical **[Quranpedia Qira'at Ayah Mapping dataset](https://github.com/quranpedia/qiraat-ayah-map)** to follow along, track memorization progress, and enable hands-free auto-scrolling and recall. Deterministic Tajweed rule verification is disabled for non-Hafs recitations until dedicated acoustic models are trained for each Riwaya's specific Tajweed rules.
+
+
 **`recite_quran`** is a high-performance, real-time on-device speech-to-text alignment and Tajweed evaluation engine for Flutter.
 
 *  **Continuous Word Tracking**: Zero-lag real-time word alignment powered by semi-global Dynamic Time Warping (DTW) and causal Zipformer CTC acoustic models.
@@ -416,22 +421,36 @@ if (result.isOmissionDetected) {
 
 ---
 
-### 6. Warsh-to-Hafs Cross-Riwaya Ayah Alignment
+### 6. Comprehensive Cross-Riwaya Ayah Alignment (`QiraatAyahMapper`)
 
-Seamlessly track Warsh (Madani-last) reciters against Hafs acoustic models using verified Quranpedia verse mappings:
+Seamlessly track reciters across all **6 canonical counting madhhabs (مذاهب العدّ الستة)** and **20 mutawatir rawis** against Hafs acoustic models using verified **[Quranpedia Qira'at Ayah Map](https://github.com/quranpedia/qiraat-ayah-map)** data:
+
+| Counting System | Total Ayahs | Associated Qira'at & Rawis |
+| :--- | :--- | :--- |
+| **Kufi (`الكوفي`)** | 6,236 | Asim (Hafs, Shu'ba), Hamza (Khalaf, Khallad), Al-Kisai, Khalaf Al-Ashir |
+| **Madani-Last (`المدني الأخير`)** | 6,214 | Nafi' (Warsh, Qalun) |
+| **Madani-First (`المدني الأول`)** | 6,214 | Abu Ja'far (Ibn Wardan, Ibn Jammaz) |
+| **Makki (`المكي`)** | 6,219 | Ibn Kathir (Al-Bazzi, Qunbul) |
+| **Basri (`البصري`)** | 6,204 | Abu 'Amr (Al-Duri, Al-Susi), Ya'qub (Ruways, Rawh) |
+| **Dimashqi (`الدمشقي`)** | 6,226 | Ibn 'Amir (Hisham, Ibn Dhakwan) |
 
 ```dart
 import 'package:recite_quran/recite_quran.dart';
 
-// Load the bundled mapping database
-final mapper = await WarshHafsMapper.loadFromBundle();
+// 1. Automatically load mapping table for any Rawi by name (cached in-memory):
+final warshMapper = await QiraatAyahMapper.loadForRawi('warsh');
+final duriMapper = await QiraatAyahMapper.loadForRawi('duri');
 
+// 2. Kufan recitations (e.g. Hafs, Shu'ba) require zero disk load (O(1) identity):
+final hafsMapper = QiraatAyahMapper.kufiIdentity();
+
+// 3. Bidirectional verse lookups:
 // In Al-Fatiha, Warsh Ayah 1 covers Hafs Ayahs 1 & 2:
-final hafsAyahs = mapper.getHafsAyahs(1, 1); // [1, 2]
-final status = mapper.getMappingStatus(1, 1); // 'covers_multiple'
+final hafsAyahs = warshMapper.getHafsAyahs(1, 1); // [1, 2]
+final status = warshMapper.getMappingStatus(1, 1); // 'covers_multiple'
 
 // Reverse lookup from Hafs to Warsh:
-final warshAyahs = mapper.getWarshAyahs(1, 3); // [2]
+final warshAyahs = warshMapper.getSourceAyahs(1, 3); // [2]
 ```
 
 ---
@@ -544,11 +563,12 @@ Before viewing, using, distributing, or modifying any part of this repository, y
 *Alhamdulillah (الحمد لله رب العالمين)* — this package stands upon the shoulders of brilliant Islamic tech initiatives, researchers, and open-source projects:
 
 - **[Zipformer Quran Acoustic Model](https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3)** by Brother Mustafa & **[QuranLab](https://huggingface.co/Quran-Lab)** for the Zipformer causal streaming ASR model training and acoustic phoneme tokenization.
-- **[Quranpedia (موسوعة القرآن)](https://quranpedia.net)** for the verified Warsh-to-Hafs (Madani-last to Kufi) ayah cross-mapping dataset (`warsh-to-hafs.json`).
+- **[Quranpedia (موسوعة القرآن)](https://quranpedia.net)** for the verified **[Qira'at Ayah Map](https://github.com/quranpedia/qiraat-ayah-map)** dataset linking all 6 counting systems and 20 rawis to Kufi numbering.
 - **[tasmee3-muaalem-findings / Seraj](https://github.com/omar-abuhfs)** (Dr. Omar Abu Hafs) for the Best-Drop LCS word omission detection research, formulations, and benchmark datasets.
 - **[Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx)** by the Next-gen Kaldi team for real-time on-device speech recognition inference.
 - **[quran-transcript](https://github.com/OmarMuhammedAli/quran-transcript)** by Brother Abdullah Aml.
 - **[Quranic Universal Aligner (qua_sdk)](https://huggingface.co/spaces/hetchyy/quranic-universal-aligner)** by Brother Ahmad Ibrahim.
+
 ---
 
 <div align="center">

@@ -8,6 +8,7 @@ import 'engine/sherpa_engine.dart';
 import 'tracking/word/highlighting_controller.dart';
 
 export 'audio/audio_processor.dart';
+export 'data/qiraat_ayah_mapper.dart';
 export 'data/warsh_hafs_mapper.dart';
 export 'utils/omission_detector.dart';
 export 'data/model_downloader.dart';

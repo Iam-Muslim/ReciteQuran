@@ -31,3 +31,8 @@ flutter:
     - assets/model/ph_index.npy
     - assets/model/ref_norm_ph.txt
     - assets/json/warsh-to-hafs.json
+    - assets/json/madani-last-to-kufi.json
+    - assets/json/madani-first-to-kufi.json
+    - assets/json/makki-to-kufi.json
+    - assets/json/basri-to-kufi.json
+    - assets/json/dimashqi-to-kufi.json
