@@ -603,19 +603,6 @@ class HighlightingController extends ChangeNotifier {
       _expectingNewSegment = false;
     }
 
-    // The engine resets its decoder on an endpoint, so the NEXT result restarts
-    // from an empty hypothesis instead of extending this one. The sequencer must
-    // drop `asrCharAnchor` with it, otherwise the anchor still points past the
-    // end of the restarted text and no word can ever match again.
-    // `isNewSegment` for THIS result was already latched just above, so arming
-    // the flag here only affects the next one. targetWordCursor is untouched, so
-    // tracking resumes exactly where this utterance left off.
-    // Armed before the unchanged-text early return below on purpose: an endpoint
-    // fires during silence, when the text usually has NOT changed.
-    if (result.isFinal) {
-      _expectingNewSegment = true;
-    }
-
     if (stream.tokens.isNotEmpty && _isolateStarted) {
       if (!isNewSegment && asrText == _lastProcessedText) {
         return;
