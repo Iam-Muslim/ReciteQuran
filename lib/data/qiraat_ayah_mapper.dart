@@ -62,7 +62,7 @@ enum QuranQiraa {
 }
 
 /// Canonical 20 Rawis (الرواة العشرون) of the 10 Mutawatir Qira'at.
-enum QuranRawi {
+enum QuranRiwayah {
   // ── 1. Nafi' (Madani Last) ──
   qaloon('qaloon', 'قالون', 'Qaloon', QuranQiraa.nafi, aliases: ['qalun', 'qaloon-an-nafi', 'قالون عن نافع']),
   warsh('warsh', 'ورش', 'Warsh', QuranQiraa.nafi, aliases: ['warsh-an-nafi', 'ورش عن نافع', 'nafi', 'نافع']),
@@ -109,7 +109,7 @@ enum QuranRawi {
   final QuranQiraa qiraa;
   final List<String> aliases;
 
-  const QuranRawi(
+  const QuranRiwayah(
     this.id,
     this.nameAr,
     this.nameEn,
@@ -120,51 +120,51 @@ enum QuranRawi {
   /// The verse counting tradition is inherited directly from the Imam's Qira'a tradition.
   QuranCountingSystem get countingSystem => qiraa.countingSystem;
 
-  static final Map<String, QuranRawi> _lookupIndex = _buildLookupIndex();
+  static final Map<String, QuranRiwayah> _lookupIndex = _buildLookupIndex();
 
-  static Map<String, QuranRawi> _buildLookupIndex() {
-    final map = <String, QuranRawi>{};
-    for (final rawi in QuranRawi.values) {
-      map[_normalize(rawi.id)] = rawi;
-      map[_normalize(rawi.name)] = rawi;
-      map[_normalize(rawi.nameEn)] = rawi;
-      map[_normalize(rawi.nameAr)] = rawi;
-      for (final alias in rawi.aliases) {
-        map[_normalize(alias)] = rawi;
+  static Map<String, QuranRiwayah> _buildLookupIndex() {
+    final map = <String, QuranRiwayah>{};
+    for (final riwayah in QuranRiwayah.values) {
+      map[_normalize(riwayah.id)] = riwayah;
+      map[_normalize(riwayah.name)] = riwayah;
+      map[_normalize(riwayah.nameEn)] = riwayah;
+      map[_normalize(riwayah.nameAr)] = riwayah;
+      for (final alias in riwayah.aliases) {
+        map[_normalize(alias)] = riwayah;
       }
     }
     // Also index Imam names to resolve to their primary rawi
     for (final qiraa in QuranQiraa.values) {
-      final defaultRawi = QuranRawi.values.firstWhere((r) => r.qiraa == qiraa);
-      map.putIfAbsent(_normalize(qiraa.id), () => defaultRawi);
-      map.putIfAbsent(_normalize(qiraa.nameAr), () => defaultRawi);
-      map.putIfAbsent(_normalize(qiraa.nameEn), () => defaultRawi);
+      final defaultRiwayah = QuranRiwayah.values.firstWhere((r) => r.qiraa == qiraa);
+      map.putIfAbsent(_normalize(qiraa.id), () => defaultRiwayah);
+      map.putIfAbsent(_normalize(qiraa.nameAr), () => defaultRiwayah);
+      map.putIfAbsent(_normalize(qiraa.nameEn), () => defaultRiwayah);
       final firstArWord = qiraa.nameAr.split(' ').first;
-      map.putIfAbsent(_normalize(firstArWord), () => defaultRawi);
+      map.putIfAbsent(_normalize(firstArWord), () => defaultRiwayah);
       final firstEnWord = qiraa.nameEn.split(' ').first;
-      map.putIfAbsent(_normalize(firstEnWord), () => defaultRawi);
+      map.putIfAbsent(_normalize(firstEnWord), () => defaultRiwayah);
     }
     return Map.unmodifiable(map);
   }
 
   /// Resolves a [QuranRawi] by its exact identifier or alias, with optional fallback.
-  static QuranRawi fromId(String id, {QuranRawi fallback = QuranRawi.hafs}) {
+  static QuranRiwayah fromId(String id, {QuranRiwayah fallback = QuranRiwayah.hafs}) {
     return tryFromId(id) ?? fallback;
   }
 
   /// Resolves a [QuranRawi] by its exact identifier or alias, returning null if not found.
-  static QuranRawi? tryFromId(String id) {
+  static QuranRiwayah? tryFromId(String id) {
     final clean = _normalize(id);
     return _lookupIndex[clean];
   }
 
   /// Parses any string (Arabic/English name, alias, or Imam name) into a [QuranRawi] in O(1) time.
-  static QuranRawi parse(String input, {QuranRawi fallback = QuranRawi.hafs}) {
+  static QuranRiwayah parse(String input, {QuranRiwayah fallback = QuranRiwayah.hafs}) {
     return tryParse(input) ?? fallback;
   }
 
   /// Parses any string into a [QuranRawi], returning null if unrecognized.
-  static QuranRawi? tryParse(String input) {
+  static QuranRiwayah? tryParse(String input) {
     final clean = _normalize(input);
     if (clean.isEmpty) return null;
     return _lookupIndex[clean];
@@ -183,7 +183,8 @@ enum QuranRawi {
 }
 
 /// Type alias for [QuranRawi] to support both naming styles seamlessly.
-typedef QuranRiwayah = QuranRawi;
+/// Backward-compatible alias for [QuranRiwayah].
+typedef QuranRawi = QuranRiwayah;
 
 /// Bidirectional cross-riwaya ayah mapper linking any counting madhhab to Kufi (Hafs).
 /// Sourced from Quranpedia (موسوعة القرآن): https://github.com/quranpedia/qiraat-ayah-map
@@ -307,20 +308,27 @@ class QiraatAyahMapper {
     return mapper;
   }
 
-  /// Loads the mapping table for a strongly-typed [QuranRawi] enum, [QuranQiraa], or rawi name string.
-  static Future<QiraatAyahMapper> loadForRawi(dynamic rawiOrQiraa) {
-    if (rawiOrQiraa is QuranRawi) {
-      return loadForCountingSystem(rawiOrQiraa.countingSystem);
+  /// Primary loader: loads the mapping table for a given Riwayah (enum, id, or Arabic/English name).
+  static Future<QiraatAyahMapper> load(dynamic riwayah) => loadForRiwayah(riwayah);
+
+  /// Loads the mapping table for a strongly-typed [QuranRiwayah] enum, [QuranQiraa], or riwayah name string.
+  static Future<QiraatAyahMapper> loadForRiwayah(dynamic riwayah) {
+    if (riwayah is QuranRiwayah) {
+      return loadForCountingSystem(riwayah.countingSystem);
     }
-    if (rawiOrQiraa is QuranQiraa) {
-      return loadForCountingSystem(rawiOrQiraa.countingSystem);
+    if (riwayah is QuranCountingSystem) {
+      return loadForCountingSystem(riwayah);
     }
-    if (rawiOrQiraa is QuranCountingSystem) {
-      return loadForCountingSystem(rawiOrQiraa);
+    if (riwayah is QuranQiraa) {
+      return loadForCountingSystem(riwayah.countingSystem);
     }
-    final rawi = QuranRawi.parse(rawiOrQiraa.toString());
-    return loadForCountingSystem(rawi.countingSystem);
+    final parsed = QuranRiwayah.parse(riwayah.toString());
+    return loadForCountingSystem(parsed.countingSystem);
   }
+
+  /// Backward-compatible alias for [loadForRiwayah].
+  static Future<QiraatAyahMapper> loadForRawi(dynamic rawiOrQiraa) =>
+      loadForRiwayah(rawiOrQiraa);
 
   /// Loads the mapping table directly for a strongly-typed [QuranQiraa] enum.
   static Future<QiraatAyahMapper> loadForQiraa(QuranQiraa qiraa) =>
