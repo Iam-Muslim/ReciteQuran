@@ -42,6 +42,11 @@
 
 ## 🌟 Overview
 
+> [!IMPORTANT]
+> **Scholarly & Pedagogical Note (تنبيه وأمانة شرعية):**
+> **This recitation engine is an assistive algorithmic aid designed to facilitate revision, memorization practice, and self-testing.**
+> It **can never substitute** for learning directly from and reciting to a qualified, certified Sheikh (*المشافهة والتلقي على شيخ متقن ومجاز بالسند المتصل*). Verifying letter articulation points (*مخارج الحروف*), subtle oral characteristics (*صفات الحروف*), and sound Hifdh must always be confirmed through direct recitation to authorized scholars.
+
 > [!NOTE]
 > **Important Architectural Note on Riwayat & Qira'at Support:**
 > The neural acoustic Zipformer model (`Quran-Lab/zipformer_p-arabic-v3`) was trained exclusively on Hafs recitation audio. When users recite according to other Riwayat (e.g. Warsh, Qalun, Al-Duri, etc.), the engine uses the canonical **[Quranpedia Qira'at Ayah Mapping dataset](https://github.com/quranpedia/qiraat-ayah-map)** to follow along, track memorization progress, and enable hands-free auto-scrolling and recall. Deterministic Tajweed rule verification is disabled for non-Hafs recitations until dedicated acoustic models are trained for each Riwaya's specific Tajweed rules.

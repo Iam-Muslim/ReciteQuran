@@ -43,6 +43,12 @@ typedef QuranVoiceTracker = ReciteQuran;
 
 /// The primary entry point for integrating real-time Quran recitation tracking
 /// and deterministic Tajweed verification into any Flutter application.
+///
+/// **Scholarly & Pedagogical Note (تنبيه وأمانة شرعية):**
+/// This engine is an assistive tool to aid individual revision and practice.
+/// It is never a substitute for direct Talaqqi and Musyafahah (reciting face-to-face
+/// to a qualified, certified Sheikh/Muqri' with Ijaza) to verify sound Hifdh,
+/// Tajweed precision, and letter articulation points (Makharij).
 class ReciteQuran {
   final QuranRepository repository;
   final SherpaEngine _engine;
