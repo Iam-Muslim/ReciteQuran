@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
+import 'data/qiraat_ayah_mapper.dart';
 import 'data/quran_data.dart';
 import 'engine/sherpa_engine.dart';
 import 'tracking/word/highlighting_controller.dart';
@@ -99,7 +100,7 @@ class ReciteQuran {
     bool isTajweed = true,
   })  : _engine = engine ?? SherpaEngine(),
         _config = config,
-        _isTajweed = isTajweed {
+        _isTajweed = (repository.riwayah == QuranRiwayah.hafs) && isTajweed {
     _tokenProcessor = AsrTokenProcessor(config: _config);
   }
 
@@ -180,8 +181,9 @@ class ReciteQuran {
   /// Toggles Tajweed evaluation on/off.
   void setTajweedMode(bool active) {
     if (_isDisposed) return;
-    _isTajweed = active;
-    _isolate.setTajweedMode(active);
+    final effective = (repository.riwayah == QuranRiwayah.hafs) && active;
+    _isTajweed = effective;
+    _isolate.setTajweedMode(effective);
   }
 
   /// Updates difficulty and math thresholds dynamically at runtime.
