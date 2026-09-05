@@ -8,7 +8,7 @@ void main() {
     late WarshHafsMapper mapper;
 
     setUpAll(() async {
-      final file = File('assets/json/warsh-to-hafs.json');
+      final file = File('test/fixtures/warsh-to-hafs.json');
       final jsonString = await file.readAsString();
       final json = jsonDecode(jsonString) as Map<String, dynamic>;
       mapper = WarshHafsMapper.fromJson(json);

@@ -67,7 +67,7 @@ void main() {
     });
 
     test('Warsh loaded from official warsh-to-hafs.json', () async {
-      final file = File('assets/json/warsh-to-hafs.json');
+      final file = File('test/fixtures/warsh-to-hafs.json');
       final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
       final mapper = QiraatAyahMapper.fromJson(json, riwayah: QuranRiwayah.warsh);
 
@@ -79,7 +79,7 @@ void main() {
     });
 
     test('Qaloon loaded from official qaloon-to-hafs.json', () async {
-      final file = File('assets/json/qaloon-to-hafs.json');
+      final file = File('test/fixtures/qaloon-to-hafs.json');
       final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
       final mapper = QiraatAyahMapper.fromJson(json, riwayah: QuranRiwayah.qaloon);
 
@@ -89,7 +89,7 @@ void main() {
     });
 
     test('Al-Bazzi loaded from official bazzi-to-hafs.json', () async {
-      final file = File('assets/json/bazzi-to-hafs.json');
+      final file = File('test/fixtures/bazzi-to-hafs.json');
       final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
       final mapper = QiraatAyahMapper.fromJson(json, riwayah: QuranRiwayah.bazzi);
 
@@ -100,7 +100,7 @@ void main() {
     });
 
     test('Al-Susi loaded from official susi-to-hafs.json', () async {
-      final file = File('assets/json/susi-to-hafs.json');
+      final file = File('test/fixtures/susi-to-hafs.json');
       final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
       final mapper = QiraatAyahMapper.fromJson(json, riwayah: QuranRiwayah.susi);
 
@@ -111,7 +111,7 @@ void main() {
     });
 
     test('Al-Duri loaded from official duri-to-hafs.json', () async {
-      final file = File('assets/json/duri-to-hafs.json');
+      final file = File('test/fixtures/duri-to-hafs.json');
       final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
       final mapper = QiraatAyahMapper.fromJson(json, riwayah: QuranRiwayah.duri);
 
@@ -122,7 +122,7 @@ void main() {
     });
 
     test('Qunbul loaded from official qunbul-to-hafs.json', () async {
-      final file = File('assets/json/qunbul-to-hafs.json');
+      final file = File('test/fixtures/qunbul-to-hafs.json');
       final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
       final mapper = QiraatAyahMapper.fromJson(json, riwayah: QuranRiwayah.qunbul);
 
