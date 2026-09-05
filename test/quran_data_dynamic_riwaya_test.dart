@@ -36,7 +36,7 @@ void main() {
     });
 
     test('Warsh (Madani Last): Surah 1 has 7 ayahs starting with Al-Hamd', () async {
-      final mapperFile = File('assets/json/madani-last-to-kufi.json');
+      final mapperFile = File('assets/json/warsh-to-hafs.json');
       final json = jsonDecode(await mapperFile.readAsString()) as Map<String, dynamic>;
       final mapper = QiraatAyahMapper.fromJson(json, system: QuranCountingSystem.madaniLast);
 
@@ -69,7 +69,7 @@ void main() {
     });
 
     test('Al-Baqarah ayah count reflects counting tradition', () async {
-      final mapperFile = File('assets/json/madani-last-to-kufi.json');
+      final mapperFile = File('assets/json/warsh-to-hafs.json');
       final json = jsonDecode(await mapperFile.readAsString()) as Map<String, dynamic>;
       final mapper = QiraatAyahMapper.fromJson(json, system: QuranCountingSystem.madaniLast);
 

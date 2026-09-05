@@ -25,18 +25,21 @@ enum QuranCountingSystem {
     return QuranCountingSystem.kufi;
   }
 
-  /// Resolves counting system directly from a strongly-typed [QuranRawi].
-  static QuranCountingSystem fromRawi(QuranRawi rawi) => rawi.countingSystem;
+  /// Resolves counting system directly from a strongly-typed [QuranRiwayah].
+  static QuranCountingSystem fromRiwayah(QuranRiwayah riwayah) => riwayah.countingSystem;
+
+  /// Resolves counting system from a [QuranRawi].
+  static QuranCountingSystem fromRawi(QuranRiwayah rawi) => rawi.countingSystem;
 
   /// Resolves counting system directly from a strongly-typed [QuranQiraa].
   static QuranCountingSystem fromQiraa(QuranQiraa qiraa) => qiraa.countingSystem;
 
-  /// Backwards-compatible lookup accepting [QuranRawi], [QuranQiraa], [QuranCountingSystem], or name string.
+  /// Universal lookup accepting [QuranRiwayah], [QuranQiraa], [QuranCountingSystem], or string.
   static QuranCountingSystem fromRawiOrQiraa(dynamic input) {
-    if (input is QuranRawi) return input.countingSystem;
+    if (input is QuranRiwayah) return input.countingSystem;
     if (input is QuranQiraa) return input.countingSystem;
     if (input is QuranCountingSystem) return input;
-    return QuranRawi.parse(input.toString()).countingSystem;
+    return QuranRiwayah.parse(input.toString()).countingSystem;
   }
 }
 
@@ -61,7 +64,7 @@ enum QuranQiraa {
   const QuranQiraa(this.id, this.nameAr, this.nameEn, this.countingSystem);
 }
 
-/// Canonical 20 Rawis (الرواة العشرون) of the 10 Mutawatir Qira'at.
+/// Canonical 20 Riwayat (الروايات العشرون) of the 10 Mutawatir Qira'at.
 enum QuranRiwayah {
   // ── 1. Nafi' (Madani Last) ──
   qaloon('qaloon', 'قالون', 'Qaloon', QuranQiraa.nafi, aliases: ['qalun', 'qaloon-an-nafi', 'قالون عن نافع']),
@@ -77,7 +80,7 @@ enum QuranRiwayah {
 
   // ── 4. Ibn 'Amir (Dimashqi) ──
   hisham('hisham', 'هشام', 'Hisham', QuranQiraa.ibnAmir, aliases: ['هشام عن ابن عامر']),
-  ibnDhakwan('ibn-dhakwan', 'ابن ذكوان', 'Ibn Dhakwan', QuranQiraa.ibnAmir, aliases: ['dhakwan', 'ابن ذكوان عن ابن عامر']),
+  ibnDhakwan('ibn-dhakwan', 'ابن ذكوان', 'Ibn Dhakwan', QuranQiraa.ibnAmir, aliases: ['dhakwan', 'ibn_dhakwan', 'ابن ذكوان عن ابن عامر']),
 
   // ── 5. 'Asim (Kufi) ──
   shubah('shubah', 'شعبة', 'Shu\'bah', QuranQiraa.asim, aliases: ['shuba', 'شعبة عن عاصم']),
@@ -92,8 +95,8 @@ enum QuranRiwayah {
   duriKisai('duri-kisai', 'الدوري عن الكسائي', 'Al-Duri (al-Kisai)', QuranQiraa.kisai, aliases: ['الدوري عن الكسائي']),
 
   // ── 8. Abu Ja'far (Madani First) ──
-  ibnWardan('ibn-wardan', 'ابن وردان', 'Ibn Wardan', QuranQiraa.abuJafar, aliases: ['wardan', 'ابن وردان عن أبي جعفر']),
-  ibnJammaz('ibn-jammaz', 'ابن جماز', 'Ibn Jammaz', QuranQiraa.abuJafar, aliases: ['jammaz', 'ابن جماز عن أبي جعفر']),
+  ibnWardan('ibn-wardan', 'ابن وردان', 'Ibn Wardan', QuranQiraa.abuJafar, aliases: ['wardan', 'ibn_wardan', 'ابن وردان عن أبي جعفر']),
+  ibnJammaz('ibn-jammaz', 'ابن جماز', 'Ibn Jammaz', QuranQiraa.abuJafar, aliases: ['jammaz', 'ibn_jammaz', 'ابن جماز عن أبي جعفر']),
 
   // ── 9. Ya'qub (Basri) ──
   ruways('ruways', 'رويس', 'Ruways', QuranQiraa.yaqub, aliases: ['رويس عن يعقوب']),
@@ -133,7 +136,7 @@ enum QuranRiwayah {
         map[_normalize(alias)] = riwayah;
       }
     }
-    // Also index Imam names to resolve to their primary rawi
+    // Also index Imam names to resolve to their primary riwayah
     for (final qiraa in QuranQiraa.values) {
       final defaultRiwayah = QuranRiwayah.values.firstWhere((r) => r.qiraa == qiraa);
       map.putIfAbsent(_normalize(qiraa.id), () => defaultRiwayah);
@@ -147,23 +150,23 @@ enum QuranRiwayah {
     return Map.unmodifiable(map);
   }
 
-  /// Resolves a [QuranRawi] by its exact identifier or alias, with optional fallback.
+  /// Resolves a [QuranRiwayah] by its exact identifier or alias, with optional fallback.
   static QuranRiwayah fromId(String id, {QuranRiwayah fallback = QuranRiwayah.hafs}) {
     return tryFromId(id) ?? fallback;
   }
 
-  /// Resolves a [QuranRawi] by its exact identifier or alias, returning null if not found.
+  /// Resolves a [QuranRiwayah] by its exact identifier or alias, returning null if not found.
   static QuranRiwayah? tryFromId(String id) {
     final clean = _normalize(id);
     return _lookupIndex[clean];
   }
 
-  /// Parses any string (Arabic/English name, alias, or Imam name) into a [QuranRawi] in O(1) time.
+  /// Parses any string (Arabic/English name, alias, or Imam name) into a [QuranRiwayah] in O(1) time.
   static QuranRiwayah parse(String input, {QuranRiwayah fallback = QuranRiwayah.hafs}) {
     return tryParse(input) ?? fallback;
   }
 
-  /// Parses any string into a [QuranRawi], returning null if unrecognized.
+  /// Parses any string into a [QuranRiwayah], returning null if unrecognized.
   static QuranRiwayah? tryParse(String input) {
     final clean = _normalize(input);
     if (clean.isEmpty) return null;
@@ -171,9 +174,9 @@ enum QuranRiwayah {
   }
 
   static String _normalize(String input) {
-    var s = input.toLowerCase().replaceAll('_', '-').replaceAll('\'', '').trim();
+    var s = input.toLowerCase().replaceAll('_', '-').replaceAll("'", '').trim();
     // Remove Arabic diacritics
-    s = s.replaceAll(RegExp(r'[\u064B-\u065F\u0670]'), '');
+    s = s.replaceAll(RegExp(r'[ً-ٰٟ]'), '');
     // Normalize Alefs
     s = s.replaceAll(RegExp(r'[إأآٱ]'), 'ا');
     // Remove Tatweel
@@ -182,14 +185,13 @@ enum QuranRiwayah {
   }
 }
 
-/// Type alias for [QuranRawi] to support both naming styles seamlessly.
 /// Backward-compatible alias for [QuranRiwayah].
 typedef QuranRawi = QuranRiwayah;
 
-/// Bidirectional cross-riwaya ayah mapper linking any counting madhhab to Kufi (Hafs).
-/// Sourced from Quranpedia (موسوعة القرآن): https://github.com/quranpedia/qiraat-ayah-map
+/// Bidirectional cross-riwaya ayah mapper linking any Riwayah to Hafs (Kufi reference).
+/// Sourced from official verified ayah mappings: https://github.com/M97Chahboun/quran-database-verifier
 class QiraatAyahMapper {
-  final QuranCountingSystem system;
+  final QuranRiwayah riwayah;
   final Map<String, dynamic>? _data;
   final Map<int, Map<int, List<int>>> _sourceToHafs = {};
   final Map<int, Map<int, List<int>>> _hafsToSource = {};
@@ -198,9 +200,11 @@ class QiraatAyahMapper {
   final Map<int, int> _sourceCounts = {};
   final Map<int, int> _hafsCounts = {};
 
-  static final Map<QuranCountingSystem, QiraatAyahMapper> _cache = {};
+  QuranCountingSystem get system => riwayah.countingSystem;
 
-  QiraatAyahMapper._(this.system, [this._data]) {
+  static final Map<QuranRiwayah, QiraatAyahMapper> _cache = {};
+
+  QiraatAyahMapper._(this.riwayah, [this._data]) {
     if (_data != null) {
       _init();
     }
@@ -248,37 +252,64 @@ class QiraatAyahMapper {
   }
 
   /// Factory for creating an identity mapper (e.g. for Hafs, Shu'ba, and Kufan recitations).
-  factory QiraatAyahMapper.kufiIdentity() {
+  factory QiraatAyahMapper.kufiIdentity([QuranRiwayah riwayah = QuranRiwayah.hafs]) {
     return _cache.putIfAbsent(
-      QuranCountingSystem.kufi,
-      () => QiraatAyahMapper._(QuranCountingSystem.kufi),
+      riwayah,
+      () => QiraatAyahMapper._(riwayah),
     );
   }
 
-  /// Creates a mapper from a parsed JSON map for a specific counting system.
+  /// Creates a mapper from a parsed JSON map for a specific Riwayah or counting system.
   factory QiraatAyahMapper.fromJson(
     Map<String, dynamic> json, {
+    QuranRiwayah? riwayah,
     QuranCountingSystem? system,
   }) {
-    final detectedSystem = system ??
-        QuranCountingSystem.fromId(json['_source'] as String? ?? 'madani-last');
-    return QiraatAyahMapper._(detectedSystem, json);
+    QuranRiwayah resolvedRiwayah;
+    if (riwayah != null) {
+      resolvedRiwayah = riwayah;
+    } else {
+      final rawiStr = json['_rawi'] as String? ?? json['source_riwaya'] as String?;
+      if (rawiStr != null) {
+        resolvedRiwayah = QuranRiwayah.parse(rawiStr);
+      } else {
+        final sysStr = json['_source'] as String? ?? 'madani-last';
+        final sys = system ?? QuranCountingSystem.fromId(sysStr);
+        resolvedRiwayah = QuranRiwayah.values.firstWhere(
+          (r) => r.countingSystem == sys,
+          orElse: () => QuranRiwayah.warsh,
+        );
+      }
+    }
+    return QiraatAyahMapper._(resolvedRiwayah, json);
   }
 
-  /// Loads the mapping table for a given counting system from bundled assets with caching.
-  static Future<QiraatAyahMapper> loadForCountingSystem(
-    QuranCountingSystem system, {
+  /// Primary loader: loads the mapping table for a given Riwayah (enum, id, or name).
+  static Future<QiraatAyahMapper> load(dynamic riwayah, {String? customAssetPath}) =>
+      loadForRiwayah(riwayah, customAssetPath: customAssetPath);
+
+  /// Loads the mapping table for a strongly-typed [QuranRiwayah] enum, id, or name.
+  static Future<QiraatAyahMapper> loadForRiwayah(
+    dynamic riwayah, {
     String? customAssetPath,
   }) async {
-    if (system == QuranCountingSystem.kufi) {
-      return QiraatAyahMapper.kufiIdentity();
+    final QuranRiwayah target;
+    if (riwayah is QuranRiwayah) {
+      target = riwayah;
+    } else {
+      target = QuranRiwayah.parse(riwayah.toString());
     }
 
-    if (_cache.containsKey(system) && customAssetPath == null) {
-      return _cache[system]!;
+    // Hafs, Shu'bah, and Kufi recitations use standard 1:1 Kufi ayah numbering (6,236 ayahs)
+    if (target.countingSystem == QuranCountingSystem.kufi) {
+      return QiraatAyahMapper.kufiIdentity(target);
     }
 
-    final filename = '${system.id}-to-kufi.json';
+    if (_cache.containsKey(target) && customAssetPath == null) {
+      return _cache[target]!;
+    }
+
+    final filename = '${target.id}-to-hafs.json';
     final assetPath = customAssetPath ?? 'assets/json/$filename';
 
     String jsonString;
@@ -288,7 +319,13 @@ class QiraatAyahMapper {
       try {
         jsonString = await rootBundle.loadString(assetPath);
       } catch (_) {
-        if (system == QuranCountingSystem.madaniLast) {
+        if (target == QuranRiwayah.qaloon) {
+          try {
+            jsonString = await rootBundle.loadString('packages/recite_quran/assets/json/qalun-to-hafs.json');
+          } catch (_) {
+            jsonString = await rootBundle.loadString('assets/json/qalun-to-hafs.json');
+          }
+        } else if (target == QuranRiwayah.warsh) {
           try {
             jsonString = await rootBundle.loadString('packages/recite_quran/assets/json/warsh-to-hafs.json');
           } catch (_) {
@@ -301,79 +338,94 @@ class QiraatAyahMapper {
     }
 
     final json = jsonDecode(jsonString) as Map<String, dynamic>;
-    final mapper = QiraatAyahMapper.fromJson(json, system: system);
+    final mapper = QiraatAyahMapper.fromJson(json, riwayah: target);
     if (customAssetPath == null) {
-      _cache[system] = mapper;
+      _cache[target] = mapper;
     }
     return mapper;
   }
 
-  /// Primary loader: loads the mapping table for a given Riwayah (enum, id, or Arabic/English name).
-  static Future<QiraatAyahMapper> load(dynamic riwayah) => loadForRiwayah(riwayah);
-
-  /// Loads the mapping table for a strongly-typed [QuranRiwayah] enum, [QuranQiraa], or riwayah name string.
-  static Future<QiraatAyahMapper> loadForRiwayah(dynamic riwayah) {
-    if (riwayah is QuranRiwayah) {
-      return loadForCountingSystem(riwayah.countingSystem);
-    }
-    if (riwayah is QuranCountingSystem) {
-      return loadForCountingSystem(riwayah);
-    }
-    if (riwayah is QuranQiraa) {
-      return loadForCountingSystem(riwayah.countingSystem);
-    }
-    final parsed = QuranRiwayah.parse(riwayah.toString());
-    return loadForCountingSystem(parsed.countingSystem);
-  }
-
-  /// Backward-compatible alias for [loadForRiwayah].
+  /// Backward-compatible loader for [QuranRawi].
   static Future<QiraatAyahMapper> loadForRawi(dynamic rawiOrQiraa) =>
       loadForRiwayah(rawiOrQiraa);
 
-  /// Loads the mapping table directly for a strongly-typed [QuranQiraa] enum.
+  /// Backward-compatible loader for [QuranCountingSystem].
+  static Future<QiraatAyahMapper> loadForCountingSystem(
+    QuranCountingSystem system, {
+    String? customAssetPath,
+  }) async {
+    if (system == QuranCountingSystem.kufi) {
+      return QiraatAyahMapper.kufiIdentity();
+    }
+    final riwayah = QuranRiwayah.values.firstWhere(
+      (r) => r.countingSystem == system,
+      orElse: () => QuranRiwayah.warsh,
+    );
+    return loadForRiwayah(riwayah, customAssetPath: customAssetPath);
+  }
+
+  /// Backward-compatible loader for [QuranQiraa].
   static Future<QiraatAyahMapper> loadForQiraa(QuranQiraa qiraa) =>
       loadForCountingSystem(qiraa.countingSystem);
 
-  /// Alias for [loadForRawi].
+  /// Alias for [loadForRiwayah].
   static Future<QiraatAyahMapper> loadForRawiOrQiraa(dynamic input) =>
-      loadForRawi(input);
+      loadForRiwayah(input);
 
-  /// Returns corresponding Hafs ayah number(s) for a given source ayah in the active counting tradition.
+  /// Returns the corresponding Hafs ayah numbers for a given source Riwayah verse.
   List<int> getHafsAyahs(int surahNumber, int sourceAyah) {
     if (system == QuranCountingSystem.kufi) return [sourceAyah];
     return _sourceToHafs[surahNumber]?[sourceAyah] ?? [sourceAyah];
   }
 
-  /// Returns the primary single Hafs ayah number for a given source ayah.
+  /// Returns the primary (first) Hafs ayah number corresponding to a source verse.
   int getPrimaryHafsAyah(int surahNumber, int sourceAyah) {
     if (system == QuranCountingSystem.kufi) return sourceAyah;
-    final list = _sourceToHafs[surahNumber]?[sourceAyah];
-    return (list != null && list.isNotEmpty) ? list.first : sourceAyah;
+    final list = getHafsAyahs(surahNumber, sourceAyah);
+    return list.isNotEmpty ? list.first : sourceAyah;
   }
 
-  /// Returns corresponding source ayah number(s) in the active counting tradition for a given Hafs ayah.
+  /// Reverse lookup: Returns the source Riwayah ayah numbers corresponding to a Hafs ayah.
   List<int> getSourceAyahs(int surahNumber, int hafsAyah) {
     if (system == QuranCountingSystem.kufi) return [hafsAyah];
     return _hafsToSource[surahNumber]?[hafsAyah] ?? [hafsAyah];
   }
 
-  /// Returns mapping status (e.g. 'mapped', 'covers_multiple', 'split').
+  /// Returns the mapping relationship status ('mapped', 'covers_multiple', 'part_of_multiple').
   String getMappingStatus(int surahNumber, int sourceAyah) {
     if (system == QuranCountingSystem.kufi) return 'mapped';
     return _statusMap[surahNumber]?[sourceAyah] ?? 'mapped';
   }
 
-  /// Total ayah count for the surah in the source counting system.
+  /// Returns the total verse count for a surah in this Riwayah's counting tradition.
   int getSourceAyahCount(int surahNumber) {
-    if (system == QuranCountingSystem.kufi) return _hafsCounts[surahNumber] ?? 0;
-    return _sourceCounts[surahNumber] ?? 0;
+    if (system == QuranCountingSystem.kufi) return _standardHafsCounts[surahNumber] ?? 0;
+    return _sourceCounts[surahNumber] ?? _standardHafsCounts[surahNumber] ?? 0;
   }
 
-  /// Total ayah count for the surah in Hafs (Kufi).
-  int getHafsAyahCount(int surahNumber) => _hafsCounts[surahNumber] ?? 0;
-
-  /// Returns raw metadata map for a specific source ayah if present.
-  Map<String, dynamic>? getAyahMetadata(int surahNumber, int sourceAyah) {
-    return _sourceAyahData[surahNumber]?[sourceAyah];
+  /// Returns the total verse count for a surah in the standard Hafs (Kufi) tradition.
+  int getHafsAyahCount(int surahNumber) {
+    return _standardHafsCounts[surahNumber] ?? 0;
   }
+
+  /// Clears the internal singleton cache.
+  static void clearCache() => _cache.clear();
+
+  static const Map<int, int> _standardHafsCounts = {
+    1: 7, 2: 286, 3: 200, 4: 176, 5: 120, 6: 165, 7: 206, 8: 75, 9: 129,
+    10: 109, 11: 123, 12: 111, 13: 43, 14: 52, 15: 99, 16: 128, 17: 111,
+    18: 110, 19: 98, 20: 135, 21: 112, 22: 78, 23: 118, 24: 64, 25: 77,
+    26: 227, 27: 93, 28: 88, 29: 69, 30: 60, 31: 34, 32: 30, 33: 73,
+    34: 54, 35: 45, 36: 83, 37: 182, 38: 88, 39: 75, 40: 85, 41: 54,
+    42: 53, 43: 89, 44: 59, 45: 37, 46: 35, 47: 38, 48: 29, 49: 18,
+    50: 45, 51: 60, 52: 49, 53: 62, 54: 55, 55: 78, 56: 96, 57: 29,
+    58: 22, 59: 24, 60: 13, 61: 14, 62: 11, 63: 11, 64: 18, 65: 12,
+    66: 12, 67: 30, 68: 52, 69: 52, 70: 44, 71: 28, 72: 28, 73: 20,
+    74: 56, 75: 40, 76: 31, 77: 50, 78: 40, 79: 46, 80: 42, 81: 29,
+    82: 19, 83: 36, 84: 25, 85: 22, 86: 17, 87: 19, 88: 26, 89: 30,
+    90: 20, 91: 15, 92: 21, 93: 11, 94: 8, 95: 8, 96: 19, 97: 5,
+    98: 8, 99: 8, 100: 11, 101: 11, 102: 8, 103: 3, 104: 9, 105: 5,
+    106: 4, 107: 7, 108: 3, 109: 6, 110: 3, 111: 5, 112: 4, 113: 5,
+    114: 6,
+  };
 }

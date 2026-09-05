@@ -1,7 +1,9 @@
 {
   "_version": "0.1.0",
-  "_description": "Reverse ayah mapping: Makkan (المكي) → Kufan (Hafs).",
-  "_source": "makki",
+  "_description": "Ayah mapping: qalun (madani-last) → Hafs (kufi).",
+  "_rawi": "qalun",
+  "_qiraa": "nafi",
+  "_source": "madani-last",
   "_target": "kufi",
   "surahs": {
     "1": {
@@ -10,26 +12,30 @@
       "ayahs": {
         "1": {
           "hafs_ayah": 1,
-          "status": "mapped"
+          "hafs_ayahs": [
+            1,
+            2
+          ],
+          "status": "covers_multiple"
         },
         "2": {
-          "hafs_ayah": 2,
-          "status": "mapped"
-        },
-        "3": {
           "hafs_ayah": 3,
           "status": "mapped"
         },
-        "4": {
+        "3": {
           "hafs_ayah": 4,
           "status": "mapped"
         },
-        "5": {
+        "4": {
           "hafs_ayah": 5,
           "status": "mapped"
         },
-        "6": {
+        "5": {
           "hafs_ayah": 6,
+          "status": "mapped"
+        },
+        "6": {
+          "hafs_ayah": 7,
           "status": "mapped"
         },
         "7": {
@@ -828,23 +834,23 @@
         },
         "196": {
           "hafs_ayah": 197,
-          "hafs_ayahs": [
-            197,
-            198
-          ],
-          "status": "covers_multiple"
+          "status": "mapped"
         },
         "197": {
-          "hafs_ayah": 199,
+          "hafs_ayah": 198,
           "status": "mapped"
         },
         "198": {
-          "hafs_ayah": 200,
+          "hafs_ayah": 199,
           "status": "mapped"
         },
         "199": {
-          "hafs_ayah": 201,
-          "status": "mapped"
+          "hafs_ayah": 200,
+          "hafs_ayahs": [
+            200,
+            201
+          ],
+          "status": "covers_multiple"
         },
         "200": {
           "hafs_ayah": 202,
@@ -919,12 +925,8 @@
           "status": "mapped"
         },
         "218": {
-          "hafs_ayah": 219,
-          "hafs_ayahs": [
-            219,
-            220
-          ],
-          "status": "covers_multiple"
+          "hafs_ayah": 220,
+          "status": "mapped"
         },
         "219": {
           "hafs_ayah": 221,
@@ -8839,12 +8841,16 @@
           "status": "mapped"
         },
         "23": {
-          "hafs_ayah": 23,
+          "hafs_ayah": 22,
           "status": "mapped"
         },
         "24": {
-          "hafs_ayah": 24,
-          "status": "mapped"
+          "hafs_ayah": 23,
+          "hafs_ayahs": [
+            23,
+            24
+          ],
+          "status": "covers_multiple"
         },
         "25": {
           "hafs_ayah": 25,
@@ -8876,23 +8882,23 @@
         },
         "32": {
           "hafs_ayah": 32,
-          "hafs_ayahs": [
-            32,
-            33
-          ],
-          "status": "covers_multiple"
+          "status": "mapped"
         },
         "33": {
-          "hafs_ayah": 34,
+          "hafs_ayah": 33,
           "status": "mapped"
         },
         "34": {
-          "hafs_ayah": 35,
+          "hafs_ayah": 34,
           "status": "mapped"
         },
         "35": {
-          "hafs_ayah": 36,
-          "status": "mapped"
+          "hafs_ayah": 35,
+          "hafs_ayahs": [
+            35,
+            36
+          ],
+          "status": "covers_multiple"
         },
         "36": {
           "hafs_ayah": 37,
@@ -9084,16 +9090,15 @@
         },
         "83": {
           "hafs_ayah": 84,
+          "status": "mapped"
+        },
+        "84": {
+          "hafs_ayah": 85,
           "hafs_ayahs": [
-            84,
             85,
             86
           ],
           "status": "covers_multiple"
-        },
-        "84": {
-          "hafs_ayah": 86,
-          "status": "mapped"
         },
         "85": {
           "hafs_ayah": 87,
@@ -9957,19 +9962,19 @@
         },
         "86": {
           "hafs_ayah": 87,
-          "status": "mapped"
+          "hafs_ayahs": [
+            87,
+            88
+          ],
+          "status": "covers_multiple"
         },
         "87": {
-          "hafs_ayah": 88,
+          "hafs_ayah": 89,
           "status": "mapped"
         },
         "88": {
-          "hafs_ayah": 88,
-          "hafs_ayahs": [
-            88,
-            89
-          ],
-          "status": "covers_multiple"
+          "hafs_ayah": 89,
+          "status": "mapped"
         },
         "89": {
           "hafs_ayah": 90,
@@ -10620,7 +10625,7 @@
       }
     },
     "22": {
-      "source_ayah_count": 77,
+      "source_ayah_count": 76,
       "hafs_ayah_count": 78,
       "ayahs": {
         "1": {
@@ -10929,10 +10934,6 @@
           "status": "mapped"
         },
         "76": {
-          "hafs_ayah": 78,
-          "status": "mapped"
-        },
-        "77": {
           "hafs_ayah": 78,
           "status": "mapped"
         }
@@ -14988,7 +14989,7 @@
       }
     },
     "35": {
-      "source_ayah_count": 45,
+      "source_ayah_count": 46,
       "hafs_ayah_count": 45,
       "ayahs": {
         "1": {
@@ -15164,10 +15165,14 @@
           "status": "mapped"
         },
         "44": {
-          "hafs_ayah": 44,
+          "hafs_ayah": 43,
           "status": "mapped"
         },
         "45": {
+          "hafs_ayah": 44,
+          "status": "mapped"
+        },
+        "46": {
           "hafs_ayah": 45,
           "status": "mapped"
         }
@@ -16677,18 +16682,14 @@
         },
         "16": {
           "hafs_ayah": 17,
-          "hafs_ayahs": [
-            17,
-            18
-          ],
-          "status": "covers_multiple"
+          "status": "mapped"
         },
         "17": {
-          "hafs_ayah": 19,
+          "hafs_ayah": 18,
           "status": "mapped"
         },
         "18": {
-          "hafs_ayah": 20,
+          "hafs_ayah": 19,
           "status": "mapped"
         },
         "19": {
@@ -17135,22 +17136,26 @@
         },
         "53": {
           "hafs_ayah": 53,
-          "status": "mapped"
+          "hafs_ayahs": [
+            53,
+            54
+          ],
+          "status": "covers_multiple"
         },
         "54": {
-          "hafs_ayah": 54,
-          "status": "mapped"
-        },
-        "55": {
           "hafs_ayah": 55,
           "status": "mapped"
         },
-        "56": {
+        "55": {
           "hafs_ayah": 56,
           "status": "mapped"
         },
-        "57": {
+        "56": {
           "hafs_ayah": 57,
+          "status": "mapped"
+        },
+        "57": {
+          "hafs_ayah": 58,
           "status": "mapped"
         },
         "58": {
@@ -17207,11 +17212,7 @@
         },
         "71": {
           "hafs_ayah": 71,
-          "hafs_ayahs": [
-            71,
-            72
-          ],
-          "status": "covers_multiple"
+          "status": "mapped"
         },
         "72": {
           "hafs_ayah": 72,
@@ -20106,39 +20107,39 @@
         },
         "2": {
           "hafs_ayah": 3,
-          "status": "mapped"
+          "hafs_ayahs": [
+            3,
+            4
+          ],
+          "status": "covers_multiple"
         },
         "3": {
-          "hafs_ayah": 4,
-          "status": "mapped"
-        },
-        "4": {
           "hafs_ayah": 5,
           "status": "mapped"
         },
-        "5": {
+        "4": {
           "hafs_ayah": 6,
           "status": "mapped"
         },
-        "6": {
+        "5": {
           "hafs_ayah": 7,
           "status": "mapped"
         },
-        "7": {
+        "6": {
           "hafs_ayah": 8,
           "status": "mapped"
         },
-        "8": {
+        "7": {
           "hafs_ayah": 9,
           "status": "mapped"
         },
-        "9": {
+        "8": {
           "hafs_ayah": 10,
-          "hafs_ayahs": [
-            10,
-            11
-          ],
-          "status": "covers_multiple"
+          "status": "mapped"
+        },
+        "9": {
+          "hafs_ayah": 11,
+          "status": "mapped"
         },
         "10": {
           "hafs_ayah": 12,
@@ -20528,14 +20529,10 @@
         },
         "27": {
           "hafs_ayah": 25,
-          "hafs_ayahs": [
-            25,
-            26
-          ],
-          "status": "covers_multiple"
+          "status": "mapped"
         },
         "28": {
-          "hafs_ayah": 27,
+          "hafs_ayah": 26,
           "status": "mapped"
         },
         "29": {
@@ -20604,26 +20601,22 @@
         },
         "45": {
           "hafs_ayah": 42,
-          "hafs_ayahs": [
-            42,
-            43
-          ],
-          "status": "covers_multiple"
+          "status": "mapped"
         },
         "46": {
-          "hafs_ayah": 44,
+          "hafs_ayah": 43,
           "status": "mapped"
         },
         "47": {
-          "hafs_ayah": 45,
+          "hafs_ayah": 44,
           "status": "mapped"
         },
         "48": {
-          "hafs_ayah": 46,
+          "hafs_ayah": 45,
           "status": "mapped"
         },
         "49": {
-          "hafs_ayah": 47,
+          "hafs_ayah": 46,
           "status": "mapped"
         },
         "50": {
@@ -20636,7 +20629,11 @@
         },
         "52": {
           "hafs_ayah": 49,
-          "status": "mapped"
+          "hafs_ayahs": [
+            49,
+            50
+          ],
+          "status": "covers_multiple"
         },
         "53": {
           "hafs_ayah": 50,
@@ -22394,11 +22391,7 @@
         },
         "24": {
           "hafs_ayah": 23,
-          "hafs_ayahs": [
-            23,
-            24
-          ],
-          "status": "covers_multiple"
+          "status": "mapped"
         },
         "25": {
           "hafs_ayah": 24,
@@ -22519,12 +22512,8 @@
           "status": "mapped"
         },
         "23": {
-          "hafs_ayah": 22,
-          "hafs_ayahs": [
-            22,
-            23
-          ],
-          "status": "covers_multiple"
+          "hafs_ayah": 23,
+          "status": "mapped"
         },
         "24": {
           "hafs_ayah": 24,
@@ -22549,7 +22538,7 @@
       }
     },
     "73": {
-      "source_ayah_count": 20,
+      "source_ayah_count": 18,
       "hafs_ayah_count": 20,
       "ayahs": {
         "1": {
@@ -22613,26 +22602,22 @@
           "status": "mapped"
         },
         "15": {
-          "hafs_ayah": 15,
-          "status": "mapped"
-        },
-        "16": {
           "hafs_ayah": 16,
           "status": "mapped"
         },
-        "17": {
+        "16": {
           "hafs_ayah": 17,
-          "status": "mapped"
+          "hafs_ayahs": [
+            17,
+            18
+          ],
+          "status": "covers_multiple"
         },
-        "18": {
-          "hafs_ayah": 18,
-          "status": "mapped"
-        },
-        "19": {
+        "17": {
           "hafs_ayah": 19,
           "status": "mapped"
         },
-        "20": {
+        "18": {
           "hafs_ayah": 20,
           "status": "mapped"
         }
@@ -22800,15 +22785,15 @@
         },
         "40": {
           "hafs_ayah": 40,
-          "status": "mapped"
-        },
-        "41": {
-          "hafs_ayah": 41,
           "hafs_ayahs": [
-            41,
-            42
+            40,
+            41
           ],
           "status": "covers_multiple"
+        },
+        "41": {
+          "hafs_ayah": 42,
+          "status": "mapped"
         },
         "42": {
           "hafs_ayah": 43,
@@ -25313,7 +25298,7 @@
       }
     },
     "97": {
-      "source_ayah_count": 6,
+      "source_ayah_count": 5,
       "hafs_ayah_count": 5,
       "ayahs": {
         "1": {
@@ -25329,14 +25314,10 @@
           "status": "mapped"
         },
         "4": {
-          "hafs_ayah": 3,
-          "status": "mapped"
-        },
-        "5": {
           "hafs_ayah": 4,
           "status": "mapped"
         },
-        "6": {
+        "5": {
           "hafs_ayah": 5,
           "status": "mapped"
         }
@@ -25566,10 +25547,14 @@
       "ayahs": {
         "1": {
           "hafs_ayah": 1,
-          "status": "mapped"
+          "hafs_ayahs": [
+            1,
+            2
+          ],
+          "status": "covers_multiple"
         },
         "2": {
-          "hafs_ayah": 2,
+          "hafs_ayah": 3,
           "status": "mapped"
         },
         "3": {
@@ -25799,7 +25784,7 @@
       }
     },
     "112": {
-      "source_ayah_count": 5,
+      "source_ayah_count": 4,
       "hafs_ayah_count": 4,
       "ayahs": {
         "1": {
@@ -25815,10 +25800,6 @@
           "status": "mapped"
         },
         "4": {
-          "hafs_ayah": 3,
-          "status": "mapped"
-        },
-        "5": {
           "hafs_ayah": 4,
           "status": "mapped"
         }
@@ -25851,7 +25832,7 @@
       }
     },
     "114": {
-      "source_ayah_count": 7,
+      "source_ayah_count": 6,
       "hafs_ayah_count": 6,
       "ayahs": {
         "1": {
@@ -25871,14 +25852,10 @@
           "status": "mapped"
         },
         "5": {
-          "hafs_ayah": 4,
-          "status": "mapped"
-        },
-        "6": {
           "hafs_ayah": 5,
           "status": "mapped"
         },
-        "7": {
+        "6": {
           "hafs_ayah": 6,
           "status": "mapped"
         }

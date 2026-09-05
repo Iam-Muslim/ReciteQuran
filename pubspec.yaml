@@ -32,8 +32,9 @@ flutter:
     - assets/model/ref_norm_ph.txt
     - assets/json/riwayat.json
     - assets/json/warsh-to-hafs.json
-    - assets/json/madani-last-to-kufi.json
-    - assets/json/madani-first-to-kufi.json
-    - assets/json/makki-to-kufi.json
-    - assets/json/basri-to-kufi.json
-    - assets/json/dimashqi-to-kufi.json
+    - assets/json/qaloon-to-hafs.json
+    - assets/json/qalun-to-hafs.json
+    - assets/json/bazzi-to-hafs.json
+    - assets/json/qunbul-to-hafs.json
+    - assets/json/duri-to-hafs.json
+    - assets/json/susi-to-hafs.json

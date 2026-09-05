@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:recite_quran/data/qiraat_ayah_mapper.dart';
 
 void main() {
-  group('QiraatAyahMapper, QuranQiraa & QuranRawi Enum Tests', () {
+  group('QiraatAyahMapper & QuranRiwayah Tests', () {
     test('Kufi identity mapping requires no JSON load and is 1:1', () {
       final kufi = QiraatAyahMapper.kufiIdentity();
       expect(kufi.system, QuranCountingSystem.kufi);
@@ -13,63 +13,63 @@ void main() {
       expect(kufi.getPrimaryHafsAyah(1, 7), 7);
     });
 
-    test('QuranRawi enum inherits countingSystem directly from QuranQiraa', () {
+    test('QuranRiwayah enum inherits countingSystem directly from QuranQiraa', () {
       // Nafi' -> Madani Last
-      expect(QuranRawi.warsh.qiraa, QuranQiraa.nafi);
-      expect(QuranRawi.warsh.countingSystem, QuranCountingSystem.madaniLast);
-      expect(QuranRawi.qaloon.qiraa, QuranQiraa.nafi);
-      expect(QuranRawi.qaloon.countingSystem, QuranCountingSystem.madaniLast);
+      expect(QuranRiwayah.warsh.qiraa, QuranQiraa.nafi);
+      expect(QuranRiwayah.warsh.countingSystem, QuranCountingSystem.madaniLast);
+      expect(QuranRiwayah.qaloon.qiraa, QuranQiraa.nafi);
+      expect(QuranRiwayah.qaloon.countingSystem, QuranCountingSystem.madaniLast);
 
       // Ibn Kathir -> Makki
-      expect(QuranRawi.bazzi.qiraa, QuranQiraa.ibnKathir);
-      expect(QuranRawi.bazzi.countingSystem, QuranCountingSystem.makki);
-      expect(QuranRawi.qunbul.qiraa, QuranQiraa.ibnKathir);
-      expect(QuranRawi.qunbul.countingSystem, QuranCountingSystem.makki);
+      expect(QuranRiwayah.bazzi.qiraa, QuranQiraa.ibnKathir);
+      expect(QuranRiwayah.bazzi.countingSystem, QuranCountingSystem.makki);
+      expect(QuranRiwayah.qunbul.qiraa, QuranQiraa.ibnKathir);
+      expect(QuranRiwayah.qunbul.countingSystem, QuranCountingSystem.makki);
 
       // Abu 'Amr -> Basri
-      expect(QuranRawi.duri.qiraa, QuranQiraa.abuAmr);
-      expect(QuranRawi.duri.countingSystem, QuranCountingSystem.basri);
-      expect(QuranRawi.susi.qiraa, QuranQiraa.abuAmr);
-      expect(QuranRawi.susi.countingSystem, QuranCountingSystem.basri);
+      expect(QuranRiwayah.duri.qiraa, QuranQiraa.abuAmr);
+      expect(QuranRiwayah.duri.countingSystem, QuranCountingSystem.basri);
+      expect(QuranRiwayah.susi.qiraa, QuranQiraa.abuAmr);
+      expect(QuranRiwayah.susi.countingSystem, QuranCountingSystem.basri);
 
       // 'Asim -> Kufi
-      expect(QuranRawi.hafs.qiraa, QuranQiraa.asim);
-      expect(QuranRawi.hafs.countingSystem, QuranCountingSystem.kufi);
-      expect(QuranRawi.shubah.qiraa, QuranQiraa.asim);
-      expect(QuranRawi.shubah.countingSystem, QuranCountingSystem.kufi);
+      expect(QuranRiwayah.hafs.qiraa, QuranQiraa.asim);
+      expect(QuranRiwayah.hafs.countingSystem, QuranCountingSystem.kufi);
+      expect(QuranRiwayah.shubah.qiraa, QuranQiraa.asim);
+      expect(QuranRiwayah.shubah.countingSystem, QuranCountingSystem.kufi);
     });
 
-    test('QuranRawi fromId and tryFromId work with aliases', () {
-      expect(QuranRawi.tryFromId('hafs'), QuranRawi.hafs);
-      expect(QuranRawi.tryFromId('warsh'), QuranRawi.warsh);
-      expect(QuranRawi.tryFromId('qalun'), QuranRawi.qaloon);
-      expect(QuranRawi.tryFromId('qaloon'), QuranRawi.qaloon);
-      expect(QuranRawi.tryFromId('unknown_id'), isNull);
+    test('QuranRiwayah fromId and tryFromId work with aliases', () {
+      expect(QuranRiwayah.tryFromId('hafs'), QuranRiwayah.hafs);
+      expect(QuranRiwayah.tryFromId('warsh'), QuranRiwayah.warsh);
+      expect(QuranRiwayah.tryFromId('qalun'), QuranRiwayah.qaloon);
+      expect(QuranRiwayah.tryFromId('qaloon'), QuranRiwayah.qaloon);
+      expect(QuranRiwayah.tryFromId('unknown_id'), isNull);
     });
 
-    test('QuranRawi.parse handles Arabic and English strings seamlessly', () {
-      expect(QuranRawi.parse('warsh'), QuranRawi.warsh);
-      expect(QuranRawi.parse('qalun'), QuranRawi.qaloon);
-      expect(QuranRawi.parse('al-susi'), QuranRawi.susi);
-      expect(QuranRawi.parse('susi'), QuranRawi.susi);
-      expect(QuranRawi.parse('السوسي'), QuranRawi.susi);
-      expect(QuranRawi.parse('حفص عن عاصم'), QuranRawi.hafs);
-      expect(QuranRawi.parse('ورش عن نافع'), QuranRawi.warsh);
-      expect(QuranRawi.parse('نافع'), QuranRawi.warsh);
-      expect(QuranRawi.parse('عاصم'), QuranRawi.hafs);
+    test('QuranRiwayah.parse handles Arabic and English strings seamlessly', () {
+      expect(QuranRiwayah.parse('warsh'), QuranRiwayah.warsh);
+      expect(QuranRiwayah.parse('qalun'), QuranRiwayah.qaloon);
+      expect(QuranRiwayah.parse('al-susi'), QuranRiwayah.susi);
+      expect(QuranRiwayah.parse('susi'), QuranRiwayah.susi);
+      expect(QuranRiwayah.parse('السوسي'), QuranRiwayah.susi);
+      expect(QuranRiwayah.parse('حفص عن عاصم'), QuranRiwayah.hafs);
+      expect(QuranRiwayah.parse('ورش عن نافع'), QuranRiwayah.warsh);
+      expect(QuranRiwayah.parse('نافع'), QuranRiwayah.warsh);
+      expect(QuranRiwayah.parse('عاصم'), QuranRiwayah.hafs);
     });
 
     test('Counting system resolution directly via enum', () {
-      expect(QuranCountingSystem.fromRawi(QuranRawi.warsh), QuranCountingSystem.madaniLast);
-      expect(QuranCountingSystem.fromRawi(QuranRawi.susi), QuranCountingSystem.basri);
-      expect(QuranCountingSystem.fromRawi(QuranRawi.hafs), QuranCountingSystem.kufi);
+      expect(QuranCountingSystem.fromRiwayah(QuranRiwayah.warsh), QuranCountingSystem.madaniLast);
+      expect(QuranCountingSystem.fromRiwayah(QuranRiwayah.susi), QuranCountingSystem.basri);
+      expect(QuranCountingSystem.fromRiwayah(QuranRiwayah.hafs), QuranCountingSystem.kufi);
       expect(QuranCountingSystem.fromQiraa(QuranQiraa.ibnKathir), QuranCountingSystem.makki);
     });
 
-    test('Madani-Last (Nafi) loaded from JSON matches canonical Quranpedia data', () async {
-      final file = File('assets/json/madani-last-to-kufi.json');
+    test('Warsh loaded from official warsh-to-hafs.json', () async {
+      final file = File('assets/json/warsh-to-hafs.json');
       final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      final mapper = QiraatAyahMapper.fromJson(json, system: QuranCountingSystem.madaniLast);
+      final mapper = QiraatAyahMapper.fromJson(json, riwayah: QuranRiwayah.warsh);
 
       expect(mapper.getSourceAyahCount(1), 7);
       expect(mapper.getHafsAyahCount(1), 7);
@@ -78,32 +78,56 @@ void main() {
       expect(mapper.getMappingStatus(1, 1), 'covers_multiple');
     });
 
-    test('Makki (Ibn Kathir) loaded from JSON', () async {
-      final file = File('assets/json/makki-to-kufi.json');
+    test('Qaloon loaded from official qaloon-to-hafs.json', () async {
+      final file = File('assets/json/qaloon-to-hafs.json');
       final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      final mapper = QiraatAyahMapper.fromJson(json, system: QuranCountingSystem.makki);
+      final mapper = QiraatAyahMapper.fromJson(json, riwayah: QuranRiwayah.qaloon);
 
+      expect(mapper.riwayah, QuranRiwayah.qaloon);
+      expect(mapper.system, QuranCountingSystem.madaniLast);
+      expect(mapper.getHafsAyahs(1, 1), [1, 2]);
+    });
+
+    test('Al-Bazzi loaded from official bazzi-to-hafs.json', () async {
+      final file = File('assets/json/bazzi-to-hafs.json');
+      final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      final mapper = QiraatAyahMapper.fromJson(json, riwayah: QuranRiwayah.bazzi);
+
+      expect(mapper.riwayah, QuranRiwayah.bazzi);
       expect(mapper.system, QuranCountingSystem.makki);
       expect(mapper.getSourceAyahCount(114), 7);
       expect(mapper.getHafsAyahCount(114), 6);
     });
 
-    test('Basri (Abu Amr & Yaqub) loaded from JSON', () async {
-      final file = File('assets/json/basri-to-kufi.json');
+    test('Al-Susi loaded from official susi-to-hafs.json', () async {
+      final file = File('assets/json/susi-to-hafs.json');
       final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      final mapper = QiraatAyahMapper.fromJson(json, system: QuranCountingSystem.basri);
+      final mapper = QiraatAyahMapper.fromJson(json, riwayah: QuranRiwayah.susi);
 
+      expect(mapper.riwayah, QuranRiwayah.susi);
       expect(mapper.system, QuranCountingSystem.basri);
       expect(mapper.getSourceAyahCount(114), 6);
       expect(mapper.getHafsAyahCount(114), 6);
     });
 
-    test('Dimashqi (Ibn Amir) loaded from JSON', () async {
-      final file = File('assets/json/dimashqi-to-kufi.json');
+    test('Al-Duri loaded from official duri-to-hafs.json', () async {
+      final file = File('assets/json/duri-to-hafs.json');
       final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      final mapper = QiraatAyahMapper.fromJson(json, system: QuranCountingSystem.dimashqi);
+      final mapper = QiraatAyahMapper.fromJson(json, riwayah: QuranRiwayah.duri);
 
-      expect(mapper.system, QuranCountingSystem.dimashqi);
+      expect(mapper.riwayah, QuranRiwayah.duri);
+      expect(mapper.system, QuranCountingSystem.basri);
+      expect(mapper.getSourceAyahCount(114), 6);
+      expect(mapper.getHafsAyahCount(114), 6);
+    });
+
+    test('Qunbul loaded from official qunbul-to-hafs.json', () async {
+      final file = File('assets/json/qunbul-to-hafs.json');
+      final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      final mapper = QiraatAyahMapper.fromJson(json, riwayah: QuranRiwayah.qunbul);
+
+      expect(mapper.riwayah, QuranRiwayah.qunbul);
+      expect(mapper.system, QuranCountingSystem.makki);
       expect(mapper.getSourceAyahCount(114), 7);
       expect(mapper.getHafsAyahCount(114), 6);
     });
