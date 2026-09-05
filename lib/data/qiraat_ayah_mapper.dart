@@ -307,22 +307,28 @@ class QiraatAyahMapper {
     return mapper;
   }
 
-  /// Loads the mapping table directly for a strongly-typed [QuranRawi] enum.
-  static Future<QiraatAyahMapper> loadForRawi(QuranRawi rawi) =>
-      loadForCountingSystem(rawi.countingSystem);
+  /// Loads the mapping table for a strongly-typed [QuranRawi] enum, [QuranQiraa], or rawi name string.
+  static Future<QiraatAyahMapper> loadForRawi(dynamic rawiOrQiraa) {
+    if (rawiOrQiraa is QuranRawi) {
+      return loadForCountingSystem(rawiOrQiraa.countingSystem);
+    }
+    if (rawiOrQiraa is QuranQiraa) {
+      return loadForCountingSystem(rawiOrQiraa.countingSystem);
+    }
+    if (rawiOrQiraa is QuranCountingSystem) {
+      return loadForCountingSystem(rawiOrQiraa);
+    }
+    final rawi = QuranRawi.parse(rawiOrQiraa.toString());
+    return loadForCountingSystem(rawi.countingSystem);
+  }
 
   /// Loads the mapping table directly for a strongly-typed [QuranQiraa] enum.
   static Future<QiraatAyahMapper> loadForQiraa(QuranQiraa qiraa) =>
       loadForCountingSystem(qiraa.countingSystem);
 
-  /// Automatically resolves the correct counting system and loads the mapping table for any Rawi enum or string.
-  static Future<QiraatAyahMapper> loadForRawiOrQiraa(dynamic input) {
-    if (input is QuranRawi) return loadForRawi(input);
-    if (input is QuranQiraa) return loadForQiraa(input);
-    if (input is QuranCountingSystem) return loadForCountingSystem(input);
-    final rawi = QuranRawi.parse(input.toString());
-    return loadForRawi(rawi);
-  }
+  /// Alias for [loadForRawi].
+  static Future<QiraatAyahMapper> loadForRawiOrQiraa(dynamic input) =>
+      loadForRawi(input);
 
   /// Returns corresponding Hafs ayah number(s) for a given source ayah in the active counting tradition.
   List<int> getHafsAyahs(int surahNumber, int sourceAyah) {
