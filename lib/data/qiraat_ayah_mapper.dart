@@ -80,7 +80,7 @@ enum QuranRawi {
   ibnDhakwan('ibn-dhakwan', 'ابن ذكوان', 'Ibn Dhakwan', QuranQiraa.ibnAmir, aliases: ['dhakwan', 'ابن ذكوان عن ابن عامر']),
 
   // ── 5. 'Asim (Kufi) ──
-  shubah('shubah', 'شعبة', 'Shu\'bah', QuranQiraa.asim, aliases: ['شعبة عن عاصم']),
+  shubah('shubah', 'شعبة', 'Shu\'bah', QuranQiraa.asim, aliases: ['shuba', 'شعبة عن عاصم']),
   hafs('hafs', 'حفص', 'Hafs', QuranQiraa.asim, aliases: ['hafs-an-asim', 'حفص عن عاصم', 'asim', 'عاصم']),
 
   // ── 6. Hamza (Kufi) ──
