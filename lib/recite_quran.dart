@@ -8,6 +8,7 @@ import 'engine/sherpa_engine.dart';
 import 'tracking/word/highlighting_controller.dart';
 
 export 'audio/audio_processor.dart';
+export 'data/ayah_mapping_downloader.dart';
 export 'data/model_downloader.dart';
 export 'data/qiraat_ayah_mapper.dart';
 export 'data/quran_data.dart';

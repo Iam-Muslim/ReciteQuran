@@ -1,5 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'ayah_mapping_downloader.dart';
 
 /// Supported canonical Quranic verse-numbering traditions (مدارس عد الآي).
 enum QuranCountingSystem {
@@ -285,13 +290,31 @@ class QiraatAyahMapper {
   }
 
   /// Primary loader: loads the mapping table for a given Riwayah (enum, id, or name).
-  static Future<QiraatAyahMapper> load(dynamic riwayah, {String? customAssetPath}) =>
-      loadForRiwayah(riwayah, customAssetPath: customAssetPath);
+  static Future<QiraatAyahMapper> load(
+    dynamic riwayah, {
+    String? customAssetPath,
+    String? customStoragePath,
+    bool downloadIfMissing = true,
+  }) =>
+      loadForRiwayah(
+        riwayah,
+        customAssetPath: customAssetPath,
+        customStoragePath: customStoragePath,
+        downloadIfMissing: downloadIfMissing,
+      );
 
   /// Loads the mapping table for a strongly-typed [QuranRiwayah] enum, id, or name.
+  /// Priority:
+  /// 1. Kufi identity (immediate 1:1, no file or network needed)
+  /// 2. In-memory cache
+  /// 3. Local disk storage (e.g. downloaded to documents directory)
+  /// 4. Bundled Flutter assets (if packaged in app)
+  /// 5. On-demand network download from official release (if enabled)
   static Future<QiraatAyahMapper> loadForRiwayah(
     dynamic riwayah, {
     String? customAssetPath,
+    String? customStoragePath,
+    bool downloadIfMissing = true,
   }) async {
     final QuranRiwayah target;
     if (riwayah is QuranRiwayah) {
@@ -300,19 +323,45 @@ class QiraatAyahMapper {
       target = QuranRiwayah.parse(riwayah.toString());
     }
 
-    // Hafs, Shu'bah, and Kufi recitations use standard 1:1 Kufi ayah numbering (6,236 ayahs)
+    // 1. Hafs, Shu'bah, and Kufi recitations use standard 1:1 Kufi ayah numbering (6,236 ayahs)
     if (target.countingSystem == QuranCountingSystem.kufi) {
       return QiraatAyahMapper.kufiIdentity(target);
     }
 
+    // 2. In-memory cache
     if (_cache.containsKey(target) && customAssetPath == null) {
       return _cache[target]!;
     }
 
     final filename = '${target.id}-to-hafs.json';
-    final assetPath = customAssetPath ?? 'assets/json/$filename';
 
-    String jsonString;
+    // 3. Try custom file / local documents directory on disk
+    try {
+      final downloader = AyahMappingDownloader(customStoragePath: customStoragePath);
+      final localFile = await downloader.getMappingFile(target);
+      if (await localFile.exists()) {
+        final content = await localFile.readAsString();
+        final json = jsonDecode(content) as Map<String, dynamic>;
+        final mapper = QiraatAyahMapper.fromJson(json, riwayah: target);
+        if (customAssetPath == null) _cache[target] = mapper;
+        return mapper;
+      }
+
+      // Also check app-level documents/mappings folder if present
+      final appDir = await getApplicationDocumentsDirectory();
+      final altFile = File(p.join(appDir.path, 'mappings', filename));
+      if (await altFile.exists()) {
+        final content = await altFile.readAsString();
+        final json = jsonDecode(content) as Map<String, dynamic>;
+        final mapper = QiraatAyahMapper.fromJson(json, riwayah: target);
+        if (customAssetPath == null) _cache[target] = mapper;
+        return mapper;
+      }
+    } catch (_) {}
+
+    // 4. Try bundled assets (package assets or app assets)
+    final assetPath = customAssetPath ?? 'assets/json/$filename';
+    String? jsonString;
     try {
       jsonString = await rootBundle.loadString('packages/recite_quran/$assetPath');
     } catch (_) {
@@ -323,26 +372,47 @@ class QiraatAyahMapper {
           try {
             jsonString = await rootBundle.loadString('packages/recite_quran/assets/json/qalun-to-hafs.json');
           } catch (_) {
-            jsonString = await rootBundle.loadString('assets/json/qalun-to-hafs.json');
+            try {
+              jsonString = await rootBundle.loadString('assets/json/qalun-to-hafs.json');
+            } catch (_) {}
           }
         } else if (target == QuranRiwayah.warsh) {
           try {
             jsonString = await rootBundle.loadString('packages/recite_quran/assets/json/warsh-to-hafs.json');
           } catch (_) {
-            jsonString = await rootBundle.loadString('assets/json/warsh-to-hafs.json');
+            try {
+              jsonString = await rootBundle.loadString('assets/json/warsh-to-hafs.json');
+            } catch (_) {}
           }
-        } else {
-          rethrow;
         }
       }
     }
 
-    final json = jsonDecode(jsonString) as Map<String, dynamic>;
-    final mapper = QiraatAyahMapper.fromJson(json, riwayah: target);
-    if (customAssetPath == null) {
-      _cache[target] = mapper;
+    if (jsonString != null) {
+      final json = jsonDecode(jsonString) as Map<String, dynamic>;
+      final mapper = QiraatAyahMapper.fromJson(json, riwayah: target);
+      if (customAssetPath == null) _cache[target] = mapper;
+      return mapper;
     }
-    return mapper;
+
+    // 5. On-demand download from official release if missing
+    if (downloadIfMissing && !kIsWeb) {
+      try {
+        final downloader = AyahMappingDownloader(customStoragePath: customStoragePath);
+        final downloadedFile = await downloader.downloadMapping(target);
+        if (downloadedFile != null && await downloadedFile.exists()) {
+          final content = await downloadedFile.readAsString();
+          final json = jsonDecode(content) as Map<String, dynamic>;
+          final mapper = QiraatAyahMapper.fromJson(json, riwayah: target);
+          if (customAssetPath == null) _cache[target] = mapper;
+          return mapper;
+        }
+      } catch (_) {}
+    }
+
+    throw StateError(
+      'Ayah mapping for ${target.id} is not found locally or in bundled assets, and on-demand download could not be completed.',
+    );
   }
 
   /// Backward-compatible loader for [QuranRawi].
