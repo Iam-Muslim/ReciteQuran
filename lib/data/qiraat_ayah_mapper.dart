@@ -16,16 +16,162 @@ enum QuranCountingSystem {
 
   const QuranCountingSystem(this.id, this.arabicName, this.totalAyahs);
 
+  /// Resolves counting system from identifier string with fallback to Kufi.
   static QuranCountingSystem fromId(String id) {
     final clean = id.toLowerCase().replaceAll('_', '-').trim();
-    return QuranCountingSystem.values.firstWhere(
-      (s) => s.id == clean,
-      orElse: () => QuranCountingSystem.kufi,
-    );
+    for (final s in QuranCountingSystem.values) {
+      if (s.id == clean) return s;
+    }
+    return QuranCountingSystem.kufi;
   }
 
-  static String _normalizeRawiKey(String rawiOrQiraa) {
-    var s = rawiOrQiraa.toLowerCase().replaceAll('_', '-').replaceAll('\'', '').trim();
+  /// Resolves counting system directly from a strongly-typed [QuranRawi].
+  static QuranCountingSystem fromRawi(QuranRawi rawi) => rawi.countingSystem;
+
+  /// Resolves counting system directly from a strongly-typed [QuranQiraa].
+  static QuranCountingSystem fromQiraa(QuranQiraa qiraa) => qiraa.countingSystem;
+
+  /// Backwards-compatible lookup accepting [QuranRawi], [QuranQiraa], [QuranCountingSystem], or name string.
+  static QuranCountingSystem fromRawiOrQiraa(dynamic input) {
+    if (input is QuranRawi) return input.countingSystem;
+    if (input is QuranQiraa) return input.countingSystem;
+    if (input is QuranCountingSystem) return input;
+    return QuranRawi.parse(input.toString()).countingSystem;
+  }
+}
+
+/// Canonical 10 Qira'at (الأئمة العشرة القراء) with their counting tradition.
+enum QuranQiraa {
+  nafi('nafi', 'نافع المدني', 'Nafi al-Madani', QuranCountingSystem.madaniLast),
+  ibnKathir('ibn-kathir', 'ابن كثير المكي', 'Ibn Kathir al-Makki', QuranCountingSystem.makki),
+  abuAmr('abu-amr', 'أبو عمرو البصري', 'Abu Amr al-Basri', QuranCountingSystem.basri),
+  ibnAmir('ibn-amir', 'ابن عامر الشامي', 'Ibn Amir ad-Dimashqi', QuranCountingSystem.dimashqi),
+  asim('asim', 'عاصم الكوفي', 'Asim al-Kufi', QuranCountingSystem.kufi),
+  hamza('hamza', 'حمزة الكوفي', 'Hamza al-Kufi', QuranCountingSystem.kufi),
+  kisai('kisai', 'الكسائي الكوفي', 'Al-Kisai al-Kufi', QuranCountingSystem.kufi),
+  abuJafar('abu-jafar', 'أبو جعفر المدني', 'Abu Ja\'far al-Madani', QuranCountingSystem.madaniFirst),
+  yaqub('yaqub', 'يعقوب الحضرمي البصري', 'Ya\'qub al-Hadrami al-Basri', QuranCountingSystem.basri),
+  khalafAlAshir('khalaf-al-ashir', 'خلف العاشر الكوفي', 'Khalaf al-Ashir al-Kufi', QuranCountingSystem.kufi);
+
+  final String id;
+  final String nameAr;
+  final String nameEn;
+  final QuranCountingSystem countingSystem;
+
+  const QuranQiraa(this.id, this.nameAr, this.nameEn, this.countingSystem);
+}
+
+/// Canonical 20 Rawis (الرواة العشرون) of the 10 Mutawatir Qira'at.
+enum QuranRawi {
+  // ── 1. Nafi' (Madani Last) ──
+  qaloon('qaloon', 'قالون', 'Qaloon', QuranQiraa.nafi, aliases: ['qalun', 'qaloon-an-nafi', 'قالون عن نافع']),
+  warsh('warsh', 'ورش', 'Warsh', QuranQiraa.nafi, aliases: ['warsh-an-nafi', 'ورش عن نافع', 'nafi', 'نافع']),
+
+  // ── 2. Ibn Kathir (Makki) ──
+  bazzi('bazzi', 'البزي', 'Al-Bazzi', QuranQiraa.ibnKathir, aliases: ['al-bazzi', 'البزي عن ابن كثير']),
+  qunbul('qunbul', 'قنبل', 'Qunbul', QuranQiraa.ibnKathir, aliases: ['قنبل عن ابن كثير']),
+
+  // ── 3. Abu 'Amr (Basri) ──
+  duri('duri', 'الدوري', 'Al-Duri', QuranQiraa.abuAmr, aliases: ['al-duri', 'duri-abu-amr', 'الدوري عن أبي عمرو']),
+  susi('susi', 'السوسي', 'Al-Susi', QuranQiraa.abuAmr, aliases: ['al-susi', 'susi-abu-amr', 'السوسي عن أبي عمرو']),
+
+  // ── 4. Ibn 'Amir (Dimashqi) ──
+  hisham('hisham', 'هشام', 'Hisham', QuranQiraa.ibnAmir, aliases: ['هشام عن ابن عامر']),
+  ibnDhakwan('ibn-dhakwan', 'ابن ذكوان', 'Ibn Dhakwan', QuranQiraa.ibnAmir, aliases: ['dhakwan', 'ابن ذكوان عن ابن عامر']),
+
+  // ── 5. 'Asim (Kufi) ──
+  shubah('shubah', 'شعبة', 'Shu\'bah', QuranQiraa.asim, aliases: ['شعبة عن عاصم']),
+  hafs('hafs', 'حفص', 'Hafs', QuranQiraa.asim, aliases: ['hafs-an-asim', 'حفص عن عاصم', 'asim', 'عاصم']),
+
+  // ── 6. Hamza (Kufi) ──
+  khalaf('khalaf', 'خلف', 'Khalaf', QuranQiraa.hamza, aliases: ['خلف عن حمزة']),
+  khallad('khallad', 'خلاد', 'Khallad', QuranQiraa.hamza, aliases: ['خلاد عن حمزة']),
+
+  // ── 7. Al-Kisa'i (Kufi) ──
+  abuAlHarith('abu-al-harith', 'أبو الحارث', 'Abu al-Harith', QuranQiraa.kisai, aliases: ['abu-harith', 'أبو الحارث عن الكسائي']),
+  duriKisai('duri-kisai', 'الدوري عن الكسائي', 'Al-Duri (al-Kisai)', QuranQiraa.kisai, aliases: ['الدوري عن الكسائي']),
+
+  // ── 8. Abu Ja'far (Madani First) ──
+  ibnWardan('ibn-wardan', 'ابن وردان', 'Ibn Wardan', QuranQiraa.abuJafar, aliases: ['wardan', 'ابن وردان عن أبي جعفر']),
+  ibnJammaz('ibn-jammaz', 'ابن جماز', 'Ibn Jammaz', QuranQiraa.abuJafar, aliases: ['jammaz', 'ابن جماز عن أبي جعفر']),
+
+  // ── 9. Ya'qub (Basri) ──
+  ruways('ruways', 'رويس', 'Ruways', QuranQiraa.yaqub, aliases: ['رويس عن يعقوب']),
+  rawh('rawh', 'روح', 'Rawh', QuranQiraa.yaqub, aliases: ['روح عن يعقوب']),
+
+  // ── 10. Khalaf al-'Ashir (Kufi) ──
+  ishaq('ishaq', 'إسحاق', 'Ishaq', QuranQiraa.khalafAlAshir, aliases: ['إسحاق عن خلف العاشر']),
+  idris('idris', 'إدريس', 'Idris', QuranQiraa.khalafAlAshir, aliases: ['إدريس عن خلف العاشر']);
+
+  final String id;
+  final String nameAr;
+  final String nameEn;
+  final QuranQiraa qiraa;
+  final List<String> aliases;
+
+  const QuranRawi(
+    this.id,
+    this.nameAr,
+    this.nameEn,
+    this.qiraa, {
+    this.aliases = const [],
+  });
+
+  /// The verse counting tradition is inherited directly from the Imam's Qira'a tradition.
+  QuranCountingSystem get countingSystem => qiraa.countingSystem;
+
+  static final Map<String, QuranRawi> _lookupIndex = _buildLookupIndex();
+
+  static Map<String, QuranRawi> _buildLookupIndex() {
+    final map = <String, QuranRawi>{};
+    for (final rawi in QuranRawi.values) {
+      map[_normalize(rawi.id)] = rawi;
+      map[_normalize(rawi.name)] = rawi;
+      map[_normalize(rawi.nameEn)] = rawi;
+      map[_normalize(rawi.nameAr)] = rawi;
+      for (final alias in rawi.aliases) {
+        map[_normalize(alias)] = rawi;
+      }
+    }
+    // Also index Imam names to resolve to their primary rawi
+    for (final qiraa in QuranQiraa.values) {
+      final defaultRawi = QuranRawi.values.firstWhere((r) => r.qiraa == qiraa);
+      map.putIfAbsent(_normalize(qiraa.id), () => defaultRawi);
+      map.putIfAbsent(_normalize(qiraa.nameAr), () => defaultRawi);
+      map.putIfAbsent(_normalize(qiraa.nameEn), () => defaultRawi);
+      final firstArWord = qiraa.nameAr.split(' ').first;
+      map.putIfAbsent(_normalize(firstArWord), () => defaultRawi);
+      final firstEnWord = qiraa.nameEn.split(' ').first;
+      map.putIfAbsent(_normalize(firstEnWord), () => defaultRawi);
+    }
+    return Map.unmodifiable(map);
+  }
+
+  /// Resolves a [QuranRawi] by its exact identifier or alias, with optional fallback.
+  static QuranRawi fromId(String id, {QuranRawi fallback = QuranRawi.hafs}) {
+    return tryFromId(id) ?? fallback;
+  }
+
+  /// Resolves a [QuranRawi] by its exact identifier or alias, returning null if not found.
+  static QuranRawi? tryFromId(String id) {
+    final clean = _normalize(id);
+    return _lookupIndex[clean];
+  }
+
+  /// Parses any string (Arabic/English name, alias, or Imam name) into a [QuranRawi] in O(1) time.
+  static QuranRawi parse(String input, {QuranRawi fallback = QuranRawi.hafs}) {
+    return tryParse(input) ?? fallback;
+  }
+
+  /// Parses any string into a [QuranRawi], returning null if unrecognized.
+  static QuranRawi? tryParse(String input) {
+    final clean = _normalize(input);
+    if (clean.isEmpty) return null;
+    return _lookupIndex[clean];
+  }
+
+  static String _normalize(String input) {
+    var s = input.toLowerCase().replaceAll('_', '-').replaceAll('\'', '').trim();
     // Remove Arabic diacritics
     s = s.replaceAll(RegExp(r'[\u064B-\u065F\u0670]'), '');
     // Normalize Alefs
@@ -34,123 +180,10 @@ enum QuranCountingSystem {
     s = s.replaceAll('ـ', '');
     return s;
   }
-
-  /// Maps any canonical Rawi or Qira'a name (in English or Arabic) to its corresponding counting tradition.
-  static QuranCountingSystem fromRawiOrQiraa(String rawiOrQiraa) {
-    final clean = _normalizeRawiKey(rawiOrQiraa);
-    switch (clean) {
-      // 1. Nafi' (Warsh & Qaloon) -> Madani Last
-      case 'warsh':
-      case 'qalun':
-      case 'qaloon':
-      case 'nafi':
-      case 'nafi-warsh':
-      case 'nafi-qalun':
-      case 'nafi-qaloon':
-      case 'warsh-an-nafi':
-      case 'qalun-an-nafi':
-      case 'qaloon-an-nafi':
-      case 'ورش':
-      case 'قالون':
-      case 'نافع':
-      case 'ورش عن نافع':
-      case 'قالون عن نافع':
-        return QuranCountingSystem.madaniLast;
-
-      // 2. Abu Ja'far (Ibn Wardan & Ibn Jammaz) -> Madani First
-      case 'ibn-wardan':
-      case 'wardan':
-      case 'ibn-jammaz':
-      case 'jammaz':
-      case 'abu-jafar':
-      case 'abu-jaafar':
-      case 'ابن وردان':
-      case 'وردان':
-      case 'ابن جماز':
-      case 'جماز':
-      case 'ابو جعفر':
-        return QuranCountingSystem.madaniFirst;
-
-      // 3. Ibn Kathir (Al-Bazzi & Qunbul) -> Makki
-      case 'bazzi':
-      case 'al-bazzi':
-      case 'qunbul':
-      case 'ibn-kathir':
-      case 'kathir':
-      case 'البزي':
-      case 'بزي':
-      case 'قنبل':
-      case 'ابن كثير':
-        return QuranCountingSystem.makki;
-
-      // 4. Abu 'Amr & Ya'qub (Al-Duri, Al-Susi, Ruways, Rawh) -> Basri
-      case 'duri':
-      case 'al-duri':
-      case 'duri-abu-amr':
-      case 'susi':
-      case 'al-susi':
-      case 'susi-abu-amr':
-      case 'abu-amr':
-      case 'ruways':
-      case 'rawh':
-      case 'yaqub':
-      case 'yaqub-al-hadrami':
-      case 'الدوري':
-      case 'الدوري عن ابي عمرو':
-      case 'السوسي':
-      case 'السوسي عن ابي عمرو':
-      case 'ابو عمرو':
-      case 'رويس':
-      case 'روح':
-      case 'يعقوب':
-      case 'يعقوب الحضرمي':
-        return QuranCountingSystem.basri;
-
-      // 5. Ibn 'Amir (Hisham & Ibn Dhakwan) -> Damascene / Shami
-      case 'hisham':
-      case 'ibn-dhakwan':
-      case 'dhakwan':
-      case 'ibn-amir':
-      case 'shami':
-      case 'damascene':
-      case 'هشام':
-      case 'ابن ذكوان':
-      case 'ذكوان':
-      case 'ابن عامر':
-        return QuranCountingSystem.dimashqi;
-
-      // 6. Asim, Hamza, Kisai, Khalaf -> Kufi (Default reference)
-      case 'hafs':
-      case 'hafs-an-asim':
-      case 'shuba':
-      case 'asim':
-      case 'khalaf':
-      case 'khallad':
-      case 'hamza':
-      case 'abu-al-harith':
-      case 'duri-kisai':
-      case 'kisai':
-      case 'al-kisai':
-      case 'ishaq':
-      case 'idris':
-      case 'حفص':
-      case 'حفص عن عاصم':
-      case 'شعبة':
-      case 'شعبة عن عاصم':
-      case 'عاصم':
-      case 'خلف':
-      case 'خلاد':
-      case 'حمزة':
-      case 'ابو الحارث':
-      case 'الدوري عن الكسائي':
-      case 'الكسائي':
-      case 'اسحاق':
-      case 'ادريس':
-      default:
-        return QuranCountingSystem.kufi;
-    }
-  }
 }
+
+/// Type alias for [QuranRawi] to support both naming styles seamlessly.
+typedef QuranRiwayah = QuranRawi;
 
 /// Bidirectional cross-riwaya ayah mapper linking any counting madhhab to Kufi (Hafs).
 /// Sourced from Quranpedia (موسوعة القرآن): https://github.com/quranpedia/qiraat-ayah-map
@@ -274,10 +307,21 @@ class QiraatAyahMapper {
     return mapper;
   }
 
-  /// Automatically resolves the correct counting system and loads the mapping table for any Rawi.
-  static Future<QiraatAyahMapper> loadForRawi(String rawiOrQiraa) async {
-    final system = QuranCountingSystem.fromRawiOrQiraa(rawiOrQiraa);
-    return loadForCountingSystem(system);
+  /// Loads the mapping table directly for a strongly-typed [QuranRawi] enum.
+  static Future<QiraatAyahMapper> loadForRawi(QuranRawi rawi) =>
+      loadForCountingSystem(rawi.countingSystem);
+
+  /// Loads the mapping table directly for a strongly-typed [QuranQiraa] enum.
+  static Future<QiraatAyahMapper> loadForQiraa(QuranQiraa qiraa) =>
+      loadForCountingSystem(qiraa.countingSystem);
+
+  /// Automatically resolves the correct counting system and loads the mapping table for any Rawi enum or string.
+  static Future<QiraatAyahMapper> loadForRawiOrQiraa(dynamic input) {
+    if (input is QuranRawi) return loadForRawi(input);
+    if (input is QuranQiraa) return loadForQiraa(input);
+    if (input is QuranCountingSystem) return loadForCountingSystem(input);
+    final rawi = QuranRawi.parse(input.toString());
+    return loadForRawi(rawi);
   }
 
   /// Returns corresponding Hafs ayah number(s) for a given source ayah in the active counting tradition.

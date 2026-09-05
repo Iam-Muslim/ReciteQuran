@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:recite_quran/data/riwaya_descriptor.dart';
 import 'package:recite_quran/data/verse_alignment.dart';
-import 'package:recite_quran/data/verse_key_map.dart';
 
 void main() {
   group('VerseAlignment & Exceptions Tests', () {

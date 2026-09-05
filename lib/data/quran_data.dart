@@ -324,23 +324,39 @@ class ContinuousQuranWord {
 class QuranRepository {
   final QuranMetadataService _service;
   QiraatAyahMapper? _ayahMapper;
+  QuranRiwayah? _riwayah;
 
   bool _isLoaded = false;
   bool get isLoaded => _isLoaded || _service.rawJson != null;
+
   final Map<int, List<QuranVerse>> _surahCache = {};
   final Map<int, List<ContinuousQuranWord>> _surahWordsCache = {};
   final Map<int, Map<int, int>> _ayahStartWordIndexCache = {};
 
   final List<QuranVerse> _fallbackMetadata = [];
 
-  QuranRepository(this._service, {QiraatAyahMapper? ayahMapper})
-      : _ayahMapper = ayahMapper;
+  QuranRepository(
+    this._service, {
+    QiraatAyahMapper? ayahMapper,
+    QuranRiwayah? riwayah,
+  })  : _ayahMapper = ayahMapper,
+        _riwayah = riwayah;
 
   QiraatAyahMapper? get ayahMapper => _ayahMapper;
+  QuranRiwayah? get riwayah => _riwayah;
 
-  void setAyahMapper(QiraatAyahMapper? mapper) {
-    if (_ayahMapper == mapper) return;
+  void setAyahMapper(QiraatAyahMapper? mapper, [QuranRiwayah? riwayah]) {
+    if (_ayahMapper == mapper && _riwayah == riwayah) return;
     _ayahMapper = mapper;
+    if (riwayah != null) _riwayah = riwayah;
+    _surahCache.clear();
+    _surahWordsCache.clear();
+    _ayahStartWordIndexCache.clear();
+  }
+
+  void setRiwayah(QuranRiwayah riwayah, [QiraatAyahMapper? mapper]) {
+    _riwayah = riwayah;
+    if (mapper != null) _ayahMapper = mapper;
     _surahCache.clear();
     _surahWordsCache.clear();
     _ayahStartWordIndexCache.clear();

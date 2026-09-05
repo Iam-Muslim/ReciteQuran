@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:recite_quran/data/qiraat_ayah_mapper.dart';
 
 void main() {
-  group('QiraatAyahMapper Tests (All 6 Counting Madhhabs & 20 Rawis)', () {
+  group('QiraatAyahMapper, QuranQiraa & QuranRawi Enum Tests', () {
     test('Kufi identity mapping requires no JSON load and is 1:1', () {
       final kufi = QiraatAyahMapper.kufiIdentity();
       expect(kufi.system, QuranCountingSystem.kufi);
@@ -13,55 +13,57 @@ void main() {
       expect(kufi.getPrimaryHafsAyah(1, 7), 7);
     });
 
-    test('Counting system resolution for all 20 rawis in English', () {
-      // Nafi'
-      expect(QuranCountingSystem.fromRawiOrQiraa('warsh'), QuranCountingSystem.madaniLast);
-      expect(QuranCountingSystem.fromRawiOrQiraa('qalun'), QuranCountingSystem.madaniLast);
-      expect(QuranCountingSystem.fromRawiOrQiraa('qaloon'), QuranCountingSystem.madaniLast);
-      expect(QuranCountingSystem.fromRawiOrQiraa('qaloon-an-nafi'), QuranCountingSystem.madaniLast);
+    test('QuranRawi enum inherits countingSystem directly from QuranQiraa', () {
+      // Nafi' -> Madani Last
+      expect(QuranRawi.warsh.qiraa, QuranQiraa.nafi);
+      expect(QuranRawi.warsh.countingSystem, QuranCountingSystem.madaniLast);
+      expect(QuranRawi.qaloon.qiraa, QuranQiraa.nafi);
+      expect(QuranRawi.qaloon.countingSystem, QuranCountingSystem.madaniLast);
 
-      // Abu Ja'far
-      expect(QuranCountingSystem.fromRawiOrQiraa('ibn_wardan'), QuranCountingSystem.madaniFirst);
-      expect(QuranCountingSystem.fromRawiOrQiraa('ibn_jammaz'), QuranCountingSystem.madaniFirst);
+      // Ibn Kathir -> Makki
+      expect(QuranRawi.bazzi.qiraa, QuranQiraa.ibnKathir);
+      expect(QuranRawi.bazzi.countingSystem, QuranCountingSystem.makki);
+      expect(QuranRawi.qunbul.qiraa, QuranQiraa.ibnKathir);
+      expect(QuranRawi.qunbul.countingSystem, QuranCountingSystem.makki);
 
-      // Ibn Kathir
-      expect(QuranCountingSystem.fromRawiOrQiraa('bazzi'), QuranCountingSystem.makki);
-      expect(QuranCountingSystem.fromRawiOrQiraa('qunbul'), QuranCountingSystem.makki);
+      // Abu 'Amr -> Basri
+      expect(QuranRawi.duri.qiraa, QuranQiraa.abuAmr);
+      expect(QuranRawi.duri.countingSystem, QuranCountingSystem.basri);
+      expect(QuranRawi.susi.qiraa, QuranQiraa.abuAmr);
+      expect(QuranRawi.susi.countingSystem, QuranCountingSystem.basri);
 
-      // Abu 'Amr & Ya'qub
-      expect(QuranCountingSystem.fromRawiOrQiraa('duri'), QuranCountingSystem.basri);
-      expect(QuranCountingSystem.fromRawiOrQiraa('susi'), QuranCountingSystem.basri);
-      expect(QuranCountingSystem.fromRawiOrQiraa('ruways'), QuranCountingSystem.basri);
-      expect(QuranCountingSystem.fromRawiOrQiraa('rawh'), QuranCountingSystem.basri);
-
-      // Ibn 'Amir
-      expect(QuranCountingSystem.fromRawiOrQiraa('hisham'), QuranCountingSystem.dimashqi);
-      expect(QuranCountingSystem.fromRawiOrQiraa('ibn_dhakwan'), QuranCountingSystem.dimashqi);
-
-      // Asim, Hamza, Kisai, Khalaf
-      expect(QuranCountingSystem.fromRawiOrQiraa('hafs'), QuranCountingSystem.kufi);
-      expect(QuranCountingSystem.fromRawiOrQiraa('shuba'), QuranCountingSystem.kufi);
-      expect(QuranCountingSystem.fromRawiOrQiraa('khalaf'), QuranCountingSystem.kufi);
-      expect(QuranCountingSystem.fromRawiOrQiraa('khallad'), QuranCountingSystem.kufi);
-      expect(QuranCountingSystem.fromRawiOrQiraa('abu_al_harith'), QuranCountingSystem.kufi);
-      expect(QuranCountingSystem.fromRawiOrQiraa('duri_kisai'), QuranCountingSystem.kufi);
-      expect(QuranCountingSystem.fromRawiOrQiraa('ishaq'), QuranCountingSystem.kufi);
-      expect(QuranCountingSystem.fromRawiOrQiraa('idris'), QuranCountingSystem.kufi);
+      // 'Asim -> Kufi
+      expect(QuranRawi.hafs.qiraa, QuranQiraa.asim);
+      expect(QuranRawi.hafs.countingSystem, QuranCountingSystem.kufi);
+      expect(QuranRawi.shubah.qiraa, QuranQiraa.asim);
+      expect(QuranRawi.shubah.countingSystem, QuranCountingSystem.kufi);
     });
 
-    test('Counting system resolution for Arabic Rawi & Qiraa names', () {
-      expect(QuranCountingSystem.fromRawiOrQiraa('ورش'), QuranCountingSystem.madaniLast);
-      expect(QuranCountingSystem.fromRawiOrQiraa('قالون'), QuranCountingSystem.madaniLast);
-      expect(QuranCountingSystem.fromRawiOrQiraa('قَالُون عَنْ نَافِع'), QuranCountingSystem.madaniLast);
-      expect(QuranCountingSystem.fromRawiOrQiraa('حفص'), QuranCountingSystem.kufi);
-      expect(QuranCountingSystem.fromRawiOrQiraa('حَفْص عَنْ عَاصِم'), QuranCountingSystem.kufi);
-      expect(QuranCountingSystem.fromRawiOrQiraa('شعبة'), QuranCountingSystem.kufi);
-      expect(QuranCountingSystem.fromRawiOrQiraa('ابن كثير'), QuranCountingSystem.makki);
-      expect(QuranCountingSystem.fromRawiOrQiraa('البزي'), QuranCountingSystem.makki);
-      expect(QuranCountingSystem.fromRawiOrQiraa('الدوري عن أبي عمرو'), QuranCountingSystem.basri);
-      expect(QuranCountingSystem.fromRawiOrQiraa('السوسي'), QuranCountingSystem.basri);
-      expect(QuranCountingSystem.fromRawiOrQiraa('ابن عامر'), QuranCountingSystem.dimashqi);
-      expect(QuranCountingSystem.fromRawiOrQiraa('أبو جعفر'), QuranCountingSystem.madaniFirst);
+    test('QuranRawi fromId and tryFromId work with aliases', () {
+      expect(QuranRawi.tryFromId('hafs'), QuranRawi.hafs);
+      expect(QuranRawi.tryFromId('warsh'), QuranRawi.warsh);
+      expect(QuranRawi.tryFromId('qalun'), QuranRawi.qaloon);
+      expect(QuranRawi.tryFromId('qaloon'), QuranRawi.qaloon);
+      expect(QuranRawi.tryFromId('unknown_id'), isNull);
+    });
+
+    test('QuranRawi.parse handles Arabic and English strings seamlessly', () {
+      expect(QuranRawi.parse('warsh'), QuranRawi.warsh);
+      expect(QuranRawi.parse('qalun'), QuranRawi.qaloon);
+      expect(QuranRawi.parse('al-susi'), QuranRawi.susi);
+      expect(QuranRawi.parse('susi'), QuranRawi.susi);
+      expect(QuranRawi.parse('السوسي'), QuranRawi.susi);
+      expect(QuranRawi.parse('حفص عن عاصم'), QuranRawi.hafs);
+      expect(QuranRawi.parse('ورش عن نافع'), QuranRawi.warsh);
+      expect(QuranRawi.parse('نافع'), QuranRawi.warsh);
+      expect(QuranRawi.parse('عاصم'), QuranRawi.hafs);
+    });
+
+    test('Counting system resolution directly via enum', () {
+      expect(QuranCountingSystem.fromRawi(QuranRawi.warsh), QuranCountingSystem.madaniLast);
+      expect(QuranCountingSystem.fromRawi(QuranRawi.susi), QuranCountingSystem.basri);
+      expect(QuranCountingSystem.fromRawi(QuranRawi.hafs), QuranCountingSystem.kufi);
+      expect(QuranCountingSystem.fromQiraa(QuranQiraa.ibnKathir), QuranCountingSystem.makki);
     });
 
     test('Madani-Last (Nafi) loaded from JSON matches canonical Quranpedia data', () async {
