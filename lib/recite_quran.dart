@@ -8,11 +8,14 @@ import 'engine/sherpa_engine.dart';
 import 'tracking/word/highlighting_controller.dart';
 
 export 'audio/audio_processor.dart';
-export 'data/qiraat_ayah_mapper.dart';
-export 'data/warsh_hafs_mapper.dart';
-export 'utils/omission_detector.dart';
 export 'data/model_downloader.dart';
+export 'data/qiraat_ayah_mapper.dart';
 export 'data/quran_data.dart';
+export 'data/riwaya_descriptor.dart';
+export 'data/riwaya_registry.dart';
+export 'data/verse_alignment.dart';
+export 'data/verse_key_map.dart';
+export 'data/warsh_hafs_mapper.dart';
 export 'engine/sherpa_engine.dart';
 export 'tracking/ayah_search/fuzzy_search.dart';
 export 'tracking/ayah_search/phonetic_search.dart';
@@ -25,6 +28,7 @@ export 'tracking/word/dictation_sequencer.dart';
 export 'tracking/word/highlighting_controller.dart';
 export 'tracking/word/phoneme_alignment_isolate.dart';
 export 'utils/debug_logger.dart';
+export 'utils/omission_detector.dart';
 
 /// Type alias for QuranRepository.
 typedef QuranDataRepository = QuranRepository;

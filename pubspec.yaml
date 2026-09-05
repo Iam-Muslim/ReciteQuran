@@ -30,6 +30,7 @@ flutter:
     - assets/model/ordered_quran_phonemes.json
     - assets/model/ph_index.npy
     - assets/model/ref_norm_ph.txt
+    - assets/json/riwayat.json
     - assets/json/warsh-to-hafs.json
     - assets/json/madani-last-to-kufi.json
     - assets/json/madani-first-to-kufi.json

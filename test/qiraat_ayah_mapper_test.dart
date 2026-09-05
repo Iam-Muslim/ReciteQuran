@@ -13,10 +13,12 @@ void main() {
       expect(kufi.getPrimaryHafsAyah(1, 7), 7);
     });
 
-    test('Counting system resolution for all 20 rawis', () {
+    test('Counting system resolution for all 20 rawis in English', () {
       // Nafi'
       expect(QuranCountingSystem.fromRawiOrQiraa('warsh'), QuranCountingSystem.madaniLast);
       expect(QuranCountingSystem.fromRawiOrQiraa('qalun'), QuranCountingSystem.madaniLast);
+      expect(QuranCountingSystem.fromRawiOrQiraa('qaloon'), QuranCountingSystem.madaniLast);
+      expect(QuranCountingSystem.fromRawiOrQiraa('qaloon-an-nafi'), QuranCountingSystem.madaniLast);
 
       // Abu Ja'far
       expect(QuranCountingSystem.fromRawiOrQiraa('ibn_wardan'), QuranCountingSystem.madaniFirst);
@@ -47,6 +49,21 @@ void main() {
       expect(QuranCountingSystem.fromRawiOrQiraa('idris'), QuranCountingSystem.kufi);
     });
 
+    test('Counting system resolution for Arabic Rawi & Qiraa names', () {
+      expect(QuranCountingSystem.fromRawiOrQiraa('ورش'), QuranCountingSystem.madaniLast);
+      expect(QuranCountingSystem.fromRawiOrQiraa('قالون'), QuranCountingSystem.madaniLast);
+      expect(QuranCountingSystem.fromRawiOrQiraa('قَالُون عَنْ نَافِع'), QuranCountingSystem.madaniLast);
+      expect(QuranCountingSystem.fromRawiOrQiraa('حفص'), QuranCountingSystem.kufi);
+      expect(QuranCountingSystem.fromRawiOrQiraa('حَفْص عَنْ عَاصِم'), QuranCountingSystem.kufi);
+      expect(QuranCountingSystem.fromRawiOrQiraa('شعبة'), QuranCountingSystem.kufi);
+      expect(QuranCountingSystem.fromRawiOrQiraa('ابن كثير'), QuranCountingSystem.makki);
+      expect(QuranCountingSystem.fromRawiOrQiraa('البزي'), QuranCountingSystem.makki);
+      expect(QuranCountingSystem.fromRawiOrQiraa('الدوري عن أبي عمرو'), QuranCountingSystem.basri);
+      expect(QuranCountingSystem.fromRawiOrQiraa('السوسي'), QuranCountingSystem.basri);
+      expect(QuranCountingSystem.fromRawiOrQiraa('ابن عامر'), QuranCountingSystem.dimashqi);
+      expect(QuranCountingSystem.fromRawiOrQiraa('أبو جعفر'), QuranCountingSystem.madaniFirst);
+    });
+
     test('Madani-Last (Nafi) loaded from JSON matches canonical Quranpedia data', () async {
       final file = File('assets/json/madani-last-to-kufi.json');
       final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
@@ -65,7 +82,6 @@ void main() {
       final mapper = QiraatAyahMapper.fromJson(json, system: QuranCountingSystem.makki);
 
       expect(mapper.system, QuranCountingSystem.makki);
-      // In Makki counting tradition, An-Nas has 7 ayahs (vs 6 in Hafs/Kufi)
       expect(mapper.getSourceAyahCount(114), 7);
       expect(mapper.getHafsAyahCount(114), 6);
     });
@@ -86,7 +102,6 @@ void main() {
       final mapper = QiraatAyahMapper.fromJson(json, system: QuranCountingSystem.dimashqi);
 
       expect(mapper.system, QuranCountingSystem.dimashqi);
-      // In Dimashqi counting tradition, An-Nas has 7 ayahs (vs 6 in Hafs/Kufi)
       expect(mapper.getSourceAyahCount(114), 7);
       expect(mapper.getHafsAyahCount(114), 6);
     });

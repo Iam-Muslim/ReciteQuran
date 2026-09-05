@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
+import 'qiraat_ayah_mapper.dart';
 
 // ---------------------------------------------------------------------------
 // quran_data.dart
@@ -87,6 +88,32 @@ class QuranVerse {
     this.wordRules = const [],
     List<int>? wordMap,
   }) : _wordMap = wordMap;
+
+  QuranVerse copyWith({
+    int? surah,
+    int? ayah,
+    String? textUthmani,
+    String? surahName,
+    String? surahNameEn,
+    List<String>? uthmaniWords,
+    String? textPhoneme,
+    List<String>? phonemeWords,
+    List<List<WordTajweedRule>>? wordRules,
+    List<int>? wordMap,
+  }) {
+    return QuranVerse(
+      surah: surah ?? this.surah,
+      ayah: ayah ?? this.ayah,
+      textUthmani: textUthmani ?? this.textUthmani,
+      surahName: surahName ?? this.surahName,
+      surahNameEn: surahNameEn ?? this.surahNameEn,
+      uthmaniWords: uthmaniWords ?? this.uthmaniWords,
+      textPhoneme: textPhoneme ?? this.textPhoneme,
+      phonemeWords: phonemeWords ?? this.phonemeWords,
+      wordRules: wordRules ?? this.wordRules,
+      wordMap: wordMap ?? _wordMap,
+    );
+  }
 
   static final RegExp _hizbSajdahRegex = RegExp(r'[۞۩]');
 
@@ -228,7 +255,6 @@ class QuranVerse {
   }
 }
 
-// We no longer parse the entire database upfront.
 // Verses are parsed lazily on demand from the decoded JSON map.
 class QuranMetadataService {
   /// Optional absolute path to a custom phoneme JSON file on disk.
@@ -249,10 +275,6 @@ class QuranMetadataService {
         : await _loadFromBundle();
 
     // Decode synchronously on the main isolate.
-    // Spawning a 3rd concurrent isolate here (alongside the Sherpa isolate and the
-    // alignment isolate) pushes RSS to ~300MB+ during startup on 32-bit low-RAM
-    // devices (e.g. Redmi 2020), triggering the OOM killer.
-    // jsonDecode of the ~15MB Quran JSON takes < 200ms — acceptable for a one-time load.
     _rawJson = jsonDecode(phonemeData) as Map<String, dynamic>;
   }
 
@@ -270,7 +292,6 @@ class QuranMetadataService {
         );
       }
     } catch (e, stack) {
-      // Re-throw so the Orchestrator can show an error instead of silently breaking the matching system
       print('CRITICAL ERROR loading quran phonemes: $e\n$stack');
       rethrow;
     }
@@ -302,21 +323,32 @@ class ContinuousQuranWord {
 
 class QuranRepository {
   final QuranMetadataService _service;
+  QiraatAyahMapper? _ayahMapper;
 
   bool _isLoaded = false;
+  bool get isLoaded => _isLoaded || _service.rawJson != null;
   final Map<int, List<QuranVerse>> _surahCache = {};
   final Map<int, List<ContinuousQuranWord>> _surahWordsCache = {};
   final Map<int, Map<int, int>> _ayahStartWordIndexCache = {};
 
   final List<QuranVerse> _fallbackMetadata = [];
 
-  QuranRepository(this._service);
+  QuranRepository(this._service, {QiraatAyahMapper? ayahMapper})
+      : _ayahMapper = ayahMapper;
+
+  QiraatAyahMapper? get ayahMapper => _ayahMapper;
+
+  void setAyahMapper(QiraatAyahMapper? mapper) {
+    if (_ayahMapper == mapper) return;
+    _ayahMapper = mapper;
+    _surahCache.clear();
+    _surahWordsCache.clear();
+    _ayahStartWordIndexCache.clear();
+  }
 
   List<QuranVerse> get surahMetadata {
-    if (!_isLoaded) return [];
+    if (!isLoaded) return [];
 
-    // We lazily parse Surah 1 verse 1 for each Surah to get the metadata
-    // (surahName, surahNameEn, etc.) without parsing the whole Surah.
     if (_fallbackMetadata.isEmpty && _service.rawJson != null) {
       final raw = _service.rawJson!;
       final versesMap = (raw['verses'] as Map<String, dynamic>?) ?? raw;
@@ -341,7 +373,7 @@ class QuranRepository {
   }
 
   Future<void> loadSurahAsync(int surah) async {
-    if (!_isLoaded) {
+    if (!isLoaded) {
       await _service.loadData();
       _isLoaded = true;
     }
@@ -358,36 +390,189 @@ class QuranRepository {
     final ruleNames = rawJson['rule_names'] as Map<String, dynamic>?;
 
     final List<QuranVerse> verses = [];
+    final mapper = _ayahMapper;
 
-    // Most surahs have < 300 ayahs (Al-Baqarah has 286).
-    for (int ayah = 1; ayah <= 300; ayah++) {
-      final key = '$surah:$ayah';
-      final phonemeObj = versesMap[key];
-      if (phonemeObj != null) {
-        verses.add(
-          QuranVerse.fromJson(
+    if (mapper == null || mapper.system == QuranCountingSystem.kufi) {
+      // 1:1 default Kufi (Hafs) loading
+      for (int ayah = 1; ayah <= 300; ayah++) {
+        final key = '$surah:$ayah';
+        final phonemeObj = versesMap[key];
+        if (phonemeObj != null) {
+          verses.add(
+            QuranVerse.fromJson(
+              surah,
+              ayah,
+              phonemeObj as Map<String, dynamic>,
+              globalRuleNames: ruleNames,
+            ),
+          );
+        } else {
+          break;
+        }
+      }
+    } else {
+      // Dynamic Non-Kufi Ayah Mapping
+      final int sourceAyahCount = mapper.getSourceAyahCount(surah);
+      final count = sourceAyahCount > 0 ? sourceAyahCount : 300;
+
+      for (int ayah = 1; ayah <= count; ayah++) {
+        // Special handling for Al-Fatihah across non-Kufi traditions
+        if (surah == 1) {
+          final fatihahVerse = _buildFatihahVerse(
             surah,
             ayah,
-            phonemeObj as Map<String, dynamic>,
-            globalRuleNames: ruleNames,
-          ),
-        );
-      } else {
-        break; // Assume ayahs are contiguous and we reached the end
+            mapper.system,
+            versesMap,
+            ruleNames,
+          );
+          if (fatihahVerse != null) {
+            verses.add(fatihahVerse);
+            continue;
+          }
+        }
+
+        final hafsAyahs = mapper.getHafsAyahs(surah, ayah);
+        final status = mapper.getMappingStatus(surah, ayah);
+
+        if (status == 'covers_multiple' || hafsAyahs.length > 1) {
+          final List<QuranVerse> subVerses = [];
+          for (final h in hafsAyahs) {
+            final hObj = versesMap['$surah:$h'];
+            if (hObj != null) {
+              subVerses.add(
+                QuranVerse.fromJson(
+                  surah,
+                  h,
+                  hObj as Map<String, dynamic>,
+                  globalRuleNames: ruleNames,
+                ),
+              );
+            }
+          }
+          if (subVerses.isNotEmpty) {
+            verses.add(_mergeVerses(surah, ayah, subVerses));
+          }
+        } else {
+          final int hafsAyah = mapper.getPrimaryHafsAyah(surah, ayah);
+          final hObj = versesMap['$surah:$hafsAyah'];
+          if (hObj != null) {
+            verses.add(
+              QuranVerse.fromJson(
+                surah,
+                ayah,
+                hObj as Map<String, dynamic>,
+                globalRuleNames: ruleNames,
+              ),
+            );
+          } else if (sourceAyahCount == 0) {
+            break;
+          }
+        }
       }
     }
 
     _surahCache[surah] = verses;
   }
 
+  QuranVerse? _buildFatihahVerse(
+    int surah,
+    int ayah,
+    QuranCountingSystem system,
+    Map<String, dynamic> versesMap,
+    Map<String, dynamic>? ruleNames,
+  ) {
+    if (system == QuranCountingSystem.madaniLast ||
+        system == QuranCountingSystem.madaniFirst ||
+        system == QuranCountingSystem.basri) {
+      if (ayah >= 1 && ayah <= 5) {
+        final hafsAyah = ayah + 1;
+        final obj = versesMap['1:$hafsAyah'];
+        if (obj == null) return null;
+        return QuranVerse.fromJson(
+          1,
+          ayah,
+          obj as Map<String, dynamic>,
+          globalRuleNames: ruleNames,
+        );
+      } else if (ayah == 6 || ayah == 7) {
+        final obj7 = versesMap['1:7'];
+        if (obj7 == null) return null;
+        final baseVerse = QuranVerse.fromJson(
+          1,
+          7,
+          obj7 as Map<String, dynamic>,
+          globalRuleNames: ruleNames,
+        );
+        if (ayah == 6) {
+          // First 4 words: صِرَاطَ الَّذِينَ أَنْعَمْتَ عَلَيْهِمْ
+          final uWords = baseVerse.uthmaniWords.take(4).toList();
+          final pWords = baseVerse.phonemeWords.take(4).toList();
+          final rules = baseVerse.wordRules.take(4).toList();
+          return QuranVerse(
+            surah: 1,
+            ayah: 6,
+            textUthmani: uWords.join(' '),
+            surahName: baseVerse.surahName,
+            surahNameEn: baseVerse.surahNameEn,
+            uthmaniWords: uWords,
+            textPhoneme: pWords.join(''),
+            phonemeWords: pWords,
+            wordRules: rules,
+          );
+        } else {
+          // Remaining words: غَيْرِ الْمَغْضُوبِ عَلَيْهِمْ وَلَا الضَّالِّينَ
+          final uWords = baseVerse.uthmaniWords.skip(4).toList();
+          final pWords = baseVerse.phonemeWords.skip(4).toList();
+          final rules = baseVerse.wordRules.skip(4).toList();
+          return QuranVerse(
+            surah: 1,
+            ayah: 7,
+            textUthmani: uWords.join(' '),
+            surahName: baseVerse.surahName,
+            surahNameEn: baseVerse.surahNameEn,
+            uthmaniWords: uWords,
+            textPhoneme: pWords.join(''),
+            phonemeWords: pWords,
+            wordRules: rules,
+          );
+        }
+      }
+    }
+    return null;
+  }
+
+  QuranVerse _mergeVerses(int surah, int ayah, List<QuranVerse> subVerses) {
+    final List<String> uthmaniWords = [];
+    final List<String> phonemeWords = [];
+    final List<List<WordTajweedRule>> wordRules = [];
+
+    for (final v in subVerses) {
+      uthmaniWords.addAll(v.uthmaniWords);
+      phonemeWords.addAll(v.phonemeWords);
+      wordRules.addAll(v.wordRules);
+    }
+
+    return QuranVerse(
+      surah: surah,
+      ayah: ayah,
+      textUthmani: uthmaniWords.join(' '),
+      surahName: subVerses.first.surahName,
+      surahNameEn: subVerses.first.surahNameEn,
+      uthmaniWords: uthmaniWords,
+      textPhoneme: phonemeWords.join(''),
+      phonemeWords: phonemeWords,
+      wordRules: wordRules,
+    );
+  }
+
   List<QuranVerse> getSurah(int surah) {
-    if (!_isLoaded) return [];
+    if (!isLoaded) return [];
     _ensureSurahParsed(surah);
     return _surahCache[surah] ?? [];
   }
 
   List<ContinuousQuranWord> getSurahWords(int surah) {
-    if (!_isLoaded) return [];
+    if (!isLoaded) return [];
     if (_surahWordsCache.containsKey(surah)) {
       return _surahWordsCache[surah]!;
     }
@@ -432,7 +617,7 @@ class QuranRepository {
   }
 
   QuranVerse? getVerse(int surah, int ayah) {
-    if (!_isLoaded) return null;
+    if (!isLoaded) return null;
     final verses = getSurah(surah);
     if (ayah >= 1 && ayah <= verses.length) {
       return verses[ayah - 1];
