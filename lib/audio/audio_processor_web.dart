@@ -12,6 +12,8 @@ external void _stopOfficialSherpa();
 class AudioProcessor {
   bool _isRecording = false;
 
+  Future<bool> hasPermission() async => true;
+
   Future<void> start({
     required void Function(Float32List chunk, bool isFinal) onChunk,
   }) async {

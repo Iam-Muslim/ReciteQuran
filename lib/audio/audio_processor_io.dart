@@ -29,6 +29,15 @@ class AudioProcessor {
   AudioRecorder? _recorder;
   StreamSubscription<Uint8List>? _subscription;
 
+  Future<bool> hasPermission() async {
+    final recorder = AudioRecorder();
+    try {
+      return await recorder.hasPermission();
+    } finally {
+      await recorder.dispose();
+    }
+  }
+
   Future<void> start({
     required void Function(Float32List chunk, bool isFinal) onChunk,
   }) async {

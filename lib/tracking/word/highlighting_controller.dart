@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 
+import '../../data/qiraat_ayah_mapper.dart';
 import '../../data/quran_data.dart';
 import '../../engine/sherpa_engine.dart';
 import '../tajweed/error_explainer.dart';
@@ -231,9 +232,10 @@ class HighlightingController extends ChangeNotifier {
     required this.repository,
     required SherpaEngine engine,
     this.onAyahChanged,
-    this.isTajweed = true,
+    bool isTajweed = true,
     this.config = const TrackerConfig(),
-  }) : _engine = engine {
+  })  : _engine = engine,
+        isTajweed = (repository.riwayah == QuranRiwayah.hafs) && isTajweed {
     _tokenProcessor = AsrTokenProcessor(config: config);
     _initIsolate();
     _engineSub = _engine.transcriptionStream.listen(_onResult);
@@ -250,10 +252,11 @@ class HighlightingController extends ChangeNotifier {
   }
 
   void setTajweedMode(bool active) {
-    if (isTajweed == active) return;
-    isTajweed = active;
+    final effective = (repository.riwayah == QuranRiwayah.hafs) && active;
+    if (isTajweed == effective) return;
+    isTajweed = effective;
     if (_isolateStarted) {
-      _alignmentIsolate.setTajweedMode(active);
+      _alignmentIsolate.setTajweedMode(effective);
     }
     notifyListeners();
   }
