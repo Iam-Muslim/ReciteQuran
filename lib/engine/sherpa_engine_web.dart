@@ -46,6 +46,16 @@ external void _resetOfficialSherpaBuffer();
 
 /// Web-specific implementation of SherpaEngine using Official Sherpa WebAssembly JS.
 class SherpaEngine {
+  /// Where the caller keeps a downloaded model, honoured by the IO engine.
+  ///
+  /// The web engine loads its model from the bundle and ignores this, but the
+  /// parameter has to exist: sherpa_engine.dart exports one of the two by
+  /// conditional import, so their constructors have to match or any app that
+  /// passes it fails to compile for the web.
+  final String? assetOverrideDir;
+
+  SherpaEngine({this.assetOverrideDir});
+
   final StreamController<TranscriptionResult> _outputController =
       StreamController<TranscriptionResult>.broadcast();
 
