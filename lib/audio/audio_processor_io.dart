@@ -44,7 +44,7 @@ class AudioProcessor {
         avAudioSessionCategoryOptions:
             AVAudioSessionCategoryOptions.allowBluetooth |
             AVAudioSessionCategoryOptions.defaultToSpeaker,
-        avAudioSessionMode: AVAudioSessionMode.measurement,
+        avAudioSessionMode: AVAudioSessionMode.defaultMode,
         avAudioSessionRouteSharingPolicy:
             AVAudioSessionRouteSharingPolicy.defaultPolicy,
         avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,

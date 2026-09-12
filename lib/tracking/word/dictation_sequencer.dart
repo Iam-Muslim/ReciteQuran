@@ -30,6 +30,7 @@ class DictationSequencer {
   String currentSegmentAsrText = '';
   List<double> currentSegmentTimestamps = [];
   int asrCharAnchor = 0;
+  int _trimmedOffset = 0;
 
   // ── Tracking ──
   int targetWordCursor = 0;
@@ -70,6 +71,7 @@ class DictationSequencer {
     committedGreenWords.clear();
     committedRedWords.clear();
     asrCharAnchor = 0;
+    _trimmedOffset = 0;
 
     if (cmd.forceClear) {
       currentSegmentAsrText = '';
@@ -93,6 +95,7 @@ class DictationSequencer {
     currentSegmentAsrText = '';
     currentSegmentTimestamps = [];
     asrCharAnchor = 0;
+    _trimmedOffset = 0;
     lastMatchedPhoneme = null;
     committedGreenWords.removeWhere((w) => w >= targetWordCursor);
     committedRedWords.removeWhere((w) => w >= targetWordCursor);
@@ -100,14 +103,16 @@ class DictationSequencer {
   }
 
   void syncStream(SyncStreamCommand cmd) {
-    if (cmd.isNewSegment) {
+    if (cmd.isNewSegment || cmd.asrText.length < _trimmedOffset) {
       currentSegmentAsrText = '';
       currentSegmentTimestamps = [];
       asrCharAnchor = 0;
+      _trimmedOffset = 0;
       debugLog('🔄 New segment');
     }
-    currentSegmentAsrText = cmd.asrText;
-    currentSegmentTimestamps = cmd.timestamps;
+    currentSegmentAsrText = cmd.asrText.substring(_trimmedOffset);
+    final int tsStart = min(_trimmedOffset, cmd.timestamps.length);
+    currentSegmentTimestamps = cmd.timestamps.sublist(tsStart);
     _processSequence();
   }
 
@@ -194,6 +199,20 @@ class DictationSequencer {
       }
 
       if (!matched) break; // Wait for more ASR text
+    }
+
+    // Sliding-window head-trimming:
+    // Keep a generous 50-phoneme cushion (~7-9 words) of consumed text.
+    // If consumed text exceeds 100 phonemes, trim the oldest text from the head.
+    const int keepCushion = 50;
+    if (asrCharAnchor > keepCushion + 50) {
+      final int trim = asrCharAnchor - keepCushion;
+      _trimmedOffset += trim;
+      currentSegmentAsrText = currentSegmentAsrText.substring(trim);
+      currentSegmentTimestamps = currentSegmentTimestamps.sublist(
+        min(trim, currentSegmentTimestamps.length),
+      );
+      asrCharAnchor = keepCushion;
     }
   }
 
