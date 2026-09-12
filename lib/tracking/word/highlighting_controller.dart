@@ -7,8 +7,10 @@ import '../../data/quran_data.dart';
 import '../../engine/sherpa_engine.dart';
 import '../tajweed/error_explainer.dart';
 import 'phoneme_alignment_isolate.dart';
+import 'surah_highlight_store.dart';
 
 export 'phoneme_alignment_isolate.dart';
+export 'surah_highlight_store.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TRACKING DOMAIN MODELS
@@ -198,13 +200,11 @@ class HighlightingController extends ChangeNotifier {
   int _targetSurah = 1;
   int get targetSurah => _targetSurah;
 
-  // Per-Ayah Word Status Maps
-  final Map<int, Set<int>> _greenWordsByVerse = {};
-  final Map<int, Set<int>> _redWordsByVerse = {};
-  final Map<int, Set<int>> _yellowWordsByVerse = {};
-  final Map<int, Set<int>> _neutralWordsByVerse = {};
-  final Map<int, Map<int, List<ReciterError>>> _errorsByVerse = {};
-  final Set<int> _completedAyahs = {};
+  // Per-Surah, Per-Ayah Word Status Bookkeeping. Kept in a separate,
+  // surah-keyed store so a mid-session retarget (a boundary-crossing verse
+  // group, a continuous reading view, …) can keep the surah it's leaving
+  // fully highlighted — see [setTargetSurah]'s preserveOtherSurahStates.
+  final SurahHighlightStore _highlights = SurahHighlightStore();
 
   // Debug State
   final ValueNotifier<String> debugRecognizedText = ValueNotifier('');
@@ -315,23 +315,21 @@ class HighlightingController extends ChangeNotifier {
     final word = _currentSurahWords[globalWordId];
     final ayahNum = word.ayah;
     final wordIdInAyah = word.wordInAyah;
+    final surah = _targetSurah;
 
-    if (!(_greenWordsByVerse[ayahNum]?.contains(wordIdInAyah) ?? false) &&
-        !(_redWordsByVerse[ayahNum]?.contains(wordIdInAyah) ?? false) &&
-        !(_yellowWordsByVerse[ayahNum]?.contains(wordIdInAyah) ?? false) &&
-        !(_neutralWordsByVerse[ayahNum]?.contains(wordIdInAyah) ?? false)) {
+    if (_highlights.isUnspoken(surah, ayahNum, wordIdInAyah)) {
       if (isRed) {
-        (_redWordsByVerse[ayahNum] ??= {}).add(wordIdInAyah);
+        _highlights.markRed(surah, ayahNum, wordIdInAyah);
       } else if (event.isNeutral) {
-        (_neutralWordsByVerse[ayahNum] ??= {}).add(wordIdInAyah);
+        _highlights.markNeutral(surah, ayahNum, wordIdInAyah);
       } else {
-        (_greenWordsByVerse[ayahNum] ??= {}).add(wordIdInAyah);
+        _highlights.markGreen(surah, ayahNum, wordIdInAyah);
       }
 
       if (activeAyah.value != ayahNum) {
         if (activeAyah.value != null && ayahNum > activeAyah.value!) {
           for (int a = activeAyah.value!; a < ayahNum; a++) {
-            _completedAyahs.add(a);
+            _highlights.markAyahCompleted(surah, a);
           }
         }
         activeAyah.value = ayahNum;
@@ -348,17 +346,18 @@ class HighlightingController extends ChangeNotifier {
             .toList();
 
         if (wordErrors.isNotEmpty) {
-          if (_greenWordsByVerse[ayahNum]?.contains(wordIdInAyah) ?? false) {
-            _greenWordsByVerse[ayahNum]?.remove(wordIdInAyah);
-            (_yellowWordsByVerse[ayahNum] ??= {}).add(wordIdInAyah);
-            (_errorsByVerse[ayahNum] ??= {})[wordIdInAyah] = wordErrors;
-          }
+          _highlights.markGreenWordAsYellow(
+            surah,
+            ayahNum,
+            wordIdInAyah,
+            wordErrors,
+          );
         }
       }
 
       final verse = repository.getVerse(_targetSurah, ayahNum);
       if (verse != null && wordIdInAyah == verse.phonemeWords.length - 1) {
-        _completedAyahs.add(ayahNum);
+        _highlights.markAyahCompleted(surah, ayahNum);
 
         final nextVerse = repository.getNextVerse(_targetSurah, ayahNum);
         if (nextVerse != null) {
@@ -380,12 +379,19 @@ class HighlightingController extends ChangeNotifier {
   HighlightingController get tracker => this;
   TrackerState get state => _state;
   VerseMatch? get currentMatchedVerse => _currentMatch;
-  Set<int> get completedAyahs => _completedAyahs;
+
+  /// Completed ayahs for the currently targeted surah.
+  Set<int> get completedAyahs => _highlights.completedAyahsFor(_targetSurah);
+
+  /// Completed ayahs for any tracked surah — e.g. the surah just left
+  /// behind by a [setTargetSurah] retarget with `preserveOtherSurahStates`.
+  Set<int> completedAyahsFor(int surah) => _highlights.completedAyahsFor(surah);
 
   // Word Color Queries
-  int _mapToPhonemeIndex(int ayah, int uthmaniIndex) {
-    if (_targetSurah == 0) return uthmaniIndex;
-    final verse = repository.getVerse(_targetSurah, ayah);
+  int _mapToPhonemeIndex(int ayah, int uthmaniIndex, {int? surah}) {
+    final s = surah ?? _targetSurah;
+    if (s == 0) return uthmaniIndex;
+    final verse = repository.getVerse(s, ayah);
     if (verse == null ||
         uthmaniIndex < 0 ||
         uthmaniIndex >= verse.wordMap.length) {
@@ -394,62 +400,86 @@ class HighlightingController extends ChangeNotifier {
     return verse.wordMap[uthmaniIndex];
   }
 
-  bool isWordGreen(int ayah, int wordIndex) {
-    if (isWordRed(ayah, wordIndex)) return false;
-    final int pIdx = _mapToPhonemeIndex(ayah, wordIndex);
-    return _greenWordsByVerse[ayah]?.contains(pIdx) ?? false;
+  /// [surah] defaults to the currently targeted surah; pass it explicitly to
+  /// read another tracked surah's highlights (e.g. after a
+  /// `preserveOtherSurahStates` retarget moved tracking past it).
+  bool isWordGreen(int ayah, int wordIndex, {int? surah}) {
+    if (isWordRed(ayah, wordIndex, surah: surah)) return false;
+    final s = surah ?? _targetSurah;
+    final int pIdx = _mapToPhonemeIndex(ayah, wordIndex, surah: s);
+    return _highlights.isGreen(s, ayah, pIdx);
   }
 
-  bool isWordRed(int ayah, int wordIndex) {
-    final int pIdx = _mapToPhonemeIndex(ayah, wordIndex);
-    return _redWordsByVerse[ayah]?.contains(pIdx) ?? false;
+  bool isWordRed(int ayah, int wordIndex, {int? surah}) {
+    final s = surah ?? _targetSurah;
+    final int pIdx = _mapToPhonemeIndex(ayah, wordIndex, surah: s);
+    return _highlights.isRed(s, ayah, pIdx);
   }
 
-  bool isWordYellow(int ayah, int wordIndex) {
-    final int pIdx = _mapToPhonemeIndex(ayah, wordIndex);
-    return _yellowWordsByVerse[ayah]?.contains(pIdx) ?? false;
+  bool isWordYellow(int ayah, int wordIndex, {int? surah}) {
+    final s = surah ?? _targetSurah;
+    final int pIdx = _mapToPhonemeIndex(ayah, wordIndex, surah: s);
+    return _highlights.isYellow(s, ayah, pIdx);
   }
 
-  bool isWordNeutral(int ayah, int wordIndex) {
-    final int pIdx = _mapToPhonemeIndex(ayah, wordIndex);
-    return _neutralWordsByVerse[ayah]?.contains(pIdx) ?? false;
+  bool isWordNeutral(int ayah, int wordIndex, {int? surah}) {
+    final s = surah ?? _targetSurah;
+    final int pIdx = _mapToPhonemeIndex(ayah, wordIndex, surah: s);
+    return _highlights.isNeutral(s, ayah, pIdx);
   }
 
-  List<ReciterError>? getWordErrors(int ayah, int wordIndex) {
-    final int pIdx = _mapToPhonemeIndex(ayah, wordIndex);
-    return _errorsByVerse[ayah]?[pIdx];
+  List<ReciterError>? getWordErrors(int ayah, int wordIndex, {int? surah}) {
+    final s = surah ?? _targetSurah;
+    final int pIdx = _mapToPhonemeIndex(ayah, wordIndex, surah: s);
+    return _highlights.errorsFor(s, ayah, pIdx);
   }
 
   // Surah / Ayah Management
-  Future<void> setTargetSurah(int surah) async {
+  /// Sets the actively tracked surah, reloading its phoneme reference.
+  ///
+  /// By default every other surah's tracked highlights are wiped too (the
+  /// pre-existing behavior — appropriate for starting a fresh, unrelated
+  /// session). Pass [preserveOtherSurahStates]: true when retargeting
+  /// mid-session across a surah boundary (a verse group spanning two
+  /// surahs, a continuous reading view, …) so the surah being left keeps
+  /// its already-committed highlights — read them back afterwards with
+  /// [isWordGreen] etc. and an explicit `surah:` argument, or
+  /// [completedAyahsFor].
+  Future<void> setTargetSurah(
+    int surah, {
+    bool preserveOtherSurahStates = false,
+  }) async {
     _targetSurah = surah;
     _currentMatch = null;
     activeAyah.value = null;
-    clearHighlights();
+    _highlights.clearForRetarget(
+      surah,
+      preserveOtherSurahs: preserveOtherSurahStates,
+    );
+    globalRevision.value++;
+    notifyListeners();
     await repository.loadSurahAsync(surah);
     _currentSurahWords = repository.getSurahWords(surah);
     reset();
   }
 
+  /// Wipes every tracked surah's highlights.
   void clearHighlights() {
-    _completedAyahs.clear();
-    _greenWordsByVerse.clear();
-    _redWordsByVerse.clear();
-    _yellowWordsByVerse.clear();
-    _neutralWordsByVerse.clear();
-    _errorsByVerse.clear();
+    _highlights.clearAll();
     globalRevision.value++;
     notifyListeners();
   }
 
+  /// Wipes only [surah]'s highlights, leaving every other tracked surah
+  /// untouched.
+  void clearHighlightsForSurah(int surah) {
+    _highlights.clearSurah(surah);
+    globalRevision.value++;
+    notifyListeners();
+  }
 
   void clearHighlightsFromAyah(int startAyah) {
-    _completedAyahs.removeWhere((ayah) => ayah >= startAyah);
-    _greenWordsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
-    _redWordsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
-    _yellowWordsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
-    _neutralWordsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
-    _errorsByVerse.removeWhere((ayah, _) => ayah >= startAyah);
+    _highlights.clearSurahFromAyah(_targetSurah, startAyah);
     globalRevision.value++;
     notifyListeners();
   }
