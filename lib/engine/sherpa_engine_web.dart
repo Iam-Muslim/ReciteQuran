@@ -82,15 +82,12 @@ class SherpaEngine {
       try {
         final Map<String, dynamic> data = jsonDecode(jsonStr.toDart);
         final tokensList = List<String>.from(data['tokens'] ?? []);
-        final timestampsList = List<double>.from(
-          (data['timestamps'] ?? []).map((e) => (e as num).toDouble()),
-        );
         final text = data['text'] ?? '';
         final isFinalDart = isFinal.toDart;
 
         DebugLogger.logSimple(
           'SherpaWeb',
-          '📥 ASR Event: text="$text", tokens=${tokensList.length}, timestamps=${timestampsList.length}, isFinal=$isFinalDart, epoch=$_currentStreamEpoch',
+          '📥 ASR Event: text="$text", tokens=${tokensList.length}, isFinal=$isFinalDart, epoch=$_currentStreamEpoch',
         );
 
         _outputController.add(
@@ -99,7 +96,9 @@ class SherpaEngine {
             isFinal: isFinalDart,
             startTime: DateTime.now().millisecondsSinceEpoch,
             tokens: tokensList,
-            timestamps: timestampsList,
+            timestamps: List<double>.from(
+              (data['timestamps'] ?? []).map((e) => (e as num).toDouble()),
+            ),
             streamEpoch: _currentStreamEpoch,
           ),
         );

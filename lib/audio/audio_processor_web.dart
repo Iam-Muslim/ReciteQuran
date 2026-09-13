@@ -12,24 +12,15 @@ class AudioProcessor {
   StreamSubscription<Uint8List>? _subscription;
   bool _isRecording = false;
 
-  /// Whether [start] actually got a live microphone stream. Callers that
-  /// open the mic ahead of slower setup work (Safari needs getUserMedia
-  /// called close to the user's tap; see [start]) use this to tell a real
-  /// grant from a denial once that setup is done.
-  bool get isRecording => _isRecording;
-
-  /// Always optimistic on web.
-  ///
-  /// record_web's hasPermission() queries the Permissions API for
-  /// 'microphone' first and only falls back to requesting getUserMedia
-  /// directly if that query says "not yet granted". Safari/WebKit doesn't
-  /// reliably support querying microphone permission that way — the query
-  /// itself can throw — which meant this returned false and start() below
-  /// bailed before ever prompting the user at all. startStream() below
-  /// calls getUserMedia on its own regardless of what this method says, so
-  /// the real prompt-or-deny decision happens there, uniformly across
-  /// browsers, instead of behind this unreliable pre-check.
-  Future<bool> hasPermission() async => true;
+  Future<bool> hasPermission() async {
+    final recorder = _recorder ?? AudioRecorder();
+    try {
+      return await recorder.hasPermission();
+    } catch (e) {
+      log('AudioProcessor Web permission check error: $e');
+      return false;
+    }
+  }
 
   Future<void> start({
     required void Function(Float32List chunk, bool isFinal) onChunk,
@@ -37,6 +28,13 @@ class AudioProcessor {
     await stop();
     _isRecording = true;
     _recorder = AudioRecorder();
+
+    final hasPerm = await _recorder!.hasPermission();
+    if (!hasPerm) {
+      _isRecording = false;
+      log('Microphone permission not granted on Web.');
+      return;
+    }
 
     try {
       final stream = await _recorder!.startStream(
@@ -53,7 +51,6 @@ class AudioProcessor {
         onChunk(float32, false);
       });
     } catch (e, stack) {
-      _isRecording = false;
       log('AudioProcessor start error: $e\n$stack');
     }
   }

@@ -175,9 +175,7 @@ class ReciteQuran {
   /// Resets the internal recognition buffer.
   void resetBuffer() {
     if (_isDisposed) return;
-    _tokenProcessor.reset();
     _engine.resetBuffer();
-    _isolate.syncStream('', [], true);
   }
 
   /// Toggles Tajweed evaluation on/off.
@@ -210,7 +208,7 @@ class ReciteQuran {
     final String asrString = processed.tokens.join('');
     final List<double> asrTimestamps = processed.durations;
 
-    _isolate.syncStream(asrString, asrTimestamps, result.isFinal);
+    _isolate.syncStream(asrString, asrTimestamps);
   }
 
   List<int> _calculateBoundaries(List<String> phonemeWords) {
