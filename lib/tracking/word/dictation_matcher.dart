@@ -138,6 +138,10 @@ class PhoneticCostEngine {
   static bool isTashkeel(int code) =>
       code == 0x064E || code == 0x064F || code == 0x0650; // Fatha, Damma, Kasra
 
+  // ── 5. Madd / Long Vowels (ا, و, ي, ۥ, ۦ) ──
+  static bool isMaddVowel(int code) =>
+      code == 0x0627 || code == 0x0648 || code == 0x064A || code == 0x06E5 || code == 0x06E6;
+
   // ── 5. Substitution Cost Evaluation ──
   static double getSubstitutionCost(
     int asrCodeUnit,
@@ -200,7 +204,7 @@ class PhoneticCostEngine {
     if (_isZeroCostMarker(code)) return 0.0;
 
     if (asrIdx > 0 && code == asrText.codeUnitAt(asrIdx - 1)) {
-      if (code == 0x0627 || code == 0x0648 || code == 0x064A || code == 0x06E5 || code == 0x06E6) {
+      if (isMaddVowel(code)) {
         return acousticConfusionCost;
       }
     }
@@ -214,6 +218,18 @@ class PhoneticCostEngine {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class QuranDictationMatcher {
+  // =========================================================================
+  // [EARLY MATCHING / FAST WORD COMMITTING - MASTER TOGGLE]
+  // -------------------------------------------------------------------------
+  // Set `kEnableEarlyMatching = false` to completely disable early matching.
+  // When FALSE: The matcher and sequencer revert 100% to original baseline
+  //             behavior (Tajweed OFF behaves identically to Tajweed ON,
+  //             with no early breaks, no tail drainage, and no shield).
+  // When TRUE:  Commits words >= 4 phonemes immediately when recognized
+  //             (1-2s faster on words with prolonged Madd vowels).
+  // =========================================================================
+  static const bool kEnableEarlyMatching = true;
+
   Float64List _dp = Float64List(2048);
   Uint8List _bt = Uint8List(2048);
 
@@ -360,7 +376,7 @@ class QuranDictationMatcher {
       final int code = fullPhonemes.codeUnitAt(refStart + j);
       if (PhoneticCostEngine._isZeroCostMarker(code)) continue;
       if (j > 0 && code == fullPhonemes.codeUnitAt(refStart + j - 1) &&
-          (code == 0x0627 || code == 0x0648 || code == 0x064A || code == 0x06E5 || code == 0x06E6)) {
+          PhoneticCostEngine.isMaddVowel(code)) {
         continue;
       }
       effN++;
@@ -378,15 +394,28 @@ class QuranDictationMatcher {
       threshold = min(threshold, config.defaultMaxPathCost);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // [EARLY MATCHING - TAJWEED OFF: ENDPOINT SEARCH - START]
+    // -------------------------------------------------------------------------
+    // Governed by `QuranDictationMatcher.kEnableEarlyMatching`.
+    // - When FALSE: Uses baseline `norm <= bestCost` and searches all endpoints.
+    // - When TRUE:  For words >= 4 phonemes (Tajweed OFF), commits immediately on
+    //               exact match (`norm < bestCost` and break on `bestCost == 0.0`),
+    //               saving 1-2 seconds of waiting for lingering Madd/Waqf vowels.
+    // -------------------------------------------------------------------------
+    final bool allowEarlyBreak = kEnableEarlyMatching && !isTajweed && effN >= 4;
     for (int i = 1; i <= m; i++) {
       final double norm = dp[i * stride + n] / effN;
       if (norm <= threshold) {
-        if (norm <= bestCost) { // Changed to <= to consume trailing vowels on tie
+        if (allowEarlyBreak ? (norm < bestCost) : (norm <= bestCost)) {
           bestI = i;
           bestCost = norm;
+          if (allowEarlyBreak && bestCost == 0.0) break;
         }
       }
     }
+    // [EARLY MATCHING - TAJWEED OFF: ENDPOINT SEARCH - END]
+    // ─────────────────────────────────────────────────────────────────────────
 
     // ═════════════════════════════════════════════════════════════════════════
     // 5. PARTIAL MATCHING LOGIC
