@@ -155,6 +155,13 @@ class DictationSequencer {
             isTajweed: isTajweed,
           );
 
+          debugLog(
+            '🔍 matchWord word=$startW..$endW skip=$skip merge=$merge '
+            'unconsumedLen=${unconsumed.length} tsLen=${unconsumedTs.length} '
+            'refLen=${refEnd - refStart} -> '
+            '${result == null ? "null" : "isPartial=${result.isPartial} tokensConsumed=${result.tokensConsumed} pathCost=${result.pathCost.toStringAsFixed(3)}"}',
+          );
+
           if (result != null) {
             if (result.isPartial) {
               if (skip == 0) {
