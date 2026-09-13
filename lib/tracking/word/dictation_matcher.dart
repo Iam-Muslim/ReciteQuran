@@ -227,9 +227,7 @@ class QuranDictationMatcher {
   //             with no early breaks, no tail drainage, and no shield).
   // When TRUE:  Commits words >= 4 phonemes immediately when recognized
   //             (1-2s faster on words with prolonged Madd vowels).
-  // =========================================================================
-  static const bool kEnableEarlyMatching = true;
-
+  
   Float64List _dp = Float64List(2048);
   Uint8List _bt = Uint8List(2048);
 
@@ -397,13 +395,13 @@ class QuranDictationMatcher {
     // ─────────────────────────────────────────────────────────────────────────
     // [EARLY MATCHING - TAJWEED OFF: ENDPOINT SEARCH - START]
     // -------------------------------------------------------------------------
-    // Governed by `QuranDictationMatcher.kEnableEarlyMatching`.
+    // Governed by `TrackerConfig.enableEarlyMatching`.
     // - When FALSE: Uses baseline `norm <= bestCost` and searches all endpoints.
     // - When TRUE:  For words >= 4 phonemes (Tajweed OFF), commits immediately on
     //               exact match (`norm < bestCost` and break on `bestCost == 0.0`),
     //               saving 1-2 seconds of waiting for lingering Madd/Waqf vowels.
     // -------------------------------------------------------------------------
-    final bool allowEarlyBreak = kEnableEarlyMatching && !isTajweed && effN >= 4;
+    final bool allowEarlyBreak = config.enableEarlyMatching && !isTajweed && effN >= 4;
     for (int i = 1; i <= m; i++) {
       final double norm = dp[i * stride + n] / effN;
       if (norm <= threshold) {

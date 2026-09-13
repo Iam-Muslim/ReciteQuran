@@ -70,6 +70,7 @@ sealed class IsolateCommand {
             maxTokenDurationAllowed: (map['maxTokenDurationAllowed'] as num?)?.toDouble() ?? 2.5,
             lookaheadDelay: (map['lookaheadDelay'] as num?)?.toDouble() ?? 0.320,
             hideExpectedAsrNoise: map['hideExpectedAsrNoise'] as bool? ?? true,
+            enableEarlyMatching: map['enableEarlyMatching'] as bool? ?? true,
           ),
         );
 
@@ -179,6 +180,7 @@ class UpdateTrackerConfigCommand extends IsolateCommand {
     'maxTokenDurationAllowed': config.maxTokenDurationAllowed,
     'lookaheadDelay': config.lookaheadDelay,
     'hideExpectedAsrNoise': config.hideExpectedAsrNoise,
+    'enableEarlyMatching': config.enableEarlyMatching,
   };
 }
 

@@ -42,14 +42,11 @@ class DictationSequencer {
   // =========================================================================
   // [EARLY MATCHING / FAST WORD COMMITTING - TAJWEED OFF]
   // -------------------------------------------------------------------------
-  // Master toggle lives in `QuranDictationMatcher.kEnableEarlyMatching`.
+  // Governed dynamically by `config.enableEarlyMatching`.
   // - When FALSE: All early matching, tail reservation, and shield logic are
   //   completely skipped. Sequencer behaves 100% identically to baseline.
   // - When TRUE:  Shield holds upcoming words while trailing Madd/vowels decay.
   // =========================================================================
-  static const bool kEnableEarlyMatching =
-      QuranDictationMatcher.kEnableEarlyMatching;
-
   final QuranDictationMatcher _matcher = QuranDictationMatcher();
   TrackerConfig config = const TrackerConfig();
 
@@ -141,7 +138,7 @@ class DictationSequencer {
   // word. If reciter moves on to next word (non-tail phoneme), lifts immediately.
   // ─────────────────────────────────────────────────────────────────────────────
   void _drainPendingTail() {
-    if (!kEnableEarlyMatching) {
+    if (!config.enableEarlyMatching) {
       _pendingTail = null;
       return;
     }
@@ -179,7 +176,7 @@ class DictationSequencer {
       // [EARLY MATCHING - FRONTIER SHIELD: START]
       // When early matching is enabled and Tajweed is OFF, drain unuttered tail
       // phonemes from previous word before matching the next word.
-      if (kEnableEarlyMatching && !isTajweed && _pendingTail != null) {
+      if (config.enableEarlyMatching && !isTajweed && _pendingTail != null) {
         _drainPendingTail();
         if (_pendingTail != null) break;
       }
@@ -258,9 +255,9 @@ class DictationSequencer {
               // When a word commits early (before reciter finished trailing letters),
               // reserve the remaining unuttered phonemes as `_pendingTail`.
               // Upcoming words won't be allowed to match against these leftovers.
-              // If `kEnableEarlyMatching == false`, this block is completely skipped.
+              // If `enableEarlyMatching == false`, this block is completely skipped.
               // -----------------------------------------------------------------
-              if (kEnableEarlyMatching && !isTajweed) {
+              if (config.enableEarlyMatching && !isTajweed) {
                 final int wordRefEnd = (endW + 1 < wordBoundaries.length)
                     ? wordBoundaries[endW + 1]
                     : fullPhonemes.length;
