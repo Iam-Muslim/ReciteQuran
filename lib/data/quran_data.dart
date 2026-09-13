@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'qiraat_ayah_mapper.dart';
@@ -257,22 +258,37 @@ class QuranVerse {
 
 // Verses are parsed lazily on demand from the decoded JSON map.
 class QuranMetadataService {
-  /// Optional absolute path to a custom phoneme JSON file on disk.
+  /// Optional absolute path to a custom phoneme JSON file on disk, or the
+  /// raw JSON content itself.
   ///
   /// Useful when phoneme data is downloaded on demand or selected dynamically
-  /// per riwaya. When null, defaults to loading the bundled asset.
-  QuranMetadataService({this.phonemeFilePath});
+  /// per riwaya. On web there is no filesystem to read a path from, so a
+  /// caller there must supply [phonemeJsonString] instead. When neither is
+  /// given, this falls back to loading the bundled asset.
+  QuranMetadataService({this.phonemeFilePath, this.phonemeJsonString});
 
   final String? phonemeFilePath;
+  final String? phonemeJsonString;
 
   Map<String, dynamic>? _rawJson;
 
   Future<void> loadData() async {
     if (_rawJson != null) return;
 
-    final String phonemeData = phonemeFilePath != null
-        ? await File(phonemeFilePath!).readAsString()
-        : await _loadFromBundle();
+    final String phonemeData;
+    if (phonemeJsonString != null && phonemeJsonString!.isNotEmpty) {
+      phonemeData = phonemeJsonString!;
+    } else if (phonemeFilePath != null) {
+      if (kIsWeb ||
+          phonemeFilePath!.startsWith('assets/') ||
+          phonemeFilePath!.startsWith('packages/')) {
+        phonemeData = await rootBundle.loadString(phonemeFilePath!);
+      } else {
+        phonemeData = await File(phonemeFilePath!).readAsString();
+      }
+    } else {
+      phonemeData = await _loadFromBundle();
+    }
 
     // Decode synchronously on the main isolate.
     _rawJson = jsonDecode(phonemeData) as Map<String, dynamic>;
