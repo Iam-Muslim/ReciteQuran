@@ -58,6 +58,8 @@ class SherpaEngine {
   Stream<TranscriptionResult> get transcriptionStream =>
       _outputController.stream;
 
+  Future<bool> isModelCached() async => true;
+
   Future<String> _extractAsset(String assetPath) async {
     final Directory docDir = await getApplicationSupportDirectory();
     final String prefix = 'v2_zipformer_';

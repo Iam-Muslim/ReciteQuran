@@ -97,7 +97,7 @@ Add `recite_quran` to your `pubspec.yaml`:
 dependencies:
   flutter:
     sdk: flutter
-  recite_quran: ^1.0.1
+  recite_quran: ^1.0.3
 ```
 
 ### 2. Download the Neural Model
@@ -469,7 +469,7 @@ Before viewing, using, distributing, or modifying any part of this repository, y
 
 *Alhamdulillah (الحمد لله رب العالمين)* — this work builds upon open-source research and contributions from:
 - **[Zipformer Quran Streaming Model](https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3)** by Brother Mustafa
-- **[quran-transcript](https://github.com/OmarMuhammedAli/quran-transcript)** by Brother Abdullah Aml
+- **[quran-transcript](https://github.com/obadx/quran-transcript)** by Brother Abdullah Aml
 - **[Quranic Universal Aligner (qua_sdk)](https://huggingface.co/spaces/hetchyy/quranic-universal-aligner)** by Brother Ahmad Ibrahim
 ---
 
