@@ -42,7 +42,7 @@ external JSBoolean _initSherpaRecognizer();
 external JSPromise _fetchSherpaModel(JSString url);
 
 @JS('isSherpaModelCached')
-external JSPromise _isSherpaModelCached([JSString? modelFilename]);
+external JSPromise _isSherpaModelCached();
 
 @JS('resetOfficialSherpaBuffer')
 external void _resetOfficialSherpaBuffer();
@@ -66,7 +66,7 @@ class SherpaEngine {
     try {
       final res = await _isSherpaModelCached().toDart;
       if (res != null && res is JSBoolean) {
-        return (res as JSBoolean).toDart;
+        return res.toDart;
       }
     } catch (_) {}
     return false;

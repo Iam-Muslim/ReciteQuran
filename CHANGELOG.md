@@ -1,3 +1,8 @@
+## 1.0.3
+
+* **FEAT**: Enabled official platform classification for Windows and Linux on pub.dev.
+* **REFACTOR**: Streamlined `AudioProcessor` by removing redundant mobile-only `audio_session` dependency in favor of direct cross-platform recording via `record`.
+
 ## 1.0.2
 
 * **FIX**: Restored baseline DTW endpoint alignment in `QuranDictationMatcher` to ensure complete word phonetic consumption and eliminate trailing phoneme bleed.

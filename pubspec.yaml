@@ -1,9 +1,17 @@
 name: recite_quran
 description: Real-time on-device Quran recitation tracking, dynamic DTW word alignment, and deterministic Tajweed rule verification engine for Flutter.
-version: 1.0.2
+version: 1.0.3
 homepage: https://github.com/Iam-Muslim/ReciteQuran
 repository: https://github.com/Iam-Muslim/ReciteQuran
 issue_tracker: https://github.com/Iam-Muslim/ReciteQuran/issues
+
+platforms:
+  android:
+  ios:
+  windows:
+  macos:
+  linux:
+  web:
 
 environment:
   sdk: ^3.5.0
@@ -12,7 +20,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  audio_session: ^0.2.4
   path_provider: ^2.1.5
   record: ^7.1.1
   sherpa_onnx: ^1.13.5
