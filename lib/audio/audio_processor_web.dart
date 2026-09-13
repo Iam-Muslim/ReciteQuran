@@ -12,6 +12,12 @@ class AudioProcessor {
   StreamSubscription<Uint8List>? _subscription;
   bool _isRecording = false;
 
+  /// Whether [start] actually got a live microphone stream. Callers that
+  /// open the mic ahead of slower setup work (Safari needs getUserMedia
+  /// called close to the user's tap; see [start]) use this to tell a real
+  /// grant from a denial once that setup is done.
+  bool get isRecording => _isRecording;
+
   /// Always optimistic on web.
   ///
   /// record_web's hasPermission() queries the Permissions API for

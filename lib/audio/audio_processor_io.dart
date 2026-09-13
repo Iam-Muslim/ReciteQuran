@@ -29,6 +29,8 @@ class AudioProcessor {
   AudioRecorder? _recorder;
   StreamSubscription<Uint8List>? _subscription;
 
+  bool get isRecording => _subscription != null;
+
   Future<bool> hasPermission() async {
     final recorder = AudioRecorder();
     try {
