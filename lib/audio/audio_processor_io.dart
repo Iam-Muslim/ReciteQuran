@@ -4,7 +4,6 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:record/record.dart';
-import 'package:audio_session/audio_session.dart';
 
 class AudioProcessor {
   // ── Audio format constants ─────────────────────────────────────────────────
@@ -42,31 +41,6 @@ class AudioProcessor {
     required void Function(Float32List chunk, bool isFinal) onChunk,
   }) async {
     await stop();
-
-    // ── Configure Audio Session for Raw Microphone Feed ──
-    // This tells the OS (especially iOS/Mac) to minimize aggressive background noise
-    // cancellation which might otherwise destroy breathy Arabic phonemes like "هـ".
-    final session = await AudioSession.instance;
-    await session.configure(
-      AudioSessionConfiguration(
-        avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-        avAudioSessionCategoryOptions:
-            AVAudioSessionCategoryOptions.allowBluetooth |
-            AVAudioSessionCategoryOptions.defaultToSpeaker,
-        avAudioSessionMode: AVAudioSessionMode.measurement,
-        avAudioSessionRouteSharingPolicy:
-            AVAudioSessionRouteSharingPolicy.defaultPolicy,
-        avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
-        androidAudioAttributes: const AndroidAudioAttributes(
-          contentType: AndroidAudioContentType.speech,
-          flags: AndroidAudioFlags.none,
-          usage: AndroidAudioUsage.voiceCommunication, // Used for audio focus
-        ),
-        androidAudioFocusGainType:
-            AndroidAudioFocusGainType.gainTransientMayDuck,
-        androidWillPauseWhenDucked: true,
-      ),
-    );
 
     _recorder = AudioRecorder();
 

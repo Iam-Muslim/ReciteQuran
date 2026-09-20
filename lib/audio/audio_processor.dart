@@ -1,5 +1,5 @@
 // lib/audio/audio_processor.dart
-// Conditional export router: routes to Native record/audio_session on IO platforms,
+// Conditional export router: routes to Native record on IO platforms,
 // and to Web Audio API on Web platform.
 
 export 'audio_processor_io.dart'

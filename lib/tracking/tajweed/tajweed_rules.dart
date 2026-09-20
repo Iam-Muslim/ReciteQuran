@@ -23,8 +23,8 @@ class TajweedTimingConfig {
   static const double shaddahSeconds = 1.5 * harakahBaseSeconds;
 
   /// ── 2. Normal Madd (المد الطبيعي) Duration Threshold ──
-  /// Required minimum duration for natural 1.5-Harakah vowel elongation (1.5 * 0.20s = 0.30s).
-  static const double normalMaddSeconds = 1.5 * harakahBaseSeconds;
+  /// Required minimum duration for natural 1.2-Harakah vowel elongation (1.2 * 0.20s = 0.24s).
+  static const double normalMaddSeconds = 1.2 * harakahBaseSeconds;
 
   /// ── 3. Ghunnah on Mushaddad Noon/Meem (غنة النون والميم المشددتين) ──
   /// Required minimum duration for nasal resonance hold (2.0 Harakat = 0.50s).
@@ -124,12 +124,12 @@ class MaddRule extends TajweedRule {
   });
 }
 
-/// ── 3.1 Normal Madd (`المد الطبيعي`) — 1.5 Harakat (0.30s) ──
+/// ── 3.1 Normal Madd (`المد الطبيعي`) — 1.2 Harakat (0.24s) ──
 class NormalMaddRule extends MaddRule {
   const NormalMaddRule()
       : super(
           name: const LangName(ar: "المد الطبيعي", en: "Normal Madd"),
-          goldenLen: 1.5,
+          goldenLen: 1.2,
         );
 }
 

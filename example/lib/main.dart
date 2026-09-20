@@ -53,7 +53,7 @@ void main() async {
               avAudioSessionCategoryOptions:
                   AVAudioSessionCategoryOptions.defaultToSpeaker |
                   AVAudioSessionCategoryOptions.allowBluetooth,
-              avAudioSessionMode: AVAudioSessionMode.measurement,
+              avAudioSessionMode: AVAudioSessionMode.defaultMode,
             ),
           );
         } catch (e) {

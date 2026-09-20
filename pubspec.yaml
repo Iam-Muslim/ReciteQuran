@@ -5,6 +5,14 @@ homepage: https://github.com/Iam-Muslim/ReciteQuran
 repository: https://github.com/Iam-Muslim/ReciteQuran
 issue_tracker: https://github.com/Iam-Muslim/ReciteQuran/issues
 
+platforms:
+  android:
+  ios:
+  windows:
+  macos:
+  linux:
+  web:
+
 environment:
   sdk: ^3.5.0
   flutter: ">=3.24.0"
@@ -12,7 +20,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  audio_session: ^0.2.4
   path_provider: ^2.1.5
   record: ">=6.0.0 <8.0.0"
   sherpa_onnx: ^1.13.5

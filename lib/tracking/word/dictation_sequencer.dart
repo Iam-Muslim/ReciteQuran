@@ -30,6 +30,8 @@ class DictationSequencer {
   String currentSegmentAsrText = '';
   List<double> currentSegmentTimestamps = [];
   int asrCharAnchor = 0;
+  int _trimmedOffset = 0;
+  String? _pendingTail;
 
   // ── Tracking ──
   int targetWordCursor = 0;
@@ -37,6 +39,14 @@ class DictationSequencer {
   final Set<int> committedRedWords = {};
   String? lastMatchedPhoneme;
 
+  // =========================================================================
+  // [EARLY MATCHING / FAST WORD COMMITTING - TAJWEED OFF]
+  // -------------------------------------------------------------------------
+  // Governed dynamically by `config.enableEarlyMatching`.
+  // - When FALSE: All early matching, tail reservation, and shield logic are
+  //   completely skipped. Sequencer behaves 100% identically to baseline.
+  // - When TRUE:  Shield holds upcoming words while trailing Madd/vowels decay.
+  // =========================================================================
   final QuranDictationMatcher _matcher = QuranDictationMatcher();
   TrackerConfig config = const TrackerConfig();
 
@@ -70,6 +80,8 @@ class DictationSequencer {
     committedGreenWords.clear();
     committedRedWords.clear();
     asrCharAnchor = 0;
+    _trimmedOffset = 0;
+    _pendingTail = null;
 
     if (cmd.forceClear) {
       currentSegmentAsrText = '';
@@ -93,6 +105,8 @@ class DictationSequencer {
     currentSegmentAsrText = '';
     currentSegmentTimestamps = [];
     asrCharAnchor = 0;
+    _trimmedOffset = 0;
+    _pendingTail = null;
     lastMatchedPhoneme = null;
     committedGreenWords.removeWhere((w) => w >= targetWordCursor);
     committedRedWords.removeWhere((w) => w >= targetWordCursor);
@@ -100,14 +114,17 @@ class DictationSequencer {
   }
 
   void syncStream(SyncStreamCommand cmd) {
-    if (cmd.isNewSegment) {
+    if (cmd.isNewSegment || cmd.asrText.length < _trimmedOffset) {
       currentSegmentAsrText = '';
       currentSegmentTimestamps = [];
       asrCharAnchor = 0;
+      _trimmedOffset = 0;
+      _pendingTail = null;
       debugLog('🔄 New segment');
     }
-    currentSegmentAsrText = cmd.asrText;
-    currentSegmentTimestamps = cmd.timestamps;
+    currentSegmentAsrText = cmd.asrText.substring(_trimmedOffset);
+    final int tsStart = min(_trimmedOffset, cmd.timestamps.length);
+    currentSegmentTimestamps = cmd.timestamps.sublist(tsStart);
     _processSequence();
   }
 
@@ -115,11 +132,56 @@ class DictationSequencer {
   // Core Tracking Loop
   // ─────────────────────────────────────────────────────────────────────────────
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // [EARLY MATCHING - TAIL DRAIN HELPER: START]
+  // Absorbs prolonged Madd vowels or unuttered trailing letters of an early-committed
+  // word. If reciter moves on to next word (non-tail phoneme), lifts immediately.
+  // ─────────────────────────────────────────────────────────────────────────────
+  void _drainPendingTail() {
+    if (!config.enableEarlyMatching) {
+      _pendingTail = null;
+      return;
+    }
+    if (_pendingTail == null || _pendingTail!.isEmpty) return;
+    int tailIdx = 0;
+    while (asrCharAnchor < currentSegmentAsrText.length &&
+        tailIdx < _pendingTail!.length) {
+      final int code = currentSegmentAsrText.codeUnitAt(asrCharAnchor);
+      final int expectedCode = _pendingTail!.codeUnitAt(tailIdx);
+      if (code == expectedCode) {
+        asrCharAnchor++;
+        tailIdx++;
+      } else if (PhoneticCostEngine.isMaddVowel(expectedCode) &&
+          PhoneticCostEngine.isMaddVowel(code)) {
+        // Absorbs repeated / prolonged vowel frames without advancing tailIdx
+        asrCharAnchor++;
+      } else {
+        // Non-tail sound arrived (reciter moved on to next word); lift shield immediately
+        _pendingTail = null;
+        return;
+      }
+    }
+    if (tailIdx >= _pendingTail!.length) {
+      _pendingTail = null;
+    }
+  }
+  // [EARLY MATCHING - TAIL DRAIN HELPER: END]
+  // ─────────────────────────────────────────────────────────────────────────────
+
   void _processSequence() {
     final int wordCount = _wordCount;
 
     while (asrCharAnchor < currentSegmentAsrText.length &&
         targetWordCursor < wordCount) {
+      // [EARLY MATCHING - FRONTIER SHIELD: START]
+      // When early matching is enabled and Tajweed is OFF, drain unuttered tail
+      // phonemes from previous word before matching the next word.
+      if (config.enableEarlyMatching && !isTajweed && _pendingTail != null) {
+        _drainPendingTail();
+        if (_pendingTail != null) break;
+      }
+      // [EARLY MATCHING - FRONTIER SHIELD: END]
+
       final unconsumed = currentSegmentAsrText.substring(asrCharAnchor);
       final int tsStart = min(asrCharAnchor, currentSegmentTimestamps.length);
       final unconsumedTs = currentSegmentTimestamps.sublist(tsStart);
@@ -185,6 +247,39 @@ class DictationSequencer {
               asrCharAnchor += result.tokensConsumed;
               targetWordCursor = endW + 1;
               matched = true;
+
+              // ─────────────────────────────────────────────────────────────────
+              // [EARLY MATCHING - TAIL RESERVATION: START]
+              // -----------------------------------------------------------------
+              // If early matching is active and Tajweed is OFF:
+              // When a word commits early (before reciter finished trailing letters),
+              // reserve the remaining unuttered phonemes as `_pendingTail`.
+              // Upcoming words won't be allowed to match against these leftovers.
+              // If `enableEarlyMatching == false`, this block is completely skipped.
+              // -----------------------------------------------------------------
+              if (config.enableEarlyMatching && !isTajweed) {
+                final int wordRefEnd = (endW + 1 < wordBoundaries.length)
+                    ? wordBoundaries[endW + 1]
+                    : fullPhonemes.length;
+                int lastMatchedRef = -1;
+                for (int k = result.trace.length - 1; k >= 0; k--) {
+                  if (result.trace[k].opType != 'delete') {
+                    lastMatchedRef = result.trace[k].refIdx;
+                    break;
+                  }
+                }
+                if (lastMatchedRef != -1 && lastMatchedRef < wordRefEnd - 1) {
+                  _pendingTail = fullPhonemes.substring(
+                    lastMatchedRef + 1,
+                    wordRefEnd,
+                  );
+                  _drainPendingTail();
+                } else {
+                  _pendingTail = null;
+                }
+              }
+              // [EARLY MATCHING - TAIL RESERVATION: END]
+              // ─────────────────────────────────────────────────────────────────
               break;
             }
           }
@@ -194,6 +289,20 @@ class DictationSequencer {
       }
 
       if (!matched) break; // Wait for more ASR text
+    }
+
+    // Sliding-window head-trimming:
+    // Keep a generous 50-phoneme cushion (~7-9 words) of consumed text.
+    // If consumed text exceeds 100 phonemes, trim the oldest text from the head.
+    const int keepCushion = 50;
+    if (asrCharAnchor > keepCushion + 50) {
+      final int trim = asrCharAnchor - keepCushion;
+      _trimmedOffset += trim;
+      currentSegmentAsrText = currentSegmentAsrText.substring(trim);
+      currentSegmentTimestamps = currentSegmentTimestamps.sublist(
+        min(trim, currentSegmentTimestamps.length),
+      );
+      asrCharAnchor = keepCushion;
     }
   }
 

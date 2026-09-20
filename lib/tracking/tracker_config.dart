@@ -27,6 +27,10 @@ class TrackerConfig {
   // ── Explainer UI Filtering ──
   final bool hideExpectedAsrNoise;    // true: Hide acceptable ASR slips from UI
 
+  // ── Early Word Committing ──
+  /// Fast word committing before reciter finishes trailing Madd/Waqf vowels (Tajweed OFF only).
+  final bool enableEarlyMatching;
+
   // ── Legacy Aliases (Backwards Compatibility) ──
   double get maxPathCost => defaultMaxPathCost;
   double get costDel => standardDeletionCost;
@@ -44,6 +48,7 @@ class TrackerConfig {
     this.maxTokenDurationAllowed = 2.5,
     this.lookaheadDelay = 0.320,
     this.hideExpectedAsrNoise = true,
+    this.enableEarlyMatching = true,
   });
 
   /// Standard baseline configuration (identical to original engine calibration).
@@ -62,6 +67,7 @@ class TrackerConfig {
         maxTokenDurationAllowed: 3.0,
         lookaheadDelay: 0.320,
         hideExpectedAsrNoise: true,
+        enableEarlyMatching: true,
       );
 
   /// Strict mode for advanced reciters, exams, or Tajweed certification.
@@ -77,6 +83,7 @@ class TrackerConfig {
         maxTokenDurationAllowed: 2.0,
         lookaheadDelay: 0.320,
         hideExpectedAsrNoise: false,
+        enableEarlyMatching: false,
       );
 
   /// Creates a copy of this config with replaced fields.
@@ -92,6 +99,7 @@ class TrackerConfig {
     double? maxTokenDurationAllowed,
     double? lookaheadDelay,
     bool? hideExpectedAsrNoise,
+    bool? enableEarlyMatching,
   }) {
     return TrackerConfig(
       defaultMaxPathCost: defaultMaxPathCost ?? this.defaultMaxPathCost,
@@ -105,6 +113,7 @@ class TrackerConfig {
       maxTokenDurationAllowed: maxTokenDurationAllowed ?? this.maxTokenDurationAllowed,
       lookaheadDelay: lookaheadDelay ?? this.lookaheadDelay,
       hideExpectedAsrNoise: hideExpectedAsrNoise ?? this.hideExpectedAsrNoise,
+      enableEarlyMatching: enableEarlyMatching ?? this.enableEarlyMatching,
     );
   }
 }

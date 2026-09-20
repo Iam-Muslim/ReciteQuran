@@ -7,6 +7,10 @@
 * **FEAT**: Added flexible JSON schema key fallbacks in `QuranVerse` (`uthmani`, `aya_text`, `phoneme_words`).
 * **CHORE**: Added unit test suite in `test/` for omission detection, Warsh mapping, custom asset loading, and model downloading.
 * **CHORE**: Broadened `record` dependency constraint to `>=6.0.0 <8.0.0` for wider Flutter & Dart SDK compatibility.
+## 1.0.3
+
+* **FEAT**: Enabled official platform classification for Windows and Linux on pub.dev.
+* **REFACTOR**: Streamlined `AudioProcessor` by removing redundant mobile-only `audio_session` dependency in favor of direct cross-platform recording via `record`.
 
 ## 1.0.2
 

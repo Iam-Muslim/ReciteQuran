@@ -63,6 +63,8 @@ class SherpaEngine {
   Stream<TranscriptionResult> get transcriptionStream =>
       _outputController.stream;
 
+  Future<bool> isModelCached() async => true;
+
   Future<String> _extractAsset(String assetPath) async {
     if (assetOverrideDir != null) {
       final overrideFile = File('$assetOverrideDir/${assetPath.split("/").last}');
@@ -225,26 +227,20 @@ class SherpaEngine {
 
   /// Hard reset: wipes the Sherpa stream and primes with silence.
   void resetBuffer() {
+    if (!_isInitialized) return;
     _currentStreamEpoch++;
     _pendingChunks.clear();
     final cmd = const SherpaResetCommand();
-    if (!_isInitialized && _initFuture != null) {
-      _pendingChunks.add(cmd);
-    } else {
-      _sendPort?.send(cmd);
-    }
+    _sendPort?.send(cmd);
   }
 
   /// Flush-then-Reset: crosses an Ayah boundary cleanly without loss of speech.
   void flushThenReset() {
+    if (!_isInitialized) return;
     _currentStreamEpoch++;
     _pendingChunks.clear();
     final cmd = const SherpaFlushCommand();
-    if (!_isInitialized && _initFuture != null) {
-      _pendingChunks.add(cmd);
-    } else {
-      _sendPort?.send(cmd);
-    }
+    _sendPort?.send(cmd);
   }
 
   void destroy() {
@@ -322,45 +318,53 @@ class SherpaEngine {
               accelName = 'coreml';
             }
 
-            // Poison-pill lock, one file per back end so a device that trips
-            // over XNNPACK doesn't also disqualify CoreML (and vice versa).
-            final File lockFile = File(
-              '${File(modelPath).parent.path}/${accelName}_lock',
-            );
+            // Hardware acceleration back end verification:
+            //   verifiedFile: Marked permanently once the device successfully executes decode().
+            //                 Guarantees 100% hardware acceleration without false CPU fallbacks.
+            //   disabledFile: Marked permanently if the device hardware natively crashed.
+            //   lockFile:     Temporary marker during the first-ever 500ms trial run.
+            final String baseDir = File(modelPath).parent.path;
+            final File verifiedFile = File('$baseDir/${accelName}_verified');
+            final File disabledFile = File('$baseDir/${accelName}_disabled');
+            final File lockFile = File('$baseDir/${accelName}_lock');
             String provider = 'cpu';
 
             if (accelName.isNotEmpty) {
-              if (lockFile.existsSync()) {
-                // A crash loop was detected! The app natively aborted (SIGILL/SIGSEGV)
-                // during the previous accelerator initialization. We must fallback to 'cpu'.
+              if (disabledFile.existsSync()) {
+                // Incompatible hardware detected in previous run -> permanent safe CPU mode
+                provider = 'cpu';
+              } else if (verifiedFile.existsSync()) {
+                // Hardware is already verified -> run at full hardware speed unconditionally
+                provider = accelName;
+              } else if (lockFile.existsSync()) {
+                // First-run trial run aborted natively (SIGILL/SIGSEGV).
+                // Permanently disable accelerator to avoid crash loops.
+                try {
+                  disabledFile.createSync();
+                  lockFile.deleteSync();
+                } catch (_) {}
                 provider = 'cpu';
               } else {
-                // First attempt. Create the poison pill lock file.
-                // If the accelerator natively aborts, this file will remain on
-                // disk, protecting the next startup.
-                lockFile.createSync();
+                // First attempt on an unverified device. Create trial lock.
+                try {
+                  lockFile.createSync();
+                } catch (_) {}
                 provider = accelName;
               }
             }
 
             try {
               recognizer = tryCreateRecognizer(provider);
-              // DO NOT delete lockfile here!
-              // XNNPACK lazily initializes its compute kernels — it probes
-              // /proc/cpuinfo during the FIRST `decode()` call, not during
-              // model loading. On LineageOS, the SIGILL fires at decode(),
-              // not at OnlineRecognizer(). CoreML defers work the same way: the
-              // ANE/GPU subgraph is compiled and first dispatched on decode(),
-              // so an unsupported-op abort surfaces there too. If we delete the
-              // lock here, the crash won't be detected and we get an infinite
-              // crash loop.
             } catch (e) {
-              // Graceful Dart exception during model loading (not a native abort).
-              if (lockFile.existsSync()) {
-                lockFile.deleteSync();
-              }
+              // Graceful Dart/C++ exception during model loading (not a native abort).
+              try {
+                if (lockFile.existsSync()) lockFile.deleteSync();
+              } catch (_) {}
               if (provider != 'cpu') {
-                // Fallback to CPU on standard initialization errors.
+                try {
+                  disabledFile.createSync();
+                } catch (_) {}
+                provider = 'cpu';
                 recognizer = tryCreateRecognizer('cpu');
               } else {
                 rethrow;
@@ -373,15 +377,20 @@ class SherpaEngine {
               recognizer!.decode(stream!);
             }
 
-            // ═══ SAFE TO DELETE LOCKFILE NOW ═══
-            // If we reach this line, XNNPACK successfully executed its first
-            // inference pass (which is when it lazily probes the CPU and selects
-            // optimized kernels). The lockfile can now safely be removed.
-            if (lockFile.existsSync()) {
-              lockFile.deleteSync();
-            }
+            // ═══ HARDWARE PRIMING SUCCEEDED ═══
+            try {
+              if (lockFile.existsSync()) lockFile.deleteSync();
+              if (provider == accelName && !verifiedFile.existsSync()) {
+                verifiedFile.createSync(); // Mark this hardware as permanently verified!
+              }
+            } catch (_) {}
 
-            DebugLogger.logSimple('Engine', 'ASR provider in use: $provider');
+            final bool isVerified =
+                accelName.isNotEmpty && verifiedFile.existsSync();
+            DebugLogger.logSimple(
+              'Engine',
+              'ASR provider in use: $provider (verified: $isVerified)',
+            );
 
             mainSendPort.send(const SherpaInitSuccessEvent());
           } catch (e) {
@@ -389,10 +398,10 @@ class SherpaEngine {
           }
 
         case SherpaRecognizeCommand(
-            :final chunk,
-            :final isFinal,
-            :final startTime,
-          ):
+          :final chunk,
+          :final isFinal,
+          :final startTime,
+        ):
           if (recognizer == null || stream == null) return;
 
           final rawBytesTemp = chunk.materialize().asUint8List();
@@ -429,18 +438,13 @@ class SherpaEngine {
           }
 
           if (isFinal || endpointDetected) {
-            // `partial` above was read from an already fully drained stream, so
-            // it IS the complete hypothesis for this utterance. Only the
-            // inputFinished() path can add anything to it, so only that path
-            // pays for a second drain + getResult().
-            OnlineRecognizerResult finalResult = partial;
             if (isFinal) {
               stream!.inputFinished();
-              while (recognizer!.isReady(stream!)) {
-                recognizer!.decode(stream!);
-              }
-              finalResult = recognizer!.getResult(stream!);
             }
+            while (recognizer!.isReady(stream!)) {
+              recognizer!.decode(stream!);
+            }
+            final finalResult = recognizer!.getResult(stream!);
 
             mainSendPort.send(
               SherpaTranscriptionEvent(
@@ -452,42 +456,6 @@ class SherpaEngine {
                 streamEpoch: isolateStreamEpoch,
               ),
             );
-
-            // Close the utterance off. sherpa-onnx requires this: its own C API
-            // documents the contract as
-            //   if (IsEndpoint(recognizer, stream)) { Reset(recognizer, stream); }
-            // and Reset is the only thing that clears the decoder's accumulated
-            // hypothesis and its trailing-silence counter.
-            //
-            // Without it the stream never starts a new utterance: IsEndpoint stays
-            // true for every subsequent chunk, so partial results are suppressed
-            // for the whole of each silence, and getResult() keeps returning one
-            // ever-growing transcript of everything heard since the session began.
-            //
-            // The consumer side is handled in the same change: AsrTokenProcessor
-            // already resets itself when a result's token prefix diverges, and
-            // HighlightingController now arms _expectingNewSegment on isFinal so
-            // the sequencer drops asrCharAnchor with the restarted hypothesis.
-            // Both halves are required -- resetting here alone would leave the
-            // anchor pointing past the end of the new, shorter hypothesis.
-            //
-            // The stream epoch is deliberately NOT bumped. This is a new utterance
-            // on the same stream, not a caller-initiated reset, and bumping it here
-            // would desynchronise the isolate from the main isolate's counter and
-            // make every later result look stale.
-            //
-            // Skipped when isFinal, because inputFinished() has permanently closed
-            // the stream to further input and the session is ending regardless.
-            //
-            // Reset only -- deliberately WITHOUT the 480ms silence pre-roll that
-            // SherpaResetCommand performs. That pre-roll belongs to a hard reset
-            // at a session or ayah boundary; injecting it after every endpoint
-            // was measured to stop word matching entirely, because each utterance
-            // then opens with silence the sequencer has to anchor past. sherpa's
-            // own documented contract for this site is a bare Reset().
-            if (endpointDetected && !isFinal) {
-              recognizer!.reset(stream!);
-            }
           }
 
         case SherpaFlushCommand():

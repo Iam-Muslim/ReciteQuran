@@ -41,6 +41,9 @@ external JSBoolean _initSherpaRecognizer();
 @JS('fetchSherpaModel')
 external JSPromise _fetchSherpaModel(JSString url);
 
+@JS('isSherpaModelCached')
+external JSPromise _isSherpaModelCached();
+
 @JS('resetOfficialSherpaBuffer')
 external void _resetOfficialSherpaBuffer();
 
@@ -63,6 +66,7 @@ class SherpaEngine {
       StreamController<TranscriptionResult>.broadcast();
 
   bool _isInitialized = false;
+  Future<void>? _initFuture;
   int _currentStreamEpoch = 0;
 
   bool get isInitialized => _isInitialized;
@@ -71,12 +75,28 @@ class SherpaEngine {
   Stream<TranscriptionResult> get transcriptionStream =>
       _outputController.stream;
 
+  Future<bool> isModelCached() async {
+    try {
+      final res = await _isSherpaModelCached().toDart;
+      if (res != null && res is JSBoolean) {
+        return res.toDart;
+      }
+    } catch (_) {}
+    return false;
+  }
+
   Future<void> preExtractAssets() async {
     // Handled in initialize for Web
   }
 
-  Future<void> initialize() async {
-    if (_isInitialized) return;
+  Future<void> initialize() {
+    if (_isInitialized) return Future.value();
+    if (_initFuture != null) return _initFuture!;
+    _initFuture = _doInitialize();
+    return _initFuture!;
+  }
+
+  Future<void> _doInitialize() async {
 
     final JSFunction jsOnResult = (JSString jsonStr, JSBoolean isFinal) {
       try {
@@ -204,9 +224,11 @@ class SherpaEngine {
           'SherpaDart',
           'FATAL JS ERROR: Failed to create recognizer engine!',
         );
+        _initFuture = null;
       }
     } catch (e) {
       DebugLogger.logSimple('SherpaDart', 'FATAL ERROR loading models: $e');
+      _initFuture = null;
     }
   }
 

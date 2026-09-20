@@ -5,12 +5,10 @@
 # ReciteQuran — اتلو القران
 ### Real-Time On-Device Quran Karim Recitation Tracking & Tajweed Verification
 
-
-
-[![pub package](https://img.shields.io/badge/pub.dev-recite__quran%20v1.0.0-blue.svg)](https://pub.dev/packages/recite_quran)
+[![License](https://img.shields.io/badge/License-For%20The%20Sake%20Of%20Allah%20Subhanu-purple.svg)](#-sacred-covenant--license-لوجه-الله-تعالى)
+[![pub package](https://img.shields.io/badge/pub.dev-recite__quran%20v1.0.3-blue.svg)](https://pub.dev/packages/recite_quran)
 [![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Web-green.svg)](https://pub.dev/packages/recite_quran)
 [![Offline](https://img.shields.io/badge/Offline-100%25%20On--Device-orange.svg)](https://pub.dev/packages/recite_quran)
-[![License](https://img.shields.io/badge/License-Non--Commercial%20%2F%20Free%20for%20Allah-purple.svg)](#-sacred-covenant--license-لوجه-الله-تعالى)
 
 </div>
 
@@ -74,7 +72,7 @@
              │ Raw PCM Chunks
              ▼
 ┌─────────────────────────┐
-│     AudioProcessor      │ ──► Configures AVAudioSession / Android Audio (Disables DSP noise filter)
+│     AudioProcessor      │ ──► Raw 16kHz PCM Stream via record (Hardware DSP filters bypassed)
 └────────────┬────────────┘
              │ 480ms Float32 Chunks (TransferableTypedData zero-copy)
              ▼
@@ -107,7 +105,7 @@ Add `recite_quran` to your `pubspec.yaml`:
 dependencies:
   flutter:
     sdk: flutter
-  recite_quran: ^1.0.1
+  recite_quran: ^1.0.3
 ```
 
 ### 2. Download the Neural Model
