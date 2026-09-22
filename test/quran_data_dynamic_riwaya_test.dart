@@ -5,6 +5,7 @@ import 'package:recite_quran/data/qiraat_ayah_mapper.dart';
 import 'package:recite_quran/data/quran_data.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('QuranRepository Dynamic Multi-Riwaya Tests', () {
     late QuranMetadataService metadataService;
     late QuranRepository repository;

@@ -279,7 +279,9 @@ class QuranMetadataService {
     if (phonemeJsonString != null && phonemeJsonString!.isNotEmpty) {
       phonemeData = phonemeJsonString!;
     } else if (phonemeFilePath != null) {
-      if (kIsWeb ||
+      if (!kIsWeb && File(phonemeFilePath!).existsSync()) {
+        phonemeData = await File(phonemeFilePath!).readAsString();
+      } else if (kIsWeb ||
           phonemeFilePath!.startsWith('assets/') ||
           phonemeFilePath!.startsWith('packages/')) {
         phonemeData = await rootBundle.loadString(phonemeFilePath!);
@@ -292,6 +294,23 @@ class QuranMetadataService {
 
     // Decode synchronously on the main isolate.
     _rawJson = jsonDecode(phonemeData) as Map<String, dynamic>;
+  }
+
+  /// Returns the riwayah identifier declared by the dataset metadata, if present
+  /// (e.g. 'hafs', 'warsh').
+  String? get datasetRiwayah {
+    if (_rawJson == null) return null;
+    final moshaf = _rawJson!['moshaf'];
+    if (moshaf is Map && moshaf['rewaya'] != null) {
+      return moshaf['rewaya'].toString().toLowerCase();
+    }
+    if (_rawJson!['riwayah'] != null) {
+      return _rawJson!['riwayah'].toString().toLowerCase();
+    }
+    if (_rawJson!['rewaya'] != null) {
+      return _rawJson!['rewaya'].toString().toLowerCase();
+    }
+    return null;
   }
 
   /// Loads phoneme data from the rootBundle asset.
@@ -361,6 +380,38 @@ class QuranRepository {
   QiraatAyahMapper? get ayahMapper => _ayahMapper;
   QuranRiwayah? get riwayah => _riwayah;
 
+  /// Returns whether the loaded dataset is native to the active [riwayah].
+  ///
+  /// If true, the verse keys (e.g., ":") in the phoneme dataset
+  /// already correspond directly to the active riwayah's verses and counting
+  /// system, so no [ayahMapper] transformation or Hafs-fallback translation
+  /// is needed.
+  bool get isNativeDataset {
+    final ds = _service.datasetRiwayah;
+    if (ds == null) {
+      // Default bundled dataset is Hafs (Kufi)
+      return _riwayah == null || _riwayah == QuranRiwayah.hafs;
+    }
+    if (_riwayah == null) return false;
+    return _riwayah!.id.toLowerCase() == ds ||
+        _riwayah!.nameEn.toLowerCase() == ds;
+  }
+
+  /// Whether Tajweed evaluation is supported for the current configuration.
+  ///
+  /// Supported when reciting in Hafs or Warsh, or when the loaded dataset
+  /// provides explicit Tajweed rules/metadata.
+  bool get isTajweedSupported {
+    if (_riwayah == QuranRiwayah.hafs || _riwayah == QuranRiwayah.warsh) {
+      return true;
+    }
+    final raw = _service.rawJson;
+    if (raw != null && (raw['rules'] != null || raw['rule_names'] != null)) {
+      return true;
+    }
+    return false;
+  }
+
   void setAyahMapper(QiraatAyahMapper? mapper, [QuranRiwayah? riwayah]) {
     if (_ayahMapper == mapper && _riwayah == riwayah) return;
     _ayahMapper = mapper;
@@ -424,7 +475,7 @@ class QuranRepository {
     final List<QuranVerse> verses = [];
     final mapper = _ayahMapper;
 
-    if (mapper == null || mapper.system == QuranCountingSystem.kufi) {
+    if (mapper == null || mapper.system == QuranCountingSystem.kufi || isNativeDataset) {
       // 1:1 default Kufi (Hafs) loading
       for (int ayah = 1; ayah <= 300; ayah++) {
         final key = '$surah:$ayah';

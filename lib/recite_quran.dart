@@ -100,7 +100,7 @@ class ReciteQuran {
     bool isTajweed = true,
   })  : _engine = engine ?? SherpaEngine(),
         _config = config,
-        _isTajweed = (repository.riwayah == QuranRiwayah.hafs) && isTajweed {
+        _isTajweed = repository.isTajweedSupported && isTajweed {
     _tokenProcessor = AsrTokenProcessor(config: _config);
   }
 
@@ -181,7 +181,7 @@ class ReciteQuran {
   /// Toggles Tajweed evaluation on/off.
   void setTajweedMode(bool active) {
     if (_isDisposed) return;
-    final effective = (repository.riwayah == QuranRiwayah.hafs) && active;
+    final effective = repository.isTajweedSupported && active;
     _isTajweed = effective;
     _isolate.setTajweedMode(effective);
   }

@@ -235,7 +235,7 @@ class HighlightingController extends ChangeNotifier {
     bool isTajweed = true,
     this.config = const TrackerConfig(),
   })  : _engine = engine,
-        isTajweed = (repository.riwayah == QuranRiwayah.hafs) && isTajweed {
+        isTajweed = repository.isTajweedSupported && isTajweed {
     _tokenProcessor = AsrTokenProcessor(config: config);
     _initIsolate();
     _engineSub = _engine.transcriptionStream.listen(_onResult);
@@ -252,7 +252,7 @@ class HighlightingController extends ChangeNotifier {
   }
 
   void setTajweedMode(bool active) {
-    final effective = (repository.riwayah == QuranRiwayah.hafs) && active;
+    final effective = repository.isTajweedSupported && active;
     if (isTajweed == effective) return;
     isTajweed = effective;
     if (_isolateStarted) {
