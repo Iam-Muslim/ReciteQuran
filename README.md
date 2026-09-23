@@ -566,11 +566,16 @@ Before viewing, using, distributing, or modifying any part of this repository, y
 *Alhamdulillah (الحمد لله رب العالمين)* — this package stands upon the shoulders of brilliant Islamic tech initiatives, researchers, and open-source projects:
 
 - **[Zipformer Quran Acoustic Model](https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3)** by Brother Mustafa & **[QuranLab](https://huggingface.co/Quran-Lab)** for the Zipformer causal streaming ASR model training and acoustic phoneme tokenization.
+- **[quranic-phonemizer](https://github.com/M97Chahboun/quranic-phonemizer)** for generating authentic native Riwayat phonetic datasets (e.g. Warsh 'an Nafi', 6,214 ayahs), sound-level Tajweed rule annotations, and CTC-compatible acoustic phoneme alignments.
 - **[Quranpedia (موسوعة القرآن)](https://quranpedia.net)** for the verified **[Qira'at Ayah Map](https://github.com/quranpedia/qiraat-ayah-map)** dataset linking all 6 counting systems and 20 rawis to Kufi numbering.
 - **[tasmee3-muaalem-findings / Seraj](https://github.com/omar-abuhfs)** (Dr. Omar Abu Hafs) for the Best-Drop LCS word omission detection research, formulations, and benchmark datasets.
 - **[Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx)** by the Next-gen Kaldi team for real-time on-device speech recognition inference.
 - **[quran-transcript](https://github.com/OmarMuhammedAli/quran-transcript)** by Brother Abdullah Aml.
 - **[Quranic Universal Aligner (qua_sdk)](https://huggingface.co/spaces/hetchyy/quranic-universal-aligner)** by Brother Ahmad Ibrahim.
+
+### 📱 Applications Powered by ReciteQuran
+- **[Tathbeet (تثبيت)](https://app.tathbeet.space)** — Comprehensive Quran memorization and review platform featuring authentic multi-Riwayah recitation tracking and real-time Tajweed evaluation.
+
 
 ---
 
