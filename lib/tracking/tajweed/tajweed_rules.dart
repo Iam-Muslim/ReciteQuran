@@ -170,6 +170,29 @@ class AaredMaddRule extends MaddRule {
           name: const LangName(ar: "المد العارض للسكون", en: "Aared Madd"),
           goldenLen: 4,
         );
+
+  @override
+  TajweedDurationStatus checkDurationStatus(
+    double durationSeconds, [
+    double harakahBase = TajweedTimingConfig.harakahBaseSeconds,
+  ]) {
+    // In Tajweed, Al-Madd Al-Aared Lissukun at Waqf allows three legitimate faces:
+    // 1. Qasr (القصر) = 2 Harakat (accept >= 1.2 * harakahBase for normal/fast recitation & Wasl)
+    // 2. Tawassut (التوسط) = 4 Harakat
+    // 3. Tool / Ishba' (الطول) = 6 Harakat
+    final double minAllowed = 1.2 * harakahBase;
+    if (durationSeconds < minAllowed) {
+      return TajweedDurationStatus.defect;
+    }
+
+    // Upper bound tolerance: Tool (6 Harakat) + 4.0 Harakat headroom
+    final double maxAllowed = (6.0 * harakahBase) + (4.0 * harakahBase);
+    if (durationSeconds > maxAllowed) {
+      return TajweedDurationStatus.surplus;
+    }
+
+    return TajweedDurationStatus.valid;
+  }
 }
 
 /// ── 3.6 Lazem Madd (`المد اللازم`) — 6 Harakat ──

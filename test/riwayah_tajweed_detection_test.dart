@@ -104,8 +104,9 @@ void main() {
       expect(normalMadd.checkDurationStatus(0.40), TajweedDurationStatus.valid);
       expect(normalMadd.checkDurationStatus(1.50), TajweedDurationStatus.surplus);
 
-      // Aared Madd (4 Harakat = 1.00s)
-      expect(aaredMadd.checkDurationStatus(0.50), TajweedDurationStatus.defect);
+      // Aared Madd (allows Qasr 2, Tawassut 4, or Tool 6 Harakat)
+      expect(aaredMadd.checkDurationStatus(0.15), TajweedDurationStatus.defect);
+      expect(aaredMadd.checkDurationStatus(0.50), TajweedDurationStatus.valid);
       expect(aaredMadd.checkDurationStatus(1.20), TajweedDurationStatus.valid);
 
       // Ghunnah (2 Harakat = 0.50s)
