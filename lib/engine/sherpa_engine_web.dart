@@ -47,8 +47,21 @@ external JSPromise _isSherpaModelCached();
 @JS('resetOfficialSherpaBuffer')
 external void _resetOfficialSherpaBuffer();
 
+@JS('feedSherpaAudioChunk')
+external void _feedSherpaAudioChunk(JSFloat32Array chunk, JSBoolean isFinal);
+
 /// Web-specific implementation of SherpaEngine using Official Sherpa WebAssembly JS.
 class SherpaEngine {
+  /// Where the caller keeps a downloaded model, honoured by the IO engine.
+  ///
+  /// The web engine loads its model from the bundle and ignores this, but the
+  /// parameter has to exist: sherpa_engine.dart exports one of the two by
+  /// conditional import, so their constructors have to match or any app that
+  /// passes it fails to compile for the web.
+  final String? assetOverrideDir;
+
+  SherpaEngine({this.assetOverrideDir});
+
   final StreamController<TranscriptionResult> _outputController =
       StreamController<TranscriptionResult>.broadcast();
 
@@ -118,7 +131,18 @@ class SherpaEngine {
 
     try {
       const String modelFileName = 'zipformer_p_arabic_v3.int8.onnx';
-      const String modelUrl = '/download-model?model=$modelFileName';
+      // Downloaded on demand from a CORS-enabled host and cached by the browser;
+      // it is not bundled with the web deploy. Override at build time with
+      // --dart-define=RECITATION_MODEL_URL=... to point at a different mirror.
+      //
+      // GitHub release assets do not work here: github.com redirects to
+      // release-assets.githubusercontent.com and neither hop sends an
+      // Access-Control-Allow-Origin header, so the browser blocks the fetch.
+      const String modelUrl = String.fromEnvironment(
+        'RECITATION_MODEL_URL',
+        defaultValue:
+            'https://tathbeet.pythonanywhere.com/api/recitation/model/',
+      );
       DebugLogger.logSimple(
         'SherpaDart',
         'Fetching ONNX model from $modelUrl (in parallel with WASM load)...',
@@ -153,19 +177,38 @@ class SherpaEngine {
       _writeSherpaAssetToVFS(modelFileName.toJS, modelBytes);
       DebugLogger.logSimple('SherpaDart', 'Model written to VFS.');
 
-      ByteData tokensData;
+      Uint8List tokensBytes;
       try {
-        tokensData = await rootBundle.load(
-          'packages/recite_quran/assets/model/tokens.txt',
+        ByteData rawData;
+        try {
+          rawData = await rootBundle.load(
+            'packages/recite_quran/assets/model/tokens.txt',
+          );
+        } catch (_) {
+          rawData = await rootBundle.load('assets/model/tokens.txt');
+        }
+        final rawBytes = rawData.buffer.asUint8List();
+        final text = utf8.decode(rawBytes, allowMalformed: true);
+        if (text.startsWith('<!DOCTYPE') || text.length > 50000) {
+          throw Exception('Loaded HTML instead of tokens');
+        }
+        tokensBytes = rawBytes;
+      } catch (e) {
+        DebugLogger.logSimple(
+          'SherpaDart',
+          'Failed loading tokens bundle ($e), using embedded fallback.',
         );
-      } catch (_) {
-        tokensData = await rootBundle.load('assets/model/tokens.txt');
+        tokensBytes = Uint8List.fromList(utf8.encode(_fallbackTokensText));
       }
+
       _writeSherpaAssetToVFS(
         'quran_tokens.txt'.toJS,
-        tokensData.buffer.asUint8List().toJS,
+        tokensBytes.toJS,
       );
-      DebugLogger.logSimple('SherpaDart', 'Tokens written to VFS.');
+      DebugLogger.logSimple(
+        'SherpaDart',
+        'Tokens (${tokensBytes.length} bytes) written to VFS.',
+      );
 
       DebugLogger.logSimple('SherpaDart', 'Initializing Sherpa Recognizer...');
       bool success = _initSherpaRecognizer().toDart;
@@ -190,8 +233,14 @@ class SherpaEngine {
   }
 
   bool transcribe(Float32List audioChunk, {bool isFinal = false}) {
-    // Handled in Web through JS AudioProcessor hook
-    return true;
+    if (!_isInitialized) return false;
+    try {
+      _feedSherpaAudioChunk(audioChunk.toJS, isFinal.toJS);
+      return true;
+    } catch (e) {
+      DebugLogger.logSimple('SherpaWeb', 'transcribe error: $e');
+      return false;
+    }
   }
 
   void resetBuffer() {
@@ -220,3 +269,255 @@ class SherpaEngine {
     globalContext.setProperty('dartSherpaOnResult'.toJS, null);
   }
 }
+
+const String _fallbackTokensText = '''<blank> 250
+ؙ 0
+ء 1
+ا 2
+ب 3
+ت 4
+ث 5
+ج 6
+ح 7
+خ 8
+د 9
+ذ 10
+ر 11
+ز 12
+س 13
+ش 14
+ص 15
+ض 16
+ط 17
+ظ 18
+ع 19
+غ 20
+ـ 21
+ف 22
+ق 23
+ك 24
+ل 25
+م 26
+ن 27
+ه 28
+و 29
+ي 30
+َ 31
+ُ 32
+ِ 33
+ٲ 34
+ڇ 35
+ں 36
+ۜ 37
+ۥ 38
+ۦ 39
+۪ 40
+۾ 41
+ءَ 42
+ءُ 43
+ءِ 44
+اا 45
+بَ 46
+بُ 47
+بِ 48
+بڇ 49
+تت 50
+تَ 51
+تُ 52
+تِ 53
+ثَ 54
+ثُ 55
+ثِ 56
+جَ 57
+جُ 58
+جِ 59
+جڇ 60
+حح 61
+حَ 62
+حُ 63
+حِ 64
+خَ 65
+خُ 66
+خِ 67
+دَ 68
+دُ 69
+دِ 70
+دڇ 71
+ذَ 72
+ذُ 73
+ذِ 74
+رر 75
+رَ 76
+رُ 77
+رِ 78
+ر۪ 79
+زَ 80
+زُ 81
+زِ 82
+سس 83
+سَ 84
+سُ 85
+سِ 86
+شَ 87
+شُ 88
+شِ 89
+صَ 90
+صُ 91
+صِ 92
+ضَ 93
+ضُ 94
+ضِ 95
+طَ 96
+طُ 97
+طِ 98
+طڇ 99
+ظَ 100
+ظُ 101
+ظِ 102
+عَ 103
+عُ 104
+عِ 105
+غَ 106
+غُ 107
+غِ 108
+ــ 109
+فف 110
+فَ 111
+فُ 112
+فِ 113
+قَ 114
+قُ 115
+قِ 116
+قڇ 117
+كك 118
+كَ 119
+كُ 120
+كِ 121
+لل 122
+لَ 123
+لُ 124
+لِ 125
+لۜ 126
+مَ 127
+مُ 128
+مِ 129
+نؙ 130
+نَ 131
+نُ 132
+نِ 133
+نۜ 134
+هَ 135
+ه 136
+هِ 137
+وو 138
+وَ 139
+وُ 140
+وِ 141
+يي 142
+يَ 143
+يُ 144
+يِ 145
+ۥۥ 146
+ۦۦ 147
+ااۜ 148
+ببَ 149
+ببُ 150
+ببِ 151
+ببڇ 152
+تتَ 153
+تتُ 154
+تتِ 155
+ثثَ 156
+ثثُ 157
+ثثِ 158
+ججَ 159
+ججُ 160
+ججِ 161
+ججڇ 162
+ححَ 163
+ححِ 164
+خخَ 165
+خخِ 166
+ددَ 167
+ددُ 168
+ددِ 169
+ددڇ 170
+ذذَ 171
+ذذُ 172
+ذذِ 173
+ررَ 174
+ررُ 175
+ررِ 176
+ززَ 177
+ززُ 178
+ززِ 179
+سسَ 180
+سسُ 181
+سسِ 182
+ششَ 183
+ششُ 184
+ششِ 185
+صصَ 186
+صصُ 187
+صصِ 188
+ضضَ 189
+ضضُ 190
+ضضِ 191
+ططَ 192
+ططُ 193
+ططِ 194
+ظظَ 195
+ظظُ 196
+ظظِ 197
+ععَ 198
+ععُ 199
+ععِ 200
+ففَ 201
+ففُ 202
+ففِ 203
+ققَ 204
+ققُ 205
+ققِ 206
+ققڇ 207
+ككَ 208
+ككُ 209
+ككِ 210
+للَ 211
+للُ 212
+للِ 213
+ممم 214
+ننن 215
+ههَ 216
+ههُ 217
+ههِ 218
+ووو 219
+ووَ 220
+ووُ 221
+ووِ 222
+ييي 223
+ييَ 224
+ييُ 225
+ييِ 226
+ںںں 227
+۾۾۾ 228
+اااا 229
+وووَ 230
+وووُ 231
+وووِ 232
+يييَ 233
+يييُ 234
+ۥۥۥۥ 235
+ۦۦۦۦ 236
+ااااا 237
+ممممَ 238
+ممممُ 239
+ممممِ 240
+ننننَ 241
+ننننُ 242
+ننننِ 243
+ييييي 244
+ۥۥۥۥۥ 245
+ۦۦۦۦۦ 246
+اااااا 247
+ۥۥۥۥۥۥ 248
+ۦۦۦۦۦۦ 249''';

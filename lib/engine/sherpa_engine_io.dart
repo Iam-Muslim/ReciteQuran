@@ -41,6 +41,11 @@ class TranscriptionResult {
 }
 
 class SherpaEngine {
+  /// Caller-supplied directory containing pre-downloaded or dynamic model assets.
+  SherpaEngine({this.assetOverrideDir});
+
+  final String? assetOverrideDir;
+
   Isolate? _isolate;
   SendPort? _sendPort;
   ReceivePort? _receivePort;
@@ -61,6 +66,13 @@ class SherpaEngine {
   Future<bool> isModelCached() async => true;
 
   Future<String> _extractAsset(String assetPath) async {
+    if (assetOverrideDir != null) {
+      final overrideFile = File('$assetOverrideDir/${assetPath.split("/").last}');
+      if (await overrideFile.exists() && await overrideFile.length() > 10) {
+        return overrideFile.path;
+      }
+    }
+
     final Directory docDir = await getApplicationSupportDirectory();
     final String prefix = 'v2_zipformer_';
     final File file = File(

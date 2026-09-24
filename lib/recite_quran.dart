@@ -1,14 +1,24 @@
 // lib/recite_quran.dart
 import 'dart:async';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
+import 'data/qiraat_ayah_mapper.dart';
 import 'data/quran_data.dart';
 import 'engine/sherpa_engine.dart';
 import 'tracking/word/highlighting_controller.dart';
 
 export 'audio/audio_processor.dart';
+export 'data/ayah_mapping_downloader.dart';
+export 'data/model_downloader.dart';
+export 'data/qiraat_ayah_mapper.dart';
 export 'data/quran_data.dart';
+export 'data/riwaya_descriptor.dart';
+export 'data/riwaya_registry.dart';
+export 'data/verse_alignment.dart';
+export 'data/verse_key_map.dart';
+export 'data/warsh_hafs_mapper.dart';
 export 'engine/sherpa_engine.dart';
 export 'tracking/ayah_search/fuzzy_search.dart';
 export 'tracking/ayah_search/phonetic_search.dart';
@@ -21,6 +31,7 @@ export 'tracking/word/dictation_sequencer.dart';
 export 'tracking/word/highlighting_controller.dart';
 export 'tracking/word/phoneme_alignment_isolate.dart';
 export 'utils/debug_logger.dart';
+export 'utils/omission_detector.dart';
 
 /// Type alias for QuranRepository.
 typedef QuranDataRepository = QuranRepository;
@@ -34,6 +45,12 @@ typedef QuranVoiceTracker = ReciteQuran;
 
 /// The primary entry point for integrating real-time Quran recitation tracking
 /// and deterministic Tajweed verification into any Flutter application.
+///
+/// **Scholarly & Pedagogical Note (تنبيه وأمانة شرعية):**
+/// This engine is an assistive tool to aid individual revision and practice.
+/// It is never a substitute for direct Talaqqi and Musyafahah (reciting face-to-face
+/// to a qualified, certified Sheikh/Muqri' with Ijaza) to verify sound Hifdh,
+/// Tajweed precision, and letter articulation points (Makharij).
 class ReciteQuran {
   final QuranRepository repository;
   final SherpaEngine _engine;
@@ -84,7 +101,7 @@ class ReciteQuran {
     bool isTajweed = true,
   })  : _engine = engine ?? SherpaEngine(),
         _config = config,
-        _isTajweed = isTajweed {
+        _isTajweed = repository.isTajweedSupported && isTajweed {
     _tokenProcessor = AsrTokenProcessor(config: _config);
   }
 
@@ -160,13 +177,15 @@ class ReciteQuran {
   void resetBuffer() {
     if (_isDisposed) return;
     _engine.resetBuffer();
+    _tokenProcessor.reset();
   }
 
   /// Toggles Tajweed evaluation on/off.
   void setTajweedMode(bool active) {
     if (_isDisposed) return;
-    _isTajweed = active;
-    _isolate.setTajweedMode(active);
+    final effective = repository.isTajweedSupported && active;
+    _isTajweed = effective;
+    _isolate.setTajweedMode(effective);
   }
 
   /// Updates difficulty and math thresholds dynamically at runtime.
@@ -181,6 +200,8 @@ class ReciteQuran {
 
   void _onTranscriptionResult(TranscriptionResult result) {
     if (_isDisposed) return;
+    if (result.streamEpoch != _engine.currentStreamEpoch) return;
+
     if (result.text.isNotEmpty) {
       _transcriptController.add(result.text);
     }
@@ -189,9 +210,16 @@ class ReciteQuran {
     if (processed.isEmpty) return;
 
     final String asrString = processed.tokens.join('');
-    final List<double> asrTimestamps = processed.durations;
+    final List<double> charDurations = [];
+    for (int i = 0; i < processed.tokens.length; i++) {
+      final tok = processed.tokens[i];
+      final dur = processed.durations[i] / max(1, tok.length);
+      for (int c = 0; c < tok.length; c++) {
+        charDurations.add(dur);
+      }
+    }
 
-    _isolate.syncStream(asrString, asrTimestamps);
+    _isolate.syncStream(asrString, charDurations);
   }
 
   List<int> _calculateBoundaries(List<String> phonemeWords) {

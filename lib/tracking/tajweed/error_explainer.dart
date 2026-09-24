@@ -333,6 +333,13 @@ class ErrorExplainer {
     final List<_PhoneticSpan> spans = [];
     int cursor = wordRefStart;
 
+    // Track available Madd rules so multiple Madd spans in the same word
+    // (e.g. Lazem + Aared in "الضَّآلِّينَ", or Normal + Aared in "العَٰلَمِينَ")
+    // each receive their distinct rule rather than reusing the first rule.
+    final List<WordTajweedRule> remainingMaddRules = expectedWordRules
+        .where((r) => r.ruleId >= 1 && r.ruleId <= 7)
+        .toList();
+
     while (cursor < wordRefEnd) {
       final String ch = fullPhonemes[cursor];
 
@@ -344,13 +351,18 @@ class ErrorExplainer {
         }
         final refText = fullPhonemes.substring(cursor, end);
 
-        // Find matching Madd rule in expectedWordRules
+        // Find matching Madd rule from remainingMaddRules:
+        // Prioritize exact goldenLen match with phoneme elongation length,
+        // then consume in sequential order.
         WordTajweedRule? matchedRule;
-        for (final r in expectedWordRules) {
-          if (r.ruleId >= 1 && r.ruleId <= 7) {
-            matchedRule = r;
-            break;
+        if (remainingMaddRules.isNotEmpty) {
+          int matchIdx = remainingMaddRules.indexWhere(
+            (r) => r.goldenLen == refText.length,
+          );
+          if (matchIdx == -1) {
+            matchIdx = 0;
           }
+          matchedRule = remainingMaddRules.removeAt(matchIdx);
         }
 
         spans.add(
@@ -501,7 +513,11 @@ class ErrorExplainer {
           ),
         );
         return errors;
-      } else if (span.baseChar != predText[0]) {
+      } else if (span.baseChar != predText[0] &&
+          !PhoneticCostEngine.isEquivalentGlyph(
+            span.baseChar.codeUnitAt(0),
+            predText.codeUnitAt(0),
+          )) {
         // Base consonant / Madd vowel substituted (e.g. ي vs ت, ۦ vs ۥ)
         errors.add(
           ReciterError(
@@ -517,6 +533,8 @@ class ErrorExplainer {
 
     // ── Phase 2: Tajweed Duration Rules (Madd, Ghunnah, Shaddah) ──
     if (span.isMadd) {
+      if (spanDuration <= 0.0) return errors;
+
       final rule = span.matchedWordRule != null
           ? _instantiateTajweedRule(span.matchedWordRule!)
           : _deriveMaddRuleFromLength(span.refText.length);
@@ -542,6 +560,8 @@ class ErrorExplainer {
     }
 
     if (span.isGhunnah) {
+      if (spanDuration <= 0.0) return errors;
+
       final rule = span.matchedWordRule != null
           ? _instantiateTajweedRule(span.matchedWordRule!)
           : MushaddadGhunnahRule.withNames(
@@ -575,9 +595,13 @@ class ErrorExplainer {
 
       final int predBaseCount = _countBaseOccurrences(predText, span.baseChar);
       final bool predDoubled = predBaseCount >= 2;
+      if (spanDuration <= 0.0) {
+        return errors;
+      }
       final TajweedDurationStatus durStatus = rule.checkDurationStatus(spanDuration, hBase);
 
-      if (!predDoubled || durStatus == TajweedDurationStatus.defect) {
+      // A Shaddah is a defect only if the acoustic holding duration was deficient AND characters weren't doubled
+      if (!predDoubled && durStatus == TajweedDurationStatus.defect) {
         errors.add(
           ReciterError(
             errorType: ErrorCategory.tajweed,

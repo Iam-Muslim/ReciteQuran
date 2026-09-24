@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "riwayat": [
+    {
+      "id": "hafs",
+      "nameAr": "حفص عن عاصم",
+      "nameEn": "Hafs an Asim",
+      "sourceDatabase": "quran_hafs.sqlite",
+      "profileId": "hafs",
+      "phonemeArtifact": "hafs_phonemes.json",
+      "dataVersion": 1,
+      "tajweedVerified": true
+    },
+    {
+      "id": "shubah",
+      "nameAr": "شعبة عن عاصم",
+      "nameEn": "Shu'bah an Asim",
+      "sourceDatabase": "quran_shubah.sqlite",
+      "profileId": "shubah",
+      "phonemeArtifact": "hafs_phonemes.json",
+      "dataVersion": 1,
+      "tajweedVerified": false
+    },
+    {
+      "id": "warsh",
+      "nameAr": "ورش عن نافع",
+      "nameEn": "Warsh an Nafi",
+      "sourceDatabase": "quran_warsh.sqlite",
+      "profileId": "warsh",
+      "phonemeArtifact": "warsh_phonemes.json",
+      "dataVersion": 1,
+      "tajweedVerified": false
+    },
+    {
+      "id": "qaloon",
+      "nameAr": "قالون عن نافع",
+      "nameEn": "Qaloon an Nafi",
+      "sourceDatabase": "quran_qaloon.sqlite",
+      "profileId": "qaloon",
+      "phonemeArtifact": "warsh_phonemes.json",
+      "dataVersion": 1,
+      "tajweedVerified": false
+    },
+    {
+      "id": "duri",
+      "nameAr": "الدوري عن أبي عمرو",
+      "nameEn": "Al-Duri an Abi Amr",
+      "sourceDatabase": "quran_duri.sqlite",
+      "profileId": "duri",
+      "phonemeArtifact": "duri_phonemes.json",
+      "dataVersion": 1,
+      "tajweedVerified": false
+    },
+    {
+      "id": "susi",
+      "nameAr": "السوسي عن أبي عمرو",
+      "nameEn": "Al-Susi an Abi Amr",
+      "sourceDatabase": "quran_susi.sqlite",
+      "profileId": "susi",
+      "phonemeArtifact": "duri_phonemes.json",
+      "dataVersion": 1,
+      "tajweedVerified": false
+    },
+    {
+      "id": "bazzi",
+      "nameAr": "البزي عن ابن كثير",
+      "nameEn": "Al-Bazzi an Ibn Kathir",
+      "sourceDatabase": "quran_bazzi.sqlite",
+      "profileId": "bazzi",
+      "phonemeArtifact": "bazzi_phonemes.json",
+      "dataVersion": 1,
+      "tajweedVerified": false
+    },
+    {
+      "id": "qunbul",
+      "nameAr": "قنبل عن ابن كثير",
+      "nameEn": "Qunbul an Ibn Kathir",
+      "sourceDatabase": "quran_qunbul.sqlite",
+      "profileId": "qunbul",
+      "phonemeArtifact": "bazzi_phonemes.json",
+      "dataVersion": 1,
+      "tajweedVerified": false
+    }
+  ]
+}
