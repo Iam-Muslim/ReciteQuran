@@ -1,5 +1,9 @@
 import "package:flutter_test/flutter_test.dart";
 import "package:recite_quran/recite_quran.dart";
+import "package:recite_quran/tracking/tajweed/error_explainer.dart";
+import "package:recite_quran/tracking/tajweed/tajweed_rules.dart";
+import "package:recite_quran/tracking/word/dictation_matcher.dart";
+import "package:recite_quran/tracking/word/dictation_sequencer.dart";
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -93,25 +97,358 @@ void main() {
       expect(tracker.isTajweed, isFalse, reason: "Tracker must keep Tajweed disabled for unsupported riwayah");
       tracker.dispose();
     });
+  });
 
-    test("Tajweed acoustic duration verification logic (Madd and Ghunnah)", () {
-      const normalMadd = NormalMaddRule();
-      const aaredMadd = AaredMaddRule();
-      const ghunnah = MushaddadGhunnahRule();
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SECTION 2: MATHEMATICAL MODELS FOR ALL TAJWEED RULES
+  // ═══════════════════════════════════════════════════════════════════════════
 
-      // Normal Madd (~1.5 Harakat = 0.375s)
-      expect(normalMadd.checkDurationStatus(0.10), TajweedDurationStatus.defect);
-      expect(normalMadd.checkDurationStatus(0.40), TajweedDurationStatus.valid);
-      expect(normalMadd.checkDurationStatus(1.50), TajweedDurationStatus.surplus);
+  group("Tajweed Rules Mathematical Duration & Tolerance Tests", () {
+    const hBase = 0.20; // Standard Harakah Base = 200ms
 
-      // Aared Madd (allows Qasr 2, Tawassut 4, or Tool 6 Harakat)
-      expect(aaredMadd.checkDurationStatus(0.15), TajweedDurationStatus.defect);
-      expect(aaredMadd.checkDurationStatus(0.50), TajweedDurationStatus.valid);
-      expect(aaredMadd.checkDurationStatus(1.20), TajweedDurationStatus.valid);
+    test("Rule 1: Normal Madd (المد الطبيعي) — 1.2 Harakat", () {
+      const rule = NormalMaddRule();
+      expect(rule.name.ar, "المد الطبيعي");
+      expect(rule.name.en, "Normal Madd");
+      expect(rule.goldenLen, 1.2);
 
-      // Ghunnah (2 Harakat = 0.50s)
-      expect(ghunnah.checkDurationStatus(0.20), TajweedDurationStatus.defect);
-      expect(ghunnah.checkDurationStatus(0.60), TajweedDurationStatus.valid);
+      // Lower bound: min required duration is 0.70 * hBase = 140ms
+      expect(rule.checkDurationStatus(0.00, hBase), TajweedDurationStatus.defect);
+      expect(rule.checkDurationStatus(0.10, hBase), TajweedDurationStatus.defect);
+      expect(rule.checkDurationStatus(0.05, hBase), TajweedDurationStatus.defect);
+
+      // Valid range: passes natural human recitation (140ms - 600ms)
+      expect(rule.checkDurationStatus(0.15, hBase), TajweedDurationStatus.valid);
+      expect(rule.checkDurationStatus(0.24, hBase), TajweedDurationStatus.valid);
+      expect(rule.checkDurationStatus(0.40, hBase), TajweedDurationStatus.valid);
+
+      // Surplus: excessive elongation beyond +2.5 Harakat headroom
+      expect(rule.checkDurationStatus(0.90, hBase), TajweedDurationStatus.surplus);
+    });
+
+    test("Rule 2: Monfasel Madd (المد المنفصل) — 4 Harakat", () {
+      const rule = MonfaselMaddRule();
+      expect(rule.name.ar, "المد المنفصل");
+      expect(rule.goldenLen, 4);
+      expect(rule.getRequiredDuration(hBase), closeTo(0.80, 0.001));
+
+      // 20% margin: req threshold = 0.80 * 0.80 = 0.64s
+      expect(rule.checkDurationStatus(0.40, hBase), TajweedDurationStatus.defect);
+      expect(rule.checkDurationStatus(0.60, hBase), TajweedDurationStatus.defect);
+      expect(rule.checkDurationStatus(0.65, hBase), TajweedDurationStatus.valid);
+      expect(rule.checkDurationStatus(0.80, hBase), TajweedDurationStatus.valid);
+      expect(rule.checkDurationStatus(1.20, hBase), TajweedDurationStatus.valid);
+
+      // Upper bound: req (0.64) + 4.0 * 0.20 (0.80) = 1.44s
+      expect(rule.checkDurationStatus(1.50, hBase), TajweedDurationStatus.surplus);
+    });
+
+    test("Rule 3: Mottasel Madd (المد المتصل) — 4 Harakat", () {
+      const rule = MottaselMaddRule();
+      expect(rule.name.ar, "المد المتصل");
+      expect(rule.goldenLen, 4);
+
+      expect(rule.checkDurationStatus(0.50, hBase), TajweedDurationStatus.defect);
+      expect(rule.checkDurationStatus(0.70, hBase), TajweedDurationStatus.valid);
+      expect(rule.checkDurationStatus(1.00, hBase), TajweedDurationStatus.valid);
+      expect(rule.checkDurationStatus(1.60, hBase), TajweedDurationStatus.surplus);
+    });
+
+    test("Rule 4: Mottasel Madd at Pause (المد المتصل وقفا) — 4 Harakat", () {
+      const rule = MottaselMaddPauseRule();
+      expect(rule.name.ar, "المد المتصل وقفا");
+      expect(rule.goldenLen, 4);
+
+      expect(rule.checkDurationStatus(0.50, hBase), TajweedDurationStatus.defect);
+      expect(rule.checkDurationStatus(0.80, hBase), TajweedDurationStatus.valid);
+      expect(rule.checkDurationStatus(1.10, hBase), TajweedDurationStatus.valid);
+    });
+
+    test("Rule 5: Aared Madd (المد العارض للسكون) — Qasr (2), Tawassut (4), Tool (6)", () {
+      const rule = AaredMaddRule();
+      expect(rule.name.ar, "المد العارض للسكون");
+      expect(rule.goldenLen, 4);
+
+      // Defect: shorter than allowed Qasr (0.70 * hBase = 140ms)
+      expect(rule.checkDurationStatus(0.00, hBase), TajweedDurationStatus.defect);
+      expect(rule.checkDurationStatus(0.10, hBase), TajweedDurationStatus.defect);
+      expect(rule.checkDurationStatus(0.13, hBase), TajweedDurationStatus.defect);
+
+      // 1. Qasr Face (2 Harakat ~ 0.40s, accepts >= 0.14s)
+      expect(rule.checkDurationStatus(0.20, hBase), TajweedDurationStatus.valid);
+      expect(rule.checkDurationStatus(0.35, hBase), TajweedDurationStatus.valid);
+
+      // 2. Tawassut Face (4 Harakat ~ 0.80s)
+      expect(rule.checkDurationStatus(0.80, hBase), TajweedDurationStatus.valid);
+
+      // 3. Tool Face (6 Harakat ~ 1.20s - 1.80s)
+      expect(rule.checkDurationStatus(1.20, hBase), TajweedDurationStatus.valid);
+      expect(rule.checkDurationStatus(1.60, hBase), TajweedDurationStatus.valid);
+
+      // Surplus: exceeds Tool (6 * 0.20 = 1.2s) + 4 Harakat headroom (0.8s) = 2.0s
+      expect(rule.checkDurationStatus(2.10, hBase), TajweedDurationStatus.surplus);
+    });
+
+    test("Rule 6: Lazem Madd (المد اللازم) — 6 Harakat", () {
+      const rule = LazemMaddRule();
+      expect(rule.name.ar, "المد اللازم");
+      expect(rule.goldenLen, 6);
+      expect(rule.getRequiredDuration(hBase), closeTo(1.20, 0.001));
+
+      // 20% margin: req threshold = 1.20 * 0.80 = 0.96s
+      expect(rule.checkDurationStatus(0.80, hBase), TajweedDurationStatus.defect);
+      expect(rule.checkDurationStatus(0.95, hBase), TajweedDurationStatus.defect);
+      expect(rule.checkDurationStatus(1.00, hBase), TajweedDurationStatus.valid);
+      expect(rule.checkDurationStatus(1.20, hBase), TajweedDurationStatus.valid);
+      expect(rule.checkDurationStatus(1.60, hBase), TajweedDurationStatus.valid);
+
+      // Upper bound: req (0.96) + 4.0 * 0.20 (0.80) = 1.76s
+      expect(rule.checkDurationStatus(2.10, hBase), TajweedDurationStatus.surplus);
+    });
+
+    test("Rule 7: Leen Madd (مد اللين) — 4 Harakat", () {
+      const rule = LeenMaddRule();
+      expect(rule.name.ar, "مد اللين");
+      expect(rule.goldenLen, 4);
+
+      expect(rule.checkDurationStatus(0.50, hBase), TajweedDurationStatus.defect);
+      expect(rule.checkDurationStatus(0.70, hBase), TajweedDurationStatus.valid);
+      expect(rule.checkDurationStatus(1.00, hBase), TajweedDurationStatus.valid);
+    });
+
+    test("Rule 10: Mushaddad Ghunnah (النون والميم المشددة) — 2 Harakat", () {
+      const ruleNoon = MushaddadGhunnahRule(
+        name: LangName(ar: "النون المشددة", en: "Mushaddad Noon"),
+      );
+      const ruleMeem = MushaddadGhunnahRule(
+        name: LangName(ar: "الميم المشددة", en: "Mushaddad Meem"),
+      );
+
+      expect(ruleNoon.name.ar, "النون المشددة");
+      expect(ruleMeem.name.ar, "الميم المشددة");
+      expect(ruleNoon.goldenLen, 2);
+      expect(ruleNoon.getRequiredDuration(hBase), closeTo(0.40, 0.001));
+
+      // 20% margin: req = 0.40 * 0.80 = 0.32s
+      expect(ruleNoon.checkDurationStatus(0.20, hBase), TajweedDurationStatus.defect);
+      expect(ruleNoon.checkDurationStatus(0.30, hBase), TajweedDurationStatus.defect);
+      expect(ruleNoon.checkDurationStatus(0.35, hBase), TajweedDurationStatus.valid);
+      expect(ruleNoon.checkDurationStatus(0.50, hBase), TajweedDurationStatus.valid);
+
+      // Surplus: 0.32 + 2.5 * 0.20 (0.50) = 0.82s
+      expect(ruleNoon.checkDurationStatus(0.95, hBase), TajweedDurationStatus.surplus);
+    });
+
+    test("Rule 9: Shaddah (الشدة) — Consonant closure holding", () {
+      const rule = ShaddahRule();
+      expect(rule.name.ar, "الشدة");
+      expect(rule.goldenLen, 1);
+      expect(rule.getRequiredDuration(hBase), closeTo(0.13, 0.001));
+
+      // 20% margin: req = 0.13 * 0.80 = 0.104s
+      expect(rule.checkDurationStatus(0.08, hBase), TajweedDurationStatus.defect);
+      expect(rule.checkDurationStatus(0.12, hBase), TajweedDurationStatus.valid);
+      expect(rule.checkDurationStatus(0.25, hBase), TajweedDurationStatus.valid);
+      expect(rule.checkDurationStatus(0.45, hBase), TajweedDurationStatus.valid);
+    });
+
+    test("Adaptive tempo scaling (Fast Hadr vs Slow Tahqiq)", () {
+      const aared = AaredMaddRule();
+
+      // Fast recitation (Hadr): hBase = 150ms
+      expect(aared.checkDurationStatus(0.11, 0.15), TajweedDurationStatus.valid);
+      expect(aared.checkDurationStatus(0.08, 0.15), TajweedDurationStatus.defect);
+
+      // Slow recitation (Tahqiq): hBase = 250ms
+      expect(aared.checkDurationStatus(0.20, 0.25), TajweedDurationStatus.valid);
+      expect(aared.checkDurationStatus(0.12, 0.25), TajweedDurationStatus.defect);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SECTION 3: ERROR EXPLAINER INTEGRATION TESTS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  group("ErrorExplainer Span Evaluation Unit Tests", () {
+    test("Zero or missing duration does NOT produce false defects", () {
+      final deenRule = const WordTajweedRule(
+        ruleId: 5,
+        nameAr: "المد العارض للسكون",
+        nameEn: "Aared Madd",
+        goldenLen: 4,
+      );
+
+      // Aligned ASR with 0.0 duration (e.g. streaming timestamp lag)
+      final trace = [
+        PhonemeGroupAlignment(opType: 'match', refIdx: 0, predIdx: 0), // د
+        PhonemeGroupAlignment(opType: 'delete', refIdx: 1, predIdx: -1), // د
+        PhonemeGroupAlignment(opType: 'match', refIdx: 2, predIdx: 1), // ِ
+        PhonemeGroupAlignment(opType: 'match', refIdx: 3, predIdx: 2), // ۦ
+        PhonemeGroupAlignment(opType: 'delete', refIdx: 4, predIdx: -1), // ۦ
+        PhonemeGroupAlignment(opType: 'delete', refIdx: 5, predIdx: -1), // ۦ
+        PhonemeGroupAlignment(opType: 'delete', refIdx: 6, predIdx: -1), // ۦ
+        PhonemeGroupAlignment(opType: 'match', refIdx: 7, predIdx: 3), // ن
+      ];
+
+      final errors = ErrorExplainer.evaluatePreAlignedWords(
+        alignments: trace,
+        fullPhonemes: "ددِۦۦۦۦن",
+        wordBoundaries: [0, 8],
+        currentAsrText: "دِۦن",
+        trackingTimestamps: [0.0, 0.0, 0.0, 0.0], // All zeros!
+        bestAsrStartIdx: 0,
+        targetCharCursor: 0,
+        startWordId: 0,
+        nextWordId: 1,
+        totalAyahWords: 1,
+        expectedWordRules: [deenRule],
+      );
+
+      // Must be empty: never falsely claim a 0.00s defect!
+      expect(errors, isEmpty);
+    });
+
+    test("Quranic glyph equivalence (Small Yaa ۦ vs Regular Yaa ي) avoids false substitution", () {
+      final aaredRule = const WordTajweedRule(
+        ruleId: 5,
+        nameAr: "المد العارض للسكون",
+        nameEn: "Aared Madd",
+        goldenLen: 4,
+      );
+
+      // ASR predicted regular 'ي', reference has 'ۦ'
+      final trace = [
+        PhonemeGroupAlignment(opType: 'match', refIdx: 0, predIdx: 0), // د
+        PhonemeGroupAlignment(opType: 'match', refIdx: 1, predIdx: 1), // د
+        PhonemeGroupAlignment(opType: 'match', refIdx: 2, predIdx: 2), // ِ
+        PhonemeGroupAlignment(opType: 'match', refIdx: 3, predIdx: 3), // ۦ matched to ي!
+        PhonemeGroupAlignment(opType: 'delete', refIdx: 4, predIdx: -1),
+        PhonemeGroupAlignment(opType: 'delete', refIdx: 5, predIdx: -1),
+        PhonemeGroupAlignment(opType: 'delete', refIdx: 6, predIdx: -1),
+        PhonemeGroupAlignment(opType: 'match', refIdx: 7, predIdx: 4), // ن
+      ];
+
+      final errors = ErrorExplainer.evaluatePreAlignedWords(
+        alignments: trace,
+        fullPhonemes: "ددِۦۦۦۦن",
+        wordBoundaries: [0, 8],
+        currentAsrText: "ددِين",
+        trackingTimestamps: [0.15, 0.15, 0.15, 0.85, 0.15], // 850ms on 'ي'
+        bestAsrStartIdx: 0,
+        targetCharCursor: 0,
+        startWordId: 0,
+        nextWordId: 1,
+        totalAyahWords: 1,
+        expectedWordRules: [aaredRule],
+      );
+
+      // Must be completely free of errors (both Tajweed and substitution)
+      expect(errors, isEmpty);
+    });
+
+    test("Quranic glyph equivalence (Small Waw ۥ vs Regular Waw و)", () {
+      expect(PhoneticCostEngine.isEquivalentGlyph('و'.codeUnitAt(0), 'ۥ'.codeUnitAt(0)), isTrue);
+      expect(PhoneticCostEngine.isEquivalentGlyph('ي'.codeUnitAt(0), 'ۦ'.codeUnitAt(0)), isTrue);
+      expect(PhoneticCostEngine.isEquivalentGlyph('ن'.codeUnitAt(0), 'ں'.codeUnitAt(0)), isTrue);
+      expect(PhoneticCostEngine.isEquivalentGlyph('م'.codeUnitAt(0), '۾'.codeUnitAt(0)), isTrue);
+    });
+
+    test("Shaddah consonant doubling bypasses acoustic duration deficiency", () {
+      final shaddahRule = const WordTajweedRule(
+        ruleId: 9,
+        nameAr: "الشدة",
+        nameEn: "Shaddah",
+        goldenLen: 1,
+      );
+
+      // Reciter clearly doubled the letter in ASR (رَببِ -> رَببِ)
+      final trace = [
+        PhonemeGroupAlignment(opType: 'match', refIdx: 0, predIdx: 0), // ر
+        PhonemeGroupAlignment(opType: 'match', refIdx: 1, predIdx: 1), // َ
+        PhonemeGroupAlignment(opType: 'match', refIdx: 2, predIdx: 2), // ب
+        PhonemeGroupAlignment(opType: 'match', refIdx: 3, predIdx: 3), // ب
+        PhonemeGroupAlignment(opType: 'match', refIdx: 4, predIdx: 4), // ِ
+      ];
+
+      final errors = ErrorExplainer.evaluatePreAlignedWords(
+        alignments: trace,
+        fullPhonemes: "رَببِ",
+        wordBoundaries: [0, 5],
+        currentAsrText: "رَببِ",
+        trackingTimestamps: [0.05, 0.05, 0.05, 0.05, 0.05], // Even if each frame is brief
+        bestAsrStartIdx: 0,
+        targetCharCursor: 0,
+        startWordId: 0,
+        nextWordId: 1,
+        totalAyahWords: 1,
+        expectedWordRules: [shaddahRule],
+      );
+
+      expect(errors, isEmpty, reason: "Doubled consonant satisfies Shaddah requirement");
+    });
+
+    test("Valid Waqf sukoon at word boundary does not trigger Tashkeel error", () {
+      final trace = [
+        PhonemeGroupAlignment(opType: 'match', refIdx: 0, predIdx: 0), // د
+        PhonemeGroupAlignment(opType: 'match', refIdx: 1, predIdx: 1), // ِ
+        PhonemeGroupAlignment(opType: 'match', refIdx: 2, predIdx: 2), // ي
+        PhonemeGroupAlignment(opType: 'match', refIdx: 3, predIdx: 3), // ن
+        PhonemeGroupAlignment(opType: 'delete', refIdx: 4, predIdx: -1), // ِ omitted due to Waqf!
+      ];
+
+      final errors = ErrorExplainer.evaluatePreAlignedWords(
+        alignments: trace,
+        fullPhonemes: "دِينِ",
+        wordBoundaries: [0, 5],
+        currentAsrText: "دِين",
+        trackingTimestamps: [0.15, 0.15, 0.80, 0.15],
+        bestAsrStartIdx: 0,
+        targetCharCursor: 0,
+        startWordId: 0,
+        nextWordId: 1,
+        totalAyahWords: 1,
+      );
+
+      expect(errors, isEmpty, reason: "Terminal Waqf without Kasra is standard Arabic pause");
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SECTION 4: STREAMING CHARACTER DURATION SYNCHRONIZATION
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  group("Streaming Character Duration Pro-Rating Tests", () {
+    test("Compound tokens expand correctly so character indices stay 100% in sync", () {
+      // Simulate Sherpa tokens including compound glyphs: ['بَ', 'ل', 'كِ']
+      final tokens = ['بَ', 'ل', 'كِ'];
+      final tokenDurations = [0.30, 0.15, 0.40];
+
+      final String asrString = tokens.join('');
+      expect(asrString, 'بَلكِ');
+      expect(asrString.length, 5); // 5 characters, but 3 tokens!
+
+      // Expand duration across characters
+      final List<double> charDurations = [];
+      for (int i = 0; i < tokens.length; i++) {
+        final tok = tokens[i];
+        final dur = tokenDurations[i] / (tok.isEmpty ? 1 : tok.length);
+        for (int c = 0; c < tok.length; c++) {
+          charDurations.add(dur);
+        }
+      }
+
+      // Verification: charDurations length matches asrString length exactly!
+      expect(charDurations.length, asrString.length);
+      expect(charDurations[0], closeTo(0.15, 0.001)); // 'ب'
+      expect(charDurations[1], closeTo(0.15, 0.001)); // 'َ'
+      expect(charDurations[2], closeTo(0.15, 0.001)); // 'ل'
+      expect(charDurations[3], closeTo(0.20, 0.001)); // 'ك'
+      expect(charDurations[4], closeTo(0.20, 0.001)); // 'ِ'
+
+      // Sum of character durations matches sum of token durations exactly
+      final double totalTokenDur = tokenDurations.reduce((a, b) => a + b);
+      final double totalCharDur = charDurations.reduce((a, b) => a + b);
+      expect(totalCharDur, closeTo(totalTokenDur, 0.001));
     });
   });
 }

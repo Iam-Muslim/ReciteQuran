@@ -1,5 +1,6 @@
 // lib/recite_quran.dart
 import 'dart:async';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
@@ -176,6 +177,7 @@ class ReciteQuran {
   void resetBuffer() {
     if (_isDisposed) return;
     _engine.resetBuffer();
+    _tokenProcessor.reset();
   }
 
   /// Toggles Tajweed evaluation on/off.
@@ -198,6 +200,8 @@ class ReciteQuran {
 
   void _onTranscriptionResult(TranscriptionResult result) {
     if (_isDisposed) return;
+    if (result.streamEpoch != _engine.currentStreamEpoch) return;
+
     if (result.text.isNotEmpty) {
       _transcriptController.add(result.text);
     }
@@ -206,9 +210,16 @@ class ReciteQuran {
     if (processed.isEmpty) return;
 
     final String asrString = processed.tokens.join('');
-    final List<double> asrTimestamps = processed.durations;
+    final List<double> charDurations = [];
+    for (int i = 0; i < processed.tokens.length; i++) {
+      final tok = processed.tokens[i];
+      final dur = processed.durations[i] / max(1, tok.length);
+      for (int c = 0; c < tok.length; c++) {
+        charDurations.add(dur);
+      }
+    }
 
-    _isolate.syncStream(asrString, asrTimestamps);
+    _isolate.syncStream(asrString, charDurations);
   }
 
   List<int> _calculateBoundaries(List<String> phonemeWords) {

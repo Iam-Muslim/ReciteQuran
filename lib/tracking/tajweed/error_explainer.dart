@@ -513,7 +513,11 @@ class ErrorExplainer {
           ),
         );
         return errors;
-      } else if (span.baseChar != predText[0]) {
+      } else if (span.baseChar != predText[0] &&
+          !PhoneticCostEngine.isEquivalentGlyph(
+            span.baseChar.codeUnitAt(0),
+            predText.codeUnitAt(0),
+          )) {
         // Base consonant / Madd vowel substituted (e.g. ي vs ت, ۦ vs ۥ)
         errors.add(
           ReciterError(
@@ -529,6 +533,8 @@ class ErrorExplainer {
 
     // ── Phase 2: Tajweed Duration Rules (Madd, Ghunnah, Shaddah) ──
     if (span.isMadd) {
+      if (spanDuration <= 0.0) return errors;
+
       final rule = span.matchedWordRule != null
           ? _instantiateTajweedRule(span.matchedWordRule!)
           : _deriveMaddRuleFromLength(span.refText.length);
@@ -554,6 +560,8 @@ class ErrorExplainer {
     }
 
     if (span.isGhunnah) {
+      if (spanDuration <= 0.0) return errors;
+
       final rule = span.matchedWordRule != null
           ? _instantiateTajweedRule(span.matchedWordRule!)
           : MushaddadGhunnahRule.withNames(
@@ -587,6 +595,9 @@ class ErrorExplainer {
 
       final int predBaseCount = _countBaseOccurrences(predText, span.baseChar);
       final bool predDoubled = predBaseCount >= 2;
+      if (spanDuration <= 0.0) {
+        return errors;
+      }
       final TajweedDurationStatus durStatus = rule.checkDurationStatus(spanDuration, hBase);
 
       // A Shaddah is a defect only if the acoustic holding duration was deficient AND characters weren't doubled
