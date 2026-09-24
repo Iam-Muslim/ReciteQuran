@@ -12,6 +12,8 @@
 
 </div>
 
+You can download the model from repo of my Brother Mustafa : https://huggingface.co/Quran-Lab/zipformer_p-arabic-v3 
+
 ---
 
 ## 📑 Table of Contents
