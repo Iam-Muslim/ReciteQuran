@@ -143,11 +143,17 @@ class SurahHighlightStore {
   /// too — appropriate when [surah] is an unrelated, brand-new session. Pass
   /// `true` when retargeting mid-session across a surah boundary so the
   /// surah being left keeps its already-committed highlights.
-  void clearForRetarget(int surah, {bool preserveOtherSurahs = false}) {
-    if (preserveOtherSurahs) {
-      clearSurah(surah);
-    } else {
+  /// Set [clearTargetSurah] to `false` when navigating back to an already-tracked
+  /// surah and its existing highlights should be retained.
+  void clearForRetarget(
+    int surah, {
+    bool preserveOtherSurahs = false,
+    bool clearTargetSurah = true,
+  }) {
+    if (!preserveOtherSurahs) {
       clearAll();
+    } else if (clearTargetSurah) {
+      clearSurah(surah);
     }
   }
 }

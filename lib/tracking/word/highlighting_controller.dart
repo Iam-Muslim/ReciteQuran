@@ -446,10 +446,12 @@ class HighlightingController extends ChangeNotifier {
   /// surahs, a continuous reading view, …) so the surah being left keeps
   /// its already-committed highlights — read them back afterwards with
   /// [isWordGreen] etc. and an explicit `surah:` argument, or
-  /// [completedAyahsFor].
+  /// [completedAyahsFor]. Set [clearTargetSurah] to `false` when navigating back
+  /// to an already-tracked surah and its existing highlights should be retained.
   Future<void> setTargetSurah(
     int surah, {
     bool preserveOtherSurahStates = false,
+    bool clearTargetSurah = true,
   }) async {
     _targetSurah = surah;
     _currentMatch = null;
@@ -457,6 +459,7 @@ class HighlightingController extends ChangeNotifier {
     _highlights.clearForRetarget(
       surah,
       preserveOtherSurahs: preserveOtherSurahStates,
+      clearTargetSurah: clearTargetSurah,
     );
     globalRevision.value++;
     notifyListeners();
@@ -496,8 +499,16 @@ class HighlightingController extends ChangeNotifier {
       final int startWord =
           repository.getAyahStartGlobalIndex(surah, ayah);
 
+      int wordOffset = 0;
+      for (int i = 0; i < verse.phonemeWords.length; i++) {
+        if (_highlights.isUnspoken(surah, ayah, i)) {
+          wordOffset = i;
+          break;
+        }
+      }
+
       if (_isolateStarted) {
-        _alignmentIsolate.jumpToWord(startWord);
+        _alignmentIsolate.jumpToWord(startWord + wordOffset);
       }
 
       _engine.resetBuffer();
@@ -529,11 +540,9 @@ class HighlightingController extends ChangeNotifier {
   void reset() {
     _state = TrackerState.tracking;
     _currentSurahWords = repository.getSurahWords(_targetSurah);
-    if (_currentMatch == null) {
-      final verse = repository.getVerse(_targetSurah, 1);
-      _currentMatch =
-          verse != null ? VerseMatch(verse: verse, score: 1.0) : null;
-    }
+    final verse = repository.getVerse(_targetSurah, 1);
+    _currentMatch =
+        verse != null ? VerseMatch(verse: verse, score: 1.0) : null;
     activeAyah.value = _currentMatch?.verse.ayah ?? 1;
     if (_isolateStarted) {
       _setSurahReference(forceClear: true, startGlobalWord: 0);
