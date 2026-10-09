@@ -37,6 +37,7 @@ class SurahHighlightStore {
     _red[surah]?[ayah]?.remove(wordIndex);
     _yellow[surah]?[ayah]?.remove(wordIndex);
     _neutral[surah]?[ayah]?.remove(wordIndex);
+    _errors[surah]?[ayah]?.remove(wordIndex);
     ((_green[surah] ??= {})[ayah] ??= {}).add(wordIndex);
   }
 
@@ -44,6 +45,7 @@ class SurahHighlightStore {
     _green[surah]?[ayah]?.remove(wordIndex);
     _yellow[surah]?[ayah]?.remove(wordIndex);
     _neutral[surah]?[ayah]?.remove(wordIndex);
+    _errors[surah]?[ayah]?.remove(wordIndex);
     ((_red[surah] ??= {})[ayah] ??= {}).add(wordIndex);
   }
 
@@ -51,6 +53,7 @@ class SurahHighlightStore {
     _green[surah]?[ayah]?.remove(wordIndex);
     _red[surah]?[ayah]?.remove(wordIndex);
     _yellow[surah]?[ayah]?.remove(wordIndex);
+    _errors[surah]?[ayah]?.remove(wordIndex);
     ((_neutral[surah] ??= {})[ayah] ??= {}).add(wordIndex);
   }
 
@@ -92,8 +95,10 @@ class SurahHighlightStore {
       !isYellow(surah, ayah, wordIndex) &&
       !isNeutral(surah, ayah, wordIndex);
 
-  List<ReciterError>? errorsFor(int surah, int ayah, int wordIndex) =>
-      _errors[surah]?[ayah]?[wordIndex];
+  List<ReciterError>? errorsFor(int surah, int ayah, int wordIndex) {
+    if (!isYellow(surah, ayah, wordIndex)) return null;
+    return _errors[surah]?[ayah]?[wordIndex];
+  }
 
   Set<int> completedAyahsFor(int surah) =>
       _completedAyahs[surah] ?? const <int>{};
