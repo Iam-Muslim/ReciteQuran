@@ -41,7 +41,10 @@ sealed class IsolateCommand {
               map['text'] as String? ??
               (map['tokens'] as List?)?.join('') ??
               '',
-          timestamps: (map['timestamps'] as List?)?.cast<double>() ?? const [],
+          timestamps: (map['timestamps'] as List?)
+                  ?.map((e) => (e as num?)?.toDouble() ?? 0.0)
+                  .toList() ??
+              const [],
           isNewSegment: map['is_new_segment'] as bool? ?? false,
           ayahNumber: map['ayah_number'] as int? ?? 0,
         );

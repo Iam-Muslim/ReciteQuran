@@ -21,8 +21,8 @@ class ProcessedAudioStream {
   /// Returns the continuous phoneme text without CTC blanks.
   String get text => tokens.join('');
 
-  /// Returns durations distributed evenly across characters.
-  /// Guarantees that `text.length == charDurations.length` for Tajweed DTW alignment.
+  /// Returns durations distributed across characters.
+  /// Guarantees that `text.length == charDurations.length` for DTW alignment.
   List<double> get charDurations {
     final List<double> result = [];
     for (int i = 0; i < tokens.length; i++) {
@@ -36,15 +36,15 @@ class ProcessedAudioStream {
   }
 }
 
-/// Ingests raw CTC tokens and timestamps from Sherpa-ONNX, filters silence/blank tokens,
-/// and computes accurate acoustic phoneme durations using max(backward, forward) spike intervals.
+/// Ingests raw CTC tokens and timestamps from Sherpa-ONNX, filters special/blank tokens,
+/// and computes accurate acoustic phoneme durations reflecting real recitation articulation.
 class AsrTokenProcessor {
   TrackerConfig config;
 
   AsrTokenProcessor({this.config = const TrackerConfig()});
 
-  /// Standard CTC blank lookahead delay for the Sherpa-ONNX streaming model.
-  static const double ctcLookaheadDelay = 0.320;
+  /// Standard CTC lookahead delay for causal Zipformer streaming models.
+  static const double ctcLookaheadDelay = 0.140;
 
   double get lookaheadDelay => ctcLookaheadDelay;
   double get maxTokenDuration => config.maxTokenDurationAllowed;
@@ -53,18 +53,47 @@ class AsrTokenProcessor {
 
   final List<String> _filteredTokens = [];
   final List<double> _filteredSpikeTimes = [];
-  final List<double> _filteredLastBlanks = [];
-
   final List<double> _tokenDurations = [];
 
   void reset() {
     _lastRawTokens.clear();
     _filteredTokens.clear();
     _filteredSpikeTimes.clear();
-    _filteredLastBlanks.clear();
     _tokenDurations.clear();
   }
 
+  /// Determines if a token is a prolonged vocalic Madd sound (ا, و, ي, ۦ, ۥ).
+  static bool isMaddToken(String tok) {
+    if (tok.isEmpty) return false;
+    for (int i = 0; i < tok.length; i++) {
+      final int c = tok.codeUnitAt(i);
+      if (c == 0x0627 || // ا
+          c == 0x0648 || // و
+          c == 0x064A || // ي
+          c == 0x06E5 || // ۥ
+          c == 0x06E6 || // ۦ
+          c == 0x0672) {
+        // ٲ
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Determines if a token represents an acoustic Ghunnah (held nasal sound).
+  static bool isGhunnahToken(String tok) {
+    if (tok.isEmpty) return false;
+    if (tok.startsWith('مم') ||
+        tok.startsWith('نن') ||
+        tok.contains('ں') ||
+        tok.contains('۾')) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Ingests a new [TranscriptionResult] from the ASR recognizer,
+  /// updates filtered tokens and recomputes continuous acoustic durations.
   ProcessedAudioStream process(TranscriptionResult result) {
     final int maxCount = min(result.tokens.length, result.timestamps.length);
 
@@ -85,94 +114,107 @@ class AsrTokenProcessor {
 
     _lastRawTokens = result.tokens.sublist(0, maxCount);
 
-    if (commonLen == maxCount) {
-      return ProcessedAudioStream(
-        tokens: _filteredTokens,
-        durations: _tokenDurations,
-      );
-    }
-
-    double lastBlankTs =
-        _filteredLastBlanks.isNotEmpty ? _filteredLastBlanks.last : -1.0;
-
+    // Ingest newly arrived non-blank tokens into filtered arrays
     for (int i = commonLen; i < maxCount; i++) {
       final String tok = result.tokens[i];
-      final double realTs = max(0.0, result.timestamps[i] - lookaheadDelay);
+      final double rawTs = result.timestamps[i];
 
+      // Defensively filter empty or special CTC blank / epsilon tokens.
       if (tok.isEmpty ||
           tok == '<blank>' ||
           tok == '<blk>' ||
           tok == '<eps>' ||
           tok == 'eps') {
-        lastBlankTs = realTs;
         continue;
       }
 
       _filteredTokens.add(tok);
-      _filteredSpikeTimes.add(realTs);
-      _filteredLastBlanks.add(lastBlankTs);
-
-      final int fIdx = _filteredTokens.length - 1;
-      final double curSpike = _filteredSpikeTimes[fIdx];
-      final double lastBlankBefore = _filteredLastBlanks[fIdx];
-
-      // ── Max(Backward, Forward) Duration Attribution ──
-      //
-      // CTC spikes mark peak posterior probability, NOT sound onset.
-      // The backward interval (prev_spike → cur_spike) partially
-      // overlaps with BOTH the previous token's tail AND the current
-      // token's onset delay. Neither interval alone captures a token's
-      // full acoustic duration:
-      //
-      //  - Short Madds (2 Harakat): backward interval is larger because
-      //    it captures the onset delay before the CTC spike fired.
-      //  - Long Madds (4-6 Harakat): forward interval is larger because
-      //    the vowel is held long after the spike until the next sound.
-      //
-      // Using max(backward, forward) per token provides a robust
-      // estimate: whichever interval captured more of the token's
-      // actual acoustic time wins.
-
-      // 1. Retroactively update PREVIOUS token with its forward interval.
-      //    The previous token's duration becomes max(backward, forward).
-      if (fIdx > 0) {
-        final int prevIdx = fIdx - 1;
-        final double prevSpike = _filteredSpikeTimes[prevIdx];
-
-        // If a blank (silence) occurred between spikes, the previous
-        // token's voicing ended at the blank, not at the current spike.
-        double prevEnd = curSpike;
-        if (lastBlankBefore > prevSpike && lastBlankBefore < curSpike) {
-          prevEnd = lastBlankBefore;
-        }
-
-        final double forwardInterval =
-            min(maxTokenDuration, max(0.04, prevEnd - prevSpike));
-
-        // max(backward already stored, forward just computed)
-        _tokenDurations[prevIdx] =
-            max(_tokenDurations[prevIdx], forwardInterval);
-      }
-
-      // 2. Current token: backward interval as initial estimate.
-      //    Will be max'd with its forward interval when the next
-      //    token arrives (step 1 above on the next iteration).
-      double prevSpikeTime = (fIdx == 0)
-          ? max(0.0, curSpike - 0.15)
-          : _filteredSpikeTimes[fIdx - 1];
-
-      if (lastBlankBefore > prevSpikeTime) {
-        prevSpikeTime = lastBlankBefore;
-      }
-
-      final double backwardInterval =
-          min(maxTokenDuration, max(0.04, curSpike - prevSpikeTime));
-      _tokenDurations.add(backwardInterval);
+      _filteredSpikeTimes.add(rawTs);
     }
+
+    // Recompute accurate acoustic durations across all filtered tokens
+    _recomputeDurations();
 
     return ProcessedAudioStream(
       tokens: _filteredTokens,
       durations: _tokenDurations,
     );
+  }
+
+  /// Recomputes acoustic durations for all tokens in `_filteredTokens`.
+  ///
+  /// In continuous speech CTC:
+  /// - A spike marks peak posterior probability, NOT instantaneous sound boundaries.
+  /// - The sound for token `i` starts during the transition from token `i-1` and continues
+  ///   through the transition into token `i+1`.
+  /// - Taking `max(backward, forward)` artificially discards half the acoustic envelope.
+  /// - Standard consonants use boundary midpoint partitioning:
+  ///     duration = (Δ_prev + Δ_next) / 2
+  /// - Prolonged Madd vowels and Ghunnah use the full vocalic hold between consonant boundaries:
+  ///     duration = (Δ_prev - consonant_offset) + Δ_next
+  void _recomputeDurations() {
+    final int count = _filteredTokens.length;
+    _tokenDurations.clear();
+    if (count == 0) {
+      return;
+    }
+
+    for (int i = 0; i < count; i++) {
+      final String tok = _filteredTokens[i];
+      final double curSpike = _filteredSpikeTimes[i];
+
+      final bool isMadd = isMaddToken(tok);
+      final bool isGhunnah = isGhunnahToken(tok);
+      final bool isElongated = isMadd || isGhunnah;
+
+      // ── Backward interval (time elapsed from previous token) ──
+      double deltaPrev;
+      if (i > 0) {
+        deltaPrev = max(0.04, curSpike - _filteredSpikeTimes[i - 1]);
+      } else {
+        deltaPrev = 0.12; // Initial utterance onset default
+      }
+
+      // ── Forward interval (time until next token) ──
+      double deltaNext;
+      if (i < count - 1) {
+        deltaNext = max(0.04, _filteredSpikeTimes[i + 1] - curSpike);
+      } else {
+        // Latest token: forward interval not yet followed by a spike.
+        // Provide a realistic sustain estimate based on backward pace.
+        deltaNext = isElongated ? min(0.30, deltaPrev) : min(0.12, deltaPrev);
+      }
+
+      // ── Cap huge inter-verse pauses ──
+      final double effectiveDeltaPrev = min(maxTokenDuration, deltaPrev);
+      final double effectiveDeltaNext = min(maxTokenDuration, deltaNext);
+
+      double duration;
+      if (isElongated) {
+        // Prolonged vowel / Ghunnah:
+        // Preceding consonant closure lasts ~0.06s.
+        // The reciter holds the vowel across both the backward onset and the forward sustain.
+        final bool prevIsVowel = (i > 0 && isMaddToken(_filteredTokens[i - 1]));
+        final double consonantOffset = prevIsVowel ? 0.0 : 0.06;
+        final double backwardVocalic =
+            max(0.04, effectiveDeltaPrev - consonantOffset);
+
+        // If followed by another vowel frame (multi-token Madd), split forward interval;
+        // otherwise vowel sustains until the next consonant closure.
+        final bool nextIsVowel =
+            (i < count - 1 && isMaddToken(_filteredTokens[i + 1]));
+        final double forwardVocalic =
+            nextIsVowel ? (effectiveDeltaNext * 0.5) : effectiveDeltaNext;
+
+        duration = backwardVocalic + forwardVocalic;
+      } else {
+        // Standard consonant / short syllable:
+        // Midpoint boundary partition assigns half the preceding transition
+        // and half the succeeding transition to this phoneme.
+        duration = (effectiveDeltaPrev + effectiveDeltaNext) * 0.5;
+      }
+
+      _tokenDurations.add(duration.clamp(0.04, maxTokenDuration));
+    }
   }
 }
