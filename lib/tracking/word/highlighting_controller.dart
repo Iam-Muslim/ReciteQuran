@@ -1,13 +1,14 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../../data/quran_data.dart';
+import '../../engine/asr_token_processor.dart';
 import '../../engine/sherpa_engine.dart';
 import '../tajweed/error_explainer.dart';
 import 'phoneme_alignment_isolate.dart';
 import 'surah_highlight_store.dart';
 
+export '../../engine/asr_token_processor.dart';
 export 'phoneme_alignment_isolate.dart';
 export 'surah_highlight_store.dart';
 
@@ -29,157 +30,6 @@ class VerseMatch {
     if (key == 'score') return score;
     if (key == 'text' || key == 'text_uthmani') return verse.textUthmani;
     return null;
-  }
-}
-
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// ASR ACOUSTIC TOKEN PROCESSOR
-// ═══════════════════════════════════════════════════════════════════════════════
-
-class ProcessedAudioStream {
-  final List<String> tokens;
-  final List<double> durations;
-  ProcessedAudioStream({required this.tokens, required this.durations});
-  bool get isEmpty => tokens.isEmpty;
-  bool get isNotEmpty => tokens.isNotEmpty;
-}
-
-class AsrTokenProcessor {
-  TrackerConfig config;
-
-  AsrTokenProcessor({this.config = const TrackerConfig()});
-
-  /// Standard CTC blank lookahead delay for the Sherpa-ONNX streaming model.
-  static const double ctcLookaheadDelay = 0.320;
-
-  double get lookaheadDelay => ctcLookaheadDelay;
-  double get maxTokenDuration => config.maxTokenDurationAllowed;
-
-  List<String> _lastRawTokens = [];
-
-  final List<String> _filteredTokens = [];
-  final List<double> _filteredSpikeTimes = [];
-  final List<double> _filteredLastBlanks = [];
-
-  final List<double> _tokenDurations = [];
-
-  void reset() {
-    _lastRawTokens.clear();
-    _filteredTokens.clear();
-    _filteredSpikeTimes.clear();
-    _filteredLastBlanks.clear();
-    _tokenDurations.clear();
-  }
-
-  ProcessedAudioStream process(TranscriptionResult result) {
-    final int maxCount = min(result.tokens.length, result.timestamps.length);
-
-    int commonLen = 0;
-    final int minLen = min(_lastRawTokens.length, maxCount);
-    for (int i = 0; i < minLen; i++) {
-      if (_lastRawTokens[i] == result.tokens[i]) {
-        commonLen++;
-      } else {
-        break;
-      }
-    }
-
-    if (commonLen < _lastRawTokens.length) {
-      reset();
-      commonLen = 0;
-    }
-
-    _lastRawTokens = result.tokens.sublist(0, maxCount);
-
-    if (commonLen == maxCount) {
-      return ProcessedAudioStream(
-        tokens: _filteredTokens,
-        durations: _tokenDurations,
-      );
-    }
-
-    double lastBlankTs = _filteredLastBlanks.isNotEmpty ? _filteredLastBlanks.last : -1.0;
-
-    for (int i = commonLen; i < maxCount; i++) {
-      final String tok = result.tokens[i];
-      final double realTs = max(0.0, result.timestamps[i] - lookaheadDelay);
-
-      if (tok.isEmpty ||
-          tok == '<blank>' ||
-          tok == '<blk>' ||
-          tok == '<eps>' ||
-          tok == 'eps') {
-        lastBlankTs = realTs;
-        continue;
-      }
-
-      _filteredTokens.add(tok);
-      _filteredSpikeTimes.add(realTs);
-      _filteredLastBlanks.add(lastBlankTs);
-
-      final int fIdx = _filteredTokens.length - 1;
-      final double curSpike = _filteredSpikeTimes[fIdx];
-      final double lastBlankBefore = _filteredLastBlanks[fIdx];
-
-      // ── Max(Backward, Forward) Duration Attribution ──
-      //
-      // CTC spikes mark peak posterior probability, NOT sound onset.
-      // The backward interval (prev_spike → cur_spike) partially
-      // overlaps with BOTH the previous token's tail AND the current
-      // token's onset delay. Neither interval alone captures a token's
-      // full acoustic duration:
-      //
-      //  - Short Madds (2 Harakat): backward interval is larger because
-      //    it captures the onset delay before the CTC spike fired.
-      //  - Long Madds (4-6 Harakat): forward interval is larger because
-      //    the vowel is held long after the spike until the next sound.
-      //
-      // Using max(backward, forward) per token provides a robust
-      // estimate: whichever interval captured more of the token's
-      // actual acoustic time wins.
-
-      // 1. Retroactively update PREVIOUS token with its forward interval.
-      //    The previous token's duration becomes max(backward, forward).
-      if (fIdx > 0) {
-        final int prevIdx = fIdx - 1;
-        final double prevSpike = _filteredSpikeTimes[prevIdx];
-
-        // If a blank (silence) occurred between spikes, the previous
-        // token's voicing ended at the blank, not at the current spike.
-        double prevEnd = curSpike;
-        if (lastBlankBefore > prevSpike && lastBlankBefore < curSpike) {
-          prevEnd = lastBlankBefore;
-        }
-
-        final double forwardInterval =
-            min(maxTokenDuration, max(0.04, prevEnd - prevSpike));
-
-        // max(backward already stored, forward just computed)
-        _tokenDurations[prevIdx] =
-            max(_tokenDurations[prevIdx], forwardInterval);
-      }
-
-      // 2. Current token: backward interval as initial estimate.
-      //    Will be max'd with its forward interval when the next
-      //    token arrives (step 1 above on the next iteration).
-      double prevSpikeTime = (fIdx == 0)
-          ? max(0.0, curSpike - 0.15)
-          : _filteredSpikeTimes[fIdx - 1];
-
-      if (lastBlankBefore > prevSpikeTime) {
-        prevSpikeTime = lastBlankBefore;
-      }
-
-      final double backwardInterval =
-          min(maxTokenDuration, max(0.04, curSpike - prevSpikeTime));
-      _tokenDurations.add(backwardInterval);
-    }
-
-    return ProcessedAudioStream(
-      tokens: _filteredTokens,
-      durations: _tokenDurations,
-    );
   }
 }
 
@@ -225,7 +75,6 @@ class HighlightingController extends ChangeNotifier {
   int _lastResetTime = 0;
   String _lastProcessedText = '';
   bool _expectingNewSegment = false;
-  int? _pendingClearAyah;
 
   List<ContinuousQuranWord> _currentSurahWords = [];
   List<int> _currentSurahBoundaries = [];
@@ -319,62 +168,60 @@ class HighlightingController extends ChangeNotifier {
     final wordIdInAyah = word.wordInAyah;
     final surah = _targetSurah;
 
-    if (_highlights.isUnspoken(surah, ayahNum, wordIdInAyah)) {
-      if (isRed) {
-        _highlights.markRed(surah, ayahNum, wordIdInAyah);
-      } else if (event.isNeutral) {
-        _highlights.markNeutral(surah, ayahNum, wordIdInAyah);
-      } else {
-        _highlights.markGreen(surah, ayahNum, wordIdInAyah);
-      }
-
-      if (activeAyah.value != ayahNum) {
-        if (activeAyah.value != null && ayahNum > activeAyah.value!) {
-          for (int a = activeAyah.value!; a < ayahNum; a++) {
-            _highlights.markAyahCompleted(surah, a);
-          }
-        }
-        activeAyah.value = ayahNum;
-        final v = repository.getVerse(_targetSurah, ayahNum);
-        if (v != null) {
-          _currentMatch = VerseMatch(verse: v, score: 1.0);
-          onAyahChanged?.call();
-        }
-      }
-
-      if (isTajweed && cleanAsr.isNotEmpty && event.tajweedErrors != null) {
-        final List<ReciterError> wordErrors = event.tajweedErrors!
-            .map((e) => ReciterError.fromMap(Map<String, dynamic>.from(e)))
-            .toList();
-
-        if (wordErrors.isNotEmpty) {
-          _highlights.markGreenWordAsYellow(
-            surah,
-            ayahNum,
-            wordIdInAyah,
-            wordErrors,
-          );
-        }
-      }
-
-      final verse = repository.getVerse(_targetSurah, ayahNum);
-      if (verse != null && wordIdInAyah == verse.phonemeWords.length - 1) {
-        _highlights.markAyahCompleted(surah, ayahNum);
-
-        final nextVerse = repository.getNextVerse(_targetSurah, ayahNum);
-        if (nextVerse != null) {
-          activeAyah.value = nextVerse.ayah;
-          _currentMatch = VerseMatch(verse: nextVerse, score: 1.0);
-          onAyahChanged?.call();
-        }
-      }
-
-      if (globalWordId == _currentSurahWords.length - 1) {
-        finalize();
-      }
-
-      notifyListeners();
+    if (isRed) {
+      _highlights.markRed(surah, ayahNum, wordIdInAyah);
+    } else if (event.isNeutral) {
+      _highlights.markNeutral(surah, ayahNum, wordIdInAyah);
+    } else {
+      _highlights.markGreen(surah, ayahNum, wordIdInAyah);
     }
+
+    if (activeAyah.value != ayahNum) {
+      if (activeAyah.value != null && ayahNum > activeAyah.value!) {
+        for (int a = activeAyah.value!; a < ayahNum; a++) {
+          _highlights.markAyahCompleted(surah, a);
+        }
+      }
+      activeAyah.value = ayahNum;
+      final v = repository.getVerse(_targetSurah, ayahNum);
+      if (v != null) {
+        _currentMatch = VerseMatch(verse: v, score: 1.0);
+        onAyahChanged?.call();
+      }
+    }
+
+    if (isTajweed && cleanAsr.isNotEmpty && event.tajweedErrors != null) {
+      final List<ReciterError> wordErrors = event.tajweedErrors!
+          .map((e) => ReciterError.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+
+      if (wordErrors.isNotEmpty) {
+        _highlights.markGreenWordAsYellow(
+          surah,
+          ayahNum,
+          wordIdInAyah,
+          wordErrors,
+        );
+      }
+    }
+
+    final verse = repository.getVerse(_targetSurah, ayahNum);
+    if (verse != null && wordIdInAyah == verse.phonemeWords.length - 1) {
+      _highlights.markAyahCompleted(surah, ayahNum);
+
+      final nextVerse = repository.getNextVerse(_targetSurah, ayahNum);
+      if (nextVerse != null) {
+        activeAyah.value = nextVerse.ayah;
+        _currentMatch = VerseMatch(verse: nextVerse, score: 1.0);
+        onAyahChanged?.call();
+      }
+    }
+
+    if (globalWordId == _currentSurahWords.length - 1) {
+      finalize();
+    }
+
+    notifyListeners();
   }
 
   // Public Accessors
@@ -512,9 +359,10 @@ class HighlightingController extends ChangeNotifier {
       }
 
       _engine.resetBuffer();
+      _tokenProcessor.reset();
       _lastProcessedText = '';
+      _expectingNewSegment = true;
       _lastResetTime = DateTime.now().millisecondsSinceEpoch;
-      _pendingClearAyah = ayah;
       onAyahChanged?.call();
       notifyListeners();
     }
@@ -565,18 +413,14 @@ class HighlightingController extends ChangeNotifier {
 
   void resumeTracking() {
     _state = TrackerState.tracking;
-    int resumeAyah = 1;
-    if (_pendingClearAyah != null) {
-      resumeAyah = _pendingClearAyah!;
-      clearHighlightsFromAyah(_pendingClearAyah!);
-      _pendingClearAyah = null;
-    } else if (activeAyah.value != null) {
-      resumeAyah = activeAyah.value!;
-      clearHighlightsFromAyah(activeAyah.value!);
-    }
+    final int targetAyah = activeAyah.value ?? 1;
+
+    // When starting a recording session on an ayah, clear this ayah and
+    // subsequent ayahs to start fresh, preserving earlier completed ayahs.
+    clearHighlightsFromAyah(targetAyah);
 
     final int startGlobalWord =
-        repository.getAyahStartGlobalIndex(_targetSurah, resumeAyah);
+        repository.getAyahStartGlobalIndex(_targetSurah, targetAyah);
     if (_isolateStarted) {
       _alignmentIsolate.jumpToWord(startGlobalWord);
     }
@@ -653,14 +497,7 @@ class HighlightingController extends ChangeNotifier {
       }
       _lastProcessedText = asrText;
 
-      final List<double> charDurations = [];
-      for (int i = 0; i < stream.tokens.length; i++) {
-        final tok = stream.tokens[i];
-        final dur = stream.durations[i] / max(1, tok.length);
-        for (int c = 0; c < tok.length; c++) {
-          charDurations.add(dur);
-        }
-      }
+      final List<double> charDurations = stream.charDurations;
 
       _alignmentIsolate.syncStream(
         asrText,

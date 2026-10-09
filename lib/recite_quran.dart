@@ -1,12 +1,12 @@
 // lib/recite_quran.dart
 import 'dart:async';
-import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 import 'data/quran_data.dart';
+import 'engine/asr_token_processor.dart';
 import 'engine/sherpa_engine.dart';
-import 'tracking/word/highlighting_controller.dart';
+import 'tracking/word/phoneme_alignment_isolate.dart';
 
 export 'audio/audio_processor.dart';
 export 'data/ayah_mapping_downloader.dart';
@@ -18,6 +18,7 @@ export 'data/riwaya_registry.dart';
 export 'data/verse_alignment.dart';
 export 'data/verse_key_map.dart';
 export 'data/warsh_hafs_mapper.dart';
+export 'engine/asr_token_processor.dart';
 export 'engine/sherpa_engine.dart';
 export 'tracking/ayah_search/fuzzy_search.dart';
 export 'tracking/ayah_search/phonetic_search.dart';
@@ -208,17 +209,7 @@ class ReciteQuran {
     final processed = _tokenProcessor.process(result);
     if (processed.isEmpty) return;
 
-    final String asrString = processed.tokens.join('');
-    final List<double> charDurations = [];
-    for (int i = 0; i < processed.tokens.length; i++) {
-      final tok = processed.tokens[i];
-      final dur = processed.durations[i] / max(1, tok.length);
-      for (int c = 0; c < tok.length; c++) {
-        charDurations.add(dur);
-      }
-    }
-
-    _isolate.syncStream(asrString, charDurations);
+    _isolate.syncStream(processed.text, processed.charDurations);
   }
 
   List<int> _calculateBoundaries(List<String> phonemeWords) {

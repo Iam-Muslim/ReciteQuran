@@ -113,6 +113,33 @@ class AppState extends ChangeNotifier {
     await prefs.setDouble('fontSize', fontSize);
   }
 
+  // ── Tracker Configuration ──────────────────────────────────────────────────
+
+  TrackerConfig _trackerConfig = const TrackerConfig();
+  TrackerConfig get trackerConfig => _trackerConfig;
+
+  void setRecitationSpeed(
+    RecitationSpeed speed, {
+    HighlightingController? controller,
+  }) async {
+    _trackerConfig = _trackerConfig.copyWith(recitationSpeed: speed);
+    controller?.updateConfig(_trackerConfig);
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('recitationSpeed', speed.name);
+  }
+
+  void setMatchingStrictness(
+    MatchingStrictness strictness, {
+    HighlightingController? controller,
+  }) async {
+    _trackerConfig = _trackerConfig.copyWith(matchingStrictness: strictness);
+    controller?.updateConfig(_trackerConfig);
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('matchingStrictness', strictness.name);
+  }
+
   // ── Colors ─────────────────────────────────────────────────────────────────
 
   /// Returns the active color palette based on the current theme.
@@ -185,6 +212,16 @@ class AppState extends ChangeNotifier {
       // Migrate old boolean value if present
       if (tajweedClickCount == 0 && (prefs.getBool('has_clicked_tajweed_word') ?? false)) {
         tajweedClickCount = 10;
+      }
+
+      if (prefs.containsKey('recitationSpeed')) {
+        final speed = RecitationSpeed.fromName(prefs.getString('recitationSpeed'));
+        _trackerConfig = _trackerConfig.copyWith(recitationSpeed: speed);
+      }
+      if (prefs.containsKey('matchingStrictness')) {
+        final strictness =
+            MatchingStrictness.fromName(prefs.getString('matchingStrictness'));
+        _trackerConfig = _trackerConfig.copyWith(matchingStrictness: strictness);
       }
 
       notifyListeners();

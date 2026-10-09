@@ -104,10 +104,10 @@ class _VerseRowState extends State<VerseRow> {
     final int? active = widget.controller.activeAyah.value;
     final int myAyah = widget.verse.ayah;
 
-    // Listen to 60fps highlights ONLY if we are the active or preceding Ayah
+    // Listen to highlights if we are the active, preceding, or upcoming Ayah
     bool shouldListen = false;
     if (active != null) {
-      if (myAyah == active || myAyah == active - 1) {
+      if (myAyah == active || myAyah == active - 1 || myAyah == active + 1) {
         shouldListen = true;
       }
     }

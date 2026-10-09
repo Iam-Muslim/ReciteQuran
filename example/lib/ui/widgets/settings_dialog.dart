@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:recite_quran/recite_quran.dart';
 import '../../state/app_state.dart';
 import 'settings/autoscroll_slider_tile.dart';
 import 'settings/font_slider_tile.dart';
@@ -7,7 +8,9 @@ import 'settings/setting_tile.dart';
 
 /// Settings modal bottom sheet with modern styling.
 class SettingsDialog extends StatelessWidget {
-  const SettingsDialog({super.key});
+  final HighlightingController? controller;
+
+  const SettingsDialog({super.key, this.controller});
 
   @override
   Widget build(BuildContext context) {
@@ -199,6 +202,62 @@ class SettingsDialog extends StatelessWidget {
 
                                 // 2. AutoScroll Speed
                                 AutoScrollSliderTile(c: c, app: app, isAr: isAr),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // ── Recitation & Recognition Configuration Card ──
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: c.surfaceHigh,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Column(
+                              children: [
+                                // 1. Recitation Speed
+                                SettingTile(
+                                  icon: Icons.speed_rounded,
+                                  title: isAr ? 'مرتبة التلاوة' : 'Recitation Speed',
+                                  c: c,
+                                  trailing: PremiumPillSelector(
+                                    labels: isAr
+                                        ? const ['حدر', 'تدوير', 'تحقيق']
+                                        : const ['Fast', 'Normal', 'Slow'],
+                                    selected: app.trackerConfig.recitationSpeed.index,
+                                    c: c,
+                                    onSelected: (i) {
+                                      app.setRecitationSpeed(
+                                        RecitationSpeed.values[i],
+                                        controller: controller,
+                                      );
+                                    },
+                                  ),
+                                ),
+                                PremiumSettingDivider(c: c),
+
+                                // 2. Matching Strictness
+                                SettingTile(
+                                  icon: Icons.tune_rounded,
+                                  title: isAr ? 'دقة المطابقة' : 'Strictness',
+                                  c: c,
+                                  trailing: PremiumPillSelector(
+                                    labels: isAr
+                                        ? const ['سهل', 'معياري', 'دقيق']
+                                        : const ['Easy', 'Normal', 'Hard'],
+                                    selected: app.trackerConfig.matchingStrictness.index,
+                                    c: c,
+                                    onSelected: (i) {
+                                      app.setMatchingStrictness(
+                                        MatchingStrictness.values[i],
+                                        controller: controller,
+                                      );
+                                    },
+                                  ),
+                                ),
                               ],
                             ),
                           ),

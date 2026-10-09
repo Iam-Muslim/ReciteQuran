@@ -277,6 +277,7 @@ class _OrchestratorState extends State<_Orchestrator> {
         engine: _engine,
         repository: _repo!,
         isTajweed: AppState.instance.currentMode == AppMode.tajweed,
+        config: AppState.instance.trackerConfig,
         // onAyahChanged is called on explicit user actions (manual tap, session start).
         // Automatic ayah-advance uses flushAndResetForNextAyah() inside
         // HighlightingController itself — that handles the flush-before-reset pattern.

@@ -321,7 +321,7 @@ class _TrackingScreenState extends State<TrackingScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => const SettingsDialog(),
+      builder: (_) => SettingsDialog(controller: widget.controller),
     );
   }
 
