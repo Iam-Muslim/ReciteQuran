@@ -59,18 +59,10 @@ sealed class IsolateCommand {
       case 'update_config':
         return UpdateTrackerConfigCommand(
           config: TrackerConfig(
-            defaultMaxPathCost: (map['defaultMaxPathCost'] as num?)?.toDouble() ?? 0.30,
-            shortWordPathCost: (map['shortWordPathCost'] as num?)?.toDouble() ?? 0.25,
-            mediumWordPathCost: (map['mediumWordPathCost'] as num?)?.toDouble() ?? 0.28,
-            maxSkipWords: map['maxSkipWords'] as int? ?? 2,
-            acousticConfusionCost: (map['acousticConfusionCost'] as num?)?.toDouble() ?? 0.25,
-            standardInsertionCost: (map['standardInsertionCost'] as num?)?.toDouble() ?? 0.75,
-            standardDeletionCost: (map['standardDeletionCost'] as num?)?.toDouble() ?? 1.0,
-            harakatDurationSeconds: (map['harakatDurationSeconds'] as num?)?.toDouble() ?? 0.200,
-            maxTokenDurationAllowed: (map['maxTokenDurationAllowed'] as num?)?.toDouble() ?? 2.5,
-            lookaheadDelay: (map['lookaheadDelay'] as num?)?.toDouble() ?? 0.320,
-            hideExpectedAsrNoise: map['hideExpectedAsrNoise'] as bool? ?? true,
-            enableEarlyMatching: map['enableEarlyMatching'] as bool? ?? true,
+            recitationSpeed:
+                RecitationSpeed.fromName(map['recitationSpeed'] as String?),
+            matchingStrictness:
+                MatchingStrictness.fromName(map['matchingStrictness'] as String?),
           ),
         );
 
@@ -169,18 +161,8 @@ class UpdateTrackerConfigCommand extends IsolateCommand {
   @override
   Map<String, dynamic> toMap() => {
     'command': 'update_config',
-    'defaultMaxPathCost': config.defaultMaxPathCost,
-    'shortWordPathCost': config.shortWordPathCost,
-    'mediumWordPathCost': config.mediumWordPathCost,
-    'maxSkipWords': config.maxSkipWords,
-    'acousticConfusionCost': config.acousticConfusionCost,
-    'standardInsertionCost': config.standardInsertionCost,
-    'standardDeletionCost': config.standardDeletionCost,
-    'harakatDurationSeconds': config.harakatDurationSeconds,
-    'maxTokenDurationAllowed': config.maxTokenDurationAllowed,
-    'lookaheadDelay': config.lookaheadDelay,
-    'hideExpectedAsrNoise': config.hideExpectedAsrNoise,
-    'enableEarlyMatching': config.enableEarlyMatching,
+    'recitationSpeed': config.recitationSpeed.name,
+    'matchingStrictness': config.matchingStrictness.name,
   };
 }
 

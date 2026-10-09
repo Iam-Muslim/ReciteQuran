@@ -124,11 +124,11 @@ class ReciterError {
     final num goldenLen = (map['goldenLen'] as num?) ?? 2;
 
     if (type == 'LazemMaddRule') return const LazemMaddRule();
-    if (type == 'LeenMaddRule') return const LeenMaddRule();
-    if (type == 'AaredMaddRule') return const AaredMaddRule();
-    if (type == 'MonfaselMaddRule') return const MonfaselMaddRule();
-    if (type == 'MottaselMaddRule') return const MottaselMaddRule();
-    if (type == 'MottaselMaddPauseRule') return const MottaselMaddPauseRule();
+    if (type == 'LeenMaddRule') return LeenMaddRule(goldenLen.toInt());
+    if (type == 'AaredMaddRule') return AaredMaddRule(goldenLen.toInt());
+    if (type == 'MonfaselMaddRule') return MonfaselMaddRule(goldenLen.toInt());
+    if (type == 'MottaselMaddRule') return MottaselMaddRule(goldenLen.toInt());
+    if (type == 'MottaselMaddPauseRule') return MottaselMaddPauseRule(goldenLen.toInt());
     if (type == 'NormalMaddRule') return const NormalMaddRule();
     if (type == 'MushaddadGhunnahRule') {
       return MushaddadGhunnahRule.withNames(nameAr: nameAr, nameEn: nameEn);
@@ -281,9 +281,8 @@ class ErrorExplainer {
           (a, b) => _getErrorPriority(a).compareTo(_getErrorPriority(b)),
         );
 
-        // Filter out expected ASR noise and surplus duration
+        // Filter out expected ASR noise
         wordErrors.removeWhere((e) {
-          if (e.durationStatus == TajweedDurationStatus.surplus) return true;
           if (e.errorType == ErrorCategory.normal) {
             return config.hideExpectedAsrNoise && _isExpectedAsrNoise(e, config);
           }
@@ -294,7 +293,7 @@ class ErrorExplainer {
         final List<ReciterError> deduplicated = [];
         final Set<String> seenKeys = {};
         for (final e in wordErrors) {
-          final key = '${e.errorType.name}_${e.expectedRule?.runtimeType}_${e.expectedPh}';
+          final key = '${e.errorType.name}_${e.expectedRule?.name.en ?? ''}_${e.expectedPh}';
           if (!seenKeys.contains(key)) {
             seenKeys.add(key);
             deduplicated.add(e);
@@ -499,7 +498,7 @@ class ErrorExplainer {
     TrackerConfig config = const TrackerConfig(),
   }) {
     final List<ReciterError> errors = [];
-    final double hBase = config.harakatDurationSeconds;
+    const double hBase = TajweedTimingConfig.harakahBaseSeconds;
 
     // ── Phase 1: Base Character Verification (Letter Identity & Deletion) ──
     if (span.refText.isNotEmpty) {
@@ -536,13 +535,14 @@ class ErrorExplainer {
       if (spanDuration <= 0.0) return errors;
 
       final rule = span.matchedWordRule != null
-          ? _instantiateTajweedRule(span.matchedWordRule!)
-          : _deriveMaddRuleFromLength(span.refText.length);
+          ? _instantiateTajweedRule(span.matchedWordRule!, config)
+          : _deriveMaddRuleFromLength(span.refText.length, config);
 
       final double req = rule.getRequiredDuration(hBase);
       final TajweedDurationStatus durStatus = rule.checkDurationStatus(spanDuration, hBase);
 
-      if (durStatus == TajweedDurationStatus.defect) {
+      if (durStatus == TajweedDurationStatus.underheld ||
+          durStatus == TajweedDurationStatus.overheld) {
         errors.add(
           ReciterError(
             errorType: ErrorCategory.tajweed,
@@ -563,7 +563,7 @@ class ErrorExplainer {
       if (spanDuration <= 0.0) return errors;
 
       final rule = span.matchedWordRule != null
-          ? _instantiateTajweedRule(span.matchedWordRule!)
+          ? _instantiateTajweedRule(span.matchedWordRule!, config)
           : MushaddadGhunnahRule.withNames(
               nameAr: span.baseChar == 'ن' ? 'النون المشددة' : 'الميم المشددة',
               nameEn: span.baseChar == 'ن' ? 'Mushaddad Noon' : 'Mushaddad Meem',
@@ -572,7 +572,8 @@ class ErrorExplainer {
       final double req = rule.getRequiredDuration(hBase);
       final TajweedDurationStatus durStatus = rule.checkDurationStatus(spanDuration, hBase);
 
-      if (durStatus == TajweedDurationStatus.defect) {
+      if (durStatus == TajweedDurationStatus.underheld ||
+          durStatus == TajweedDurationStatus.overheld) {
         errors.add(
           ReciterError(
             errorType: ErrorCategory.tajweed,
@@ -593,15 +594,13 @@ class ErrorExplainer {
       const rule = ShaddahRule();
       final double req = rule.getRequiredDuration(hBase);
 
-      final int predBaseCount = _countBaseOccurrences(predText, span.baseChar);
-      final bool predDoubled = predBaseCount >= 2;
       if (spanDuration <= 0.0) {
         return errors;
       }
       final TajweedDurationStatus durStatus = rule.checkDurationStatus(spanDuration, hBase);
 
-      // A Shaddah is a defect only if the acoustic holding duration was deficient AND characters weren't doubled
-      if (!predDoubled && durStatus == TajweedDurationStatus.defect) {
+      if (durStatus == TajweedDurationStatus.underheld ||
+          durStatus == TajweedDurationStatus.overheld) {
         errors.add(
           ReciterError(
             errorType: ErrorCategory.tajweed,
@@ -644,18 +643,13 @@ class ErrorExplainer {
   // 3.4 HELPER METHODS
   // ───────────────────────────────────────────────────────────────────────────
 
-  static TajweedRule _deriveMaddRuleFromLength(int len) {
+  static TajweedRule _deriveMaddRuleFromLength(
+    int len, [
+    TrackerConfig config = const TrackerConfig(),
+  ]) {
     if (len >= 6) return const LazemMaddRule();
-    if (len >= 4) return const AaredMaddRule();
+    if (len >= 4) return AaredMaddRule(config.recitationSpeed.aaredMaddHarakat);
     return const NormalMaddRule();
-  }
-
-  static int _countBaseOccurrences(String text, String base) {
-    int count = 0;
-    for (int i = 0; i < text.length; i++) {
-      if (text[i] == base) count++;
-    }
-    return count;
   }
 
   static String _extractVowels(String text) {
@@ -668,22 +662,26 @@ class ErrorExplainer {
     return sb.toString();
   }
 
-  static TajweedRule _instantiateTajweedRule(WordTajweedRule wRule) {
+  static TajweedRule _instantiateTajweedRule(
+    WordTajweedRule wRule, [
+    TrackerConfig config = const TrackerConfig(),
+  ]) {
+    final speed = config.recitationSpeed;
     switch (wRule.ruleId) {
       case 1:
         return const NormalMaddRule();
       case 2:
-        return const MonfaselMaddRule();
+        return MonfaselMaddRule(speed.monfaselMaddHarakat);
       case 3:
-        return const MottaselMaddRule();
+        return MottaselMaddRule(speed.mottaselMaddHarakat);
       case 4:
-        return const MottaselMaddPauseRule();
+        return MottaselMaddPauseRule(speed.mottaselMaddPauseHarakat);
       case 5:
-        return const AaredMaddRule();
+        return AaredMaddRule(speed.aaredMaddHarakat);
       case 6:
         return const LazemMaddRule();
       case 7:
-        return const LeenMaddRule();
+        return LeenMaddRule(speed.leenMaddHarakat);
       case 9:
         return const ShaddahRule();
       case 10:

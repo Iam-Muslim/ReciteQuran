@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 
-import '../../data/qiraat_ayah_mapper.dart';
 import '../../data/quran_data.dart';
 import '../../engine/sherpa_engine.dart';
 import '../tajweed/error_explainer.dart';
@@ -51,7 +50,10 @@ class AsrTokenProcessor {
 
   AsrTokenProcessor({this.config = const TrackerConfig()});
 
-  double get lookaheadDelay => config.lookaheadDelay;
+  /// Standard CTC blank lookahead delay for the Sherpa-ONNX streaming model.
+  static const double ctcLookaheadDelay = 0.320;
+
+  double get lookaheadDelay => ctcLookaheadDelay;
   double get maxTokenDuration => config.maxTokenDurationAllowed;
 
   List<String> _lastRawTokens = [];

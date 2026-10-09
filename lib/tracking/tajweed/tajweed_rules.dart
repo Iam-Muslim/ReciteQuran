@@ -1,42 +1,27 @@
 // lib/tracking/tajweed/tajweed_rules.dart
 // ═══════════════════════════════════════════════════════════════════════════════
-// TAJWEED RULES MODULE (PURE DURATION-BASED & FULLY DETERMINISTIC)
+// TAJWEED RULES MODULE (DETERMINISTIC DURATION-BASED)
 //
 // Defines the acoustic duration and consonant closure domain models for Tajweed.
-// Covers strictly duration-verifiable rules:
-//   1. Madd (`المدود`) — Vowel elongation duration checks across 7 types (2, 4, 6 beats).
-//   2. Ghunnah on Mushaddad Noon & Meem (`النون والميم المشددتان`) — 2 beats duration.
-//   3. Shaddah (`الشدة`) — Doubled consonant closure and holding duration (~1.5 beats).
+// Covers duration-verifiable rules:
+//   1. Madd (`المدود`) — Vowel elongation duration checks (2, 4, 5, 6 beats).
+//   2. Ghunnah on Mushaddad Noon & Meem (`النون والميم المشددتان`) — 2 beats.
+//   3. Shaddah (`الشدة`) — Consonant holding duration (1 beat).
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 1: TAJWEED TIMING CONFIGURATION
+// SECTION 1: TIMING CONSTANTS (DETERMINISTIC ACOUSTIC SCALING)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class TajweedTimingConfig {
-  /// Base duration of a single Harakah (vowel beat unit) in seconds.
-  /// Standard Tadweer calibration is 0.20s (200ms).
+  /// Standard duration of a single Harakah (vowel beat unit) in seconds (200ms).
   static const double harakahBaseSeconds = 0.20;
 
-  /// ── 1. Shaddah (الشدة) Duration Threshold ──
-  /// Required minimum acoustic holding time for doubled consonants (1.5 Harakat = 0.375s).
-  static const double shaddahSeconds = 1.5 * harakahBaseSeconds;
+  /// Headroom in Harakat allowed above target duration for short rules (<= 2 Harakat).
+  static const double shortRuleHeadroomHarakat = 1.5;
 
-  /// ── 2. Normal Madd (المد الطبيعي) Duration Threshold ──
-  /// Required minimum duration for natural 1.2-Harakah vowel elongation (1.2 * 0.20s = 0.24s).
-  static const double normalMaddSeconds = 1.2 * harakahBaseSeconds;
-
-  /// ── 3. Ghunnah on Mushaddad Noon/Meem (غنة النون والميم المشددتين) ──
-  /// Required minimum duration for nasal resonance hold (2.0 Harakat = 0.50s).
-  static const double ghunnahSeconds = 2.0 * harakahBaseSeconds;
-
-  /// ── 4. The 4-Harakat Madd Group Duration Threshold ──
-  /// Required minimum duration for Monfasel, Mottasel, Aared, and Leen Madds (4.0 Harakat = 1.00s).
-  static const double group4MaddSeconds = 4.0 * harakahBaseSeconds;
-
-  /// ── 5. Lazem Madd (المد اللازم) Duration Threshold ──
-  /// Required minimum duration for compulsory elongation (6.0 Harakat = 1.50s).
-  static const double lazemMaddSeconds = 6.0 * harakahBaseSeconds;
+  /// Headroom in Harakat allowed above target duration for long rules (> 2 Harakat).
+  static const double longRuleHeadroomHarakat = 2.0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -50,34 +35,34 @@ class LangName {
   const LangName({required this.ar, required this.en});
 }
 
-/// Represents the exact diagnosis of an acoustic duration check (`valid`, `defect`, or `surplus`).
+/// Represents the exact diagnosis of an acoustic duration check (`valid`, `underheld`, or `overheld`).
 enum TajweedDurationStatus {
   /// The acoustic holding time matches the required Harakat duration within tolerance (`PASS`).
   valid,
 
-  /// The reciter shortened the Madd or Ghunnah below the minimum required duration (`FAIL - defect / نقص`).
-  defect,
+  /// The reciter held the sound for less than the required duration (`FAIL - underheld / نقص`).
+  underheld,
 
-  /// The reciter excessively prolonged the Madd or Ghunnah far beyond the required duration (`FAIL - Surplus / زيادة`).
-  surplus,
+  /// The reciter held the sound longer than the allowed maximum duration (`FAIL - overheld / زيادة`).
+  overheld,
 }
 
 /// Abstract base class representing a single duration check in Quranic recitation.
 abstract class TajweedRule {
   final LangName name;
-  final num goldenLen; // Expected Harakat count (e.g. 1.5 for Normal Madd)
+  final num goldenLen; // Expected Harakat count
 
   const TajweedRule({
     required this.name,
     required this.goldenLen,
   });
 
-  /// Calculates exact required acoustic duration in seconds.
+  /// Calculates exact required acoustic duration in seconds = goldenLen * harakahBase.
   double getRequiredDuration([double harakahBase = TajweedTimingConfig.harakahBaseSeconds]) {
     return goldenLen * harakahBase;
   }
 
-  /// Verifies if the actual acoustic duration meets or exceeds the required threshold.
+  /// Verifies if the actual acoustic duration meets the required duration within tolerance.
   bool checkDuration(
     double durationSeconds, [
     double harakahBase = TajweedTimingConfig.harakahBaseSeconds,
@@ -85,29 +70,33 @@ abstract class TajweedRule {
     return checkDurationStatus(durationSeconds, harakahBase) == TajweedDurationStatus.valid;
   }
 
-  /// Verifies whether the actual acoustic duration is valid, too short (defect), or too long (surplus).
+  /// Verifies whether the actual acoustic duration is valid, too short (underheld), or too long (overheld).
   TajweedDurationStatus checkDurationStatus(
     double durationSeconds, [
     double harakahBase = TajweedTimingConfig.harakahBaseSeconds,
   ]) {
+    // 0. Acoustic telemetry guard:
+    // Guard against negative durations, NaN, or infinite values resulting from ASR telemetry glitches.
+    if (durationSeconds < 0.0 || durationSeconds.isNaN || durationSeconds.isInfinite) {
+      return TajweedDurationStatus.valid;
+    }
     if (goldenLen <= 0) return TajweedDurationStatus.valid;
-    // Allow a 20% tempo & acoustic transmission tolerance margin on the required duration
-    final double req = getRequiredDuration(harakahBase) * 0.80;
 
-    // 1. Check defect (Lower Bound): Must hold at least the required duration threshold.
+    final double req = getRequiredDuration(harakahBase);
+
+    // 1. Underheld: Reciter held less than the required Harakat duration
     if (durationSeconds < req) {
-      return TajweedDurationStatus.defect;
+      return TajweedDurationStatus.underheld;
     }
 
-    // 2. Check Surplus (Upper Bound Tolerance):
-    // - For short rules (<= 2 Harakat like Shaddah or Ghunnah): Allow +2.5 Harakat headroom.
-    // - For long rules (4-6 Harakat like Lazem Madd): Allow +4.0 Harakat headroom.
-    final double maxAllowedSeconds = (goldenLen <= 2)
-        ? req + (2.5 * harakahBase)
-        : req + (4.0 * harakahBase);
+    // 2. Overheld: Reciter held beyond the required duration plus allowable headroom
+    final double headroom = (goldenLen <= 2)
+        ? TajweedTimingConfig.shortRuleHeadroomHarakat
+        : TajweedTimingConfig.longRuleHeadroomHarakat;
+    final double maxAllowedSeconds = req + (headroom * harakahBase);
 
     if (durationSeconds > maxAllowedSeconds) {
-      return TajweedDurationStatus.surplus;
+      return TajweedDurationStatus.overheld;
     }
 
     return TajweedDurationStatus.valid;
@@ -125,79 +114,55 @@ class MaddRule extends TajweedRule {
   });
 }
 
-/// ── 3.1 Normal Madd (`المد الطبيعي`) — 1.2 Harakat (0.24s) ──
+/// ── 3.1 Normal Madd (`المد الطبيعي`) — 2 Harakat ──
 class NormalMaddRule extends MaddRule {
   const NormalMaddRule()
       : super(
           name: const LangName(ar: "المد الطبيعي", en: "Normal Madd"),
-          goldenLen: 1.2,
+          goldenLen: 2,
         );
-
-  @override
-  double getRequiredDuration([double harakahBase = TajweedTimingConfig.harakahBaseSeconds]) =>
-      0.70 * harakahBase; // ~140ms threshold: catches cut vowels while passing natural fluent recitation
 }
 
-/// ── 3.2 Monfasel Madd (`المد المنفصل`) — 4 Harakat ──
+/// ── 3.2 Monfasel Madd (`المد المنفصل`) ──
+/// In Hadr (Fast) it is read with Qasr (2 Harakat - Tayyibat An-Nashr),
+/// in Tadweer/Tahqiq (Normal/Slow) with Tawassut (4-5 Harakat - Shatibiyyah).
 class MonfaselMaddRule extends MaddRule {
-  const MonfaselMaddRule()
+  const MonfaselMaddRule([int harakat = 4])
       : super(
           name: const LangName(ar: "المد المنفصل", en: "Monfasel Madd"),
-          goldenLen: 4,
+          goldenLen: harakat,
         );
 }
 
-/// ── 3.3 Mottasel Madd (`المد المتصل`) — 4 Harakat ──
+/// ── 3.3 Mottasel Madd (`المد المتصل`) ──
 class MottaselMaddRule extends MaddRule {
-  const MottaselMaddRule()
+  const MottaselMaddRule([int harakat = 4])
       : super(
           name: const LangName(ar: "المد المتصل", en: "Mottasel Madd"),
-          goldenLen: 4,
+          goldenLen: harakat,
         );
 }
 
-/// ── 3.4 Mottasel Madd at Pause (`المد المتصل وقفا`) — 4 Harakat ──
+/// ── 3.4 Mottasel Madd at Pause (`المد المتصل وقفا`) ──
 class MottaselMaddPauseRule extends MaddRule {
-  const MottaselMaddPauseRule()
+  const MottaselMaddPauseRule([int harakat = 4])
       : super(
           name: const LangName(
             ar: "المد المتصل وقفا",
             en: "Mottasel Madd at Pause",
           ),
-          goldenLen: 4,
+          goldenLen: harakat,
         );
 }
 
-/// ── 3.5 Aared Madd (`المد العارض للسكون`) — 4 Harakat ──
+/// ── 3.5 Aared Madd (`المد العارض للسكون`) ──
+/// Uses the target Harakat defined by the active recitation speed (2, 4, or 6).
 class AaredMaddRule extends MaddRule {
-  const AaredMaddRule()
+  const AaredMaddRule([int harakat = 4])
       : super(
           name: const LangName(ar: "المد العارض للسكون", en: "Aared Madd"),
-          goldenLen: 4,
+          goldenLen: harakat,
         );
-
-  @override
-  TajweedDurationStatus checkDurationStatus(
-    double durationSeconds, [
-    double harakahBase = TajweedTimingConfig.harakahBaseSeconds,
-  ]) {
-    // In Tajweed, Al-Madd Al-Aared Lissukun at Waqf allows three legitimate faces:
-    // 1. Qasr (القصر) = 2 Harakat (accept >= 1.2 * harakahBase for normal/fast recitation & Wasl)
-    // 2. Tawassut (التوسط) = 4 Harakat
-    // 3. Tool / Ishba' (الطول) = 6 Harakat
-    final double minAllowed = 0.70 * harakahBase;
-    if (durationSeconds < minAllowed) {
-      return TajweedDurationStatus.defect;
-    }
-
-    // Upper bound tolerance: Tool (6 Harakat) + 4.0 Harakat headroom
-    final double maxAllowed = (6.0 * harakahBase) + (4.0 * harakahBase);
-    if (durationSeconds > maxAllowed) {
-      return TajweedDurationStatus.surplus;
-    }
-
-    return TajweedDurationStatus.valid;
-  }
 }
 
 /// ── 3.6 Lazem Madd (`المد اللازم`) — 6 Harakat ──
@@ -209,17 +174,18 @@ class LazemMaddRule extends MaddRule {
         );
 }
 
-/// ── 3.7 Leen Madd (`مد اللين`) — 4 Harakat ──
+/// ── 3.7 Leen Madd (`مد اللين`) ──
+/// Uses the target Harakat defined by the active recitation speed (2, 4, or 6).
 class LeenMaddRule extends MaddRule {
-  const LeenMaddRule()
+  const LeenMaddRule([int harakat = 4])
       : super(
           name: const LangName(ar: "مد اللين", en: "Leen Madd"),
-          goldenLen: 4,
+          goldenLen: harakat,
         );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 4: GHUNNAH RULE (غنة النون والميم المشددتين)
+// SECTION 4: GHUNNAH RULE (غنة النون والميم المشددتين) — 2 Harakat
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class MushaddadGhunnahRule extends TajweedRule {
@@ -241,14 +207,10 @@ class MushaddadGhunnahRule extends TajweedRule {
       name: LangName(ar: nameAr, en: nameEn),
     );
   }
-
-  @override
-  double getRequiredDuration([double harakahBase = TajweedTimingConfig.harakahBaseSeconds]) =>
-      2.0 * harakahBase;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 5: SHADDAH RULE (الشدة)
+// SECTION 5: SHADDAH RULE (الشدة) — 1 Harakah
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class ShaddahRule extends TajweedRule {
@@ -257,8 +219,4 @@ class ShaddahRule extends TajweedRule {
           name: const LangName(ar: "الشدة", en: "Shaddah"),
           goldenLen: 1,
         );
-
-  @override
-  double getRequiredDuration([double harakahBase = TajweedTimingConfig.harakahBaseSeconds]) =>
-      0.65 * harakahBase; // ~130ms threshold: catches dropped Shaddahs while passing natural human geminates
 }

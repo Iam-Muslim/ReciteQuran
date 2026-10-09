@@ -431,7 +431,7 @@ class DictationSequencer {
       for (final align in result.trace) {
         if (align.refIdx >= coreStart && align.refIdx < coreEnd) {
           if (align.opType == 'delete') {
-            coreCost += config.costDel;
+            coreCost += config.standardDeletionCost;
           } else if (align.opType == 'replace') {
             if (align.predIdx >= 0 &&
                 align.refIdx >= 0 &&
@@ -440,13 +440,13 @@ class DictationSequencer {
               final int refCode = fullPhonemes.codeUnitAt(align.refIdx);
               coreCost += PhoneticCostEngine.getSubstitutionCost(asrCode, refCode);
             } else {
-              coreCost += config.costIns;
+              coreCost += config.standardInsertionCost;
             }
           }
         }
       }
 
-      if ((coreCost / coreLen) > config.maxPathCost) {
+      if ((coreCost / coreLen) > config.defaultMaxPathCost) {
         return false;
       }
     }

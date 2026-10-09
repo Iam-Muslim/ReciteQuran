@@ -4,7 +4,6 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
-import 'data/qiraat_ayah_mapper.dart';
 import 'data/quran_data.dart';
 import 'engine/sherpa_engine.dart';
 import 'tracking/word/highlighting_controller.dart';
