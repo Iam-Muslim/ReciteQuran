@@ -1,4 +1,5 @@
 // lib/tracking/tajweed/tajweed_rules.dart
+import 'dart:math';
 // ═══════════════════════════════════════════════════════════════════════════════
 // TAJWEED RULES MODULE (DETERMINISTIC DURATION-BASED)
 //
@@ -14,14 +15,27 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class TajweedTimingConfig {
-  /// Standard duration of a single Harakah (vowel beat unit) in seconds (200ms).
-  static const double harakahBaseSeconds = 0.20;
+  /// Standard duration of a single Harakah (vowel beat unit) in seconds (150ms).
+  /// Aligned with Sheikh Mahmoud Khalil Al-Husary's canonical Murattal/Tadweer pacing:
+  ///   - 2 Harakat (Normal Madd / Ghunnah) = ~0.30s (range ~0.24s - 0.45s)
+  ///   - 4 Harakat (Madd Aared Tawassut)  = ~0.60s (range ~0.50s - 0.85s)
+  ///   - 6 Harakat (Madd Lazem Ishba')    = ~0.90s (range ~0.78s - 1.20s)
+  static const double harakahBaseSeconds = 0.15;
+
+  /// Tolerance in Harakat below target duration for short rules (<= 2 Harakat)
+  /// to account for CTC frame quantization (~40-60ms) and natural human speech micro-variation.
+  static const double shortRuleUnderheldToleranceHarakat = 0.4;
+
+  /// Tolerance in Harakat below target duration for long rules (> 2 Harakat).
+  static const double longRuleUnderheldToleranceHarakat = 0.6;
 
   /// Headroom in Harakat allowed above target duration for short rules (<= 2 Harakat).
   static const double shortRuleHeadroomHarakat = 1.5;
 
   /// Headroom in Harakat allowed above target duration for long rules (> 2 Harakat).
-  static const double longRuleHeadroomHarakat = 2.0;
+  /// 3.0 Harakat headroom allows natural pause extension (e.g. 4 + 3.0 = 7.0 Harakat = ~1.05s)
+  /// matching Sheikh Al-Husary's Ishba' pause boundaries without triggering false overheld errors.
+  static const double longRuleHeadroomHarakat = 3.0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -57,6 +71,16 @@ abstract class TajweedRule {
     required this.goldenLen,
   });
 
+  /// Tolerance in Harakat below target duration before sound is flagged underheld.
+  double get underheldToleranceHarakat => (goldenLen <= 2)
+      ? TajweedTimingConfig.shortRuleUnderheldToleranceHarakat
+      : TajweedTimingConfig.longRuleUnderheldToleranceHarakat;
+
+  /// Headroom in Harakat allowed above target duration before sound is flagged overheld.
+  double get headroomHarakat => (goldenLen <= 2)
+      ? TajweedTimingConfig.shortRuleHeadroomHarakat
+      : TajweedTimingConfig.longRuleHeadroomHarakat;
+
   /// Calculates exact required acoustic duration in seconds = goldenLen * harakahBase.
   double getRequiredDuration([double harakahBase = TajweedTimingConfig.harakahBaseSeconds]) {
     return goldenLen * harakahBase;
@@ -84,15 +108,16 @@ abstract class TajweedRule {
 
     final double req = getRequiredDuration(harakahBase);
 
-    // 1. Underheld: Reciter held less than the required Harakat duration
-    if (durationSeconds < req) {
+    // 1. Underheld: Reciter held less than the required Harakat duration (minus acoustic tolerance)
+    final double underTolerance = underheldToleranceHarakat;
+    final double minAllowedSeconds = max(0.04, req - (underTolerance * harakahBase));
+
+    if (durationSeconds < minAllowedSeconds) {
       return TajweedDurationStatus.underheld;
     }
 
-    // 2. Overheld: Reciter held beyond the required duration plus allowable headroom
-    final double headroom = (goldenLen <= 2)
-        ? TajweedTimingConfig.shortRuleHeadroomHarakat
-        : TajweedTimingConfig.longRuleHeadroomHarakat;
+    // 2. Overheld: Reciter held beyond the target duration plus allowable headroom
+    final double headroom = headroomHarakat;
     final double maxAllowedSeconds = req + (headroom * harakahBase);
 
     if (durationSeconds > maxAllowedSeconds) {
@@ -219,4 +244,9 @@ class ShaddahRule extends TajweedRule {
           name: const LangName(ar: "الشدة", en: "Shaddah"),
           goldenLen: 1,
         );
+
+  /// Doubled consonant closure requires >= 0.85 Harakat (~128ms at 0.15s base)
+  /// to distinguish genuine gemination from a singleton consonant (60-90ms).
+  @override
+  double get underheldToleranceHarakat => 0.15;
 }

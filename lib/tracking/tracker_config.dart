@@ -100,9 +100,9 @@ enum MatchingStrictness {
 
   /// Maximum lookahead word skips for detecting omissions.
   int get maxSkipWords => switch (this) {
-        MatchingStrictness.easy => 3,
+        MatchingStrictness.easy => 1,
         MatchingStrictness.normal => 2,
-        MatchingStrictness.hard => 1,
+        MatchingStrictness.hard => 3,
       };
 
   /// Cost for acoustic confusion pairs (e.g. ص vs س).
@@ -215,7 +215,8 @@ class TrackerConfig {
   double get acousticConfusionCost => matchingStrictness.acousticConfusionCost;
   double get standardInsertionCost => matchingStrictness.standardInsertionCost;
   double get standardDeletionCost => matchingStrictness.standardDeletionCost;
-  double get maxTokenDurationAllowed => matchingStrictness.maxTokenDurationAllowed;
+  double get maxTokenDurationAllowed =>
+      matchingStrictness.maxTokenDurationAllowed;
   bool get hideExpectedAsrNoise => matchingStrictness.hideExpectedAsrNoise;
   bool get enableEarlyMatching => matchingStrictness.enableEarlyMatching;
 
