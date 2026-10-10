@@ -148,27 +148,9 @@ class AsrTokenProcessor {
     return c0 >= 0x0621 && c0 <= 0x064A;
   }
 
-  /// Defines the intrinsic physiological holding capacity of an Arabic phoneme sound.
-  static double getAcousticCapacity(String tok, [double maxDuration = 2.5]) {
-    if (isMaddToken(tok)) {
-      return maxDuration;
-    } else if (isGhunnahToken(tok)) {
-      return 0.35;
-    } else if (isShaddahToken(tok)) {
-      return 0.22;
-    } else {
-      return 0.08;
-    }
-  }
-
   /// Identifies sounds that can absorb acoustic prolongation (Madd vowels, Shaddah gemination, Ghunnah).
   static bool isElasticContinuant(String tok) {
     return isMaddToken(tok) || isShaddahToken(tok) || isGhunnahToken(tok);
-  }
-
-  /// Determines if a token is any held or elongated acoustic sound (Madd, Ghunnah, or Shaddah).
-  static bool isElongatedToken(String tok) {
-    return isElasticContinuant(tok);
   }
 
   /// Ingests a new [TranscriptionResult] from the ASR recognizer,

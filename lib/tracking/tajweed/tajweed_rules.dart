@@ -23,20 +23,21 @@ class TajweedTimingConfig {
   ///   - 6 Harakat (Madd Lazem Ishba')    = ~0.90s (range ~0.78s - 1.20s)
   static const double harakahBaseSeconds = 0.15;
 
-  /// Tolerance in Harakat below target duration for short rules (<= 2 Harakat)
-  /// to account for CTC frame quantization (~40-60ms) and natural human speech micro-variation.
-  static const double shortRuleUnderheldToleranceHarakat = 0.4;
+  /// Tolerance factor below nominal duration before flagging underheld (20% tempo margin).
+  static const double underheldToleranceFactor = 0.80;
 
-  /// Tolerance in Harakat below target duration for long rules (> 2 Harakat).
-  static const double longRuleUnderheldToleranceHarakat = 0.6;
-
-  /// Headroom in Harakat allowed above target duration for short rules (<= 2 Harakat).
-  static const double shortRuleHeadroomHarakat = 1.5;
+  /// Headroom in Harakat allowed above target duration for short rules (<= 2 Harakat)
+  /// to allow natural deliberate Tartil holding without false overheld flags.
+  static const double shortRuleHeadroomHarakat = 3.5;
 
   /// Headroom in Harakat allowed above target duration for long rules (> 2 Harakat).
-  /// 3.0 Harakat headroom allows natural pause extension (e.g. 4 + 3.0 = 7.0 Harakat = ~1.05s)
-  /// matching Sheikh Al-Husary's Ishba' pause boundaries without triggering false overheld errors.
-  static const double longRuleHeadroomHarakat = 3.0;
+  static const double longRuleHeadroomHarakat = 4.0;
+
+  /// Headroom in Harakat allowed for Waqf pause elongation (Madd Aared & Leen).
+  static const double waqfHeadroomHarakat = 3.0;
+
+  /// Headroom in Harakat allowed for deliberate Tartil Shaddah holds.
+  static const double shaddahHeadroomHarakat = 4.5;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -60,12 +61,6 @@ enum TajweedDurationStatus {
 
   /// The reciter held the sound longer than the allowed maximum duration (`FAIL - overheld / زيادة`).
   overheld;
-
-  /// Backward-compatible alias for underheld.
-  static const TajweedDurationStatus defect = TajweedDurationStatus.underheld;
-
-  /// Backward-compatible alias for overheld.
-  static const TajweedDurationStatus surplus = TajweedDurationStatus.overheld;
 }
 
 /// Abstract base class representing a single duration check in Quranic recitation.
@@ -77,11 +72,6 @@ abstract class TajweedRule {
     required this.name,
     required this.goldenLen,
   });
-
-  /// Tolerance in Harakat below target duration before sound is flagged underheld.
-  double get underheldToleranceHarakat => (goldenLen <= 2)
-      ? TajweedTimingConfig.shortRuleUnderheldToleranceHarakat
-      : TajweedTimingConfig.longRuleUnderheldToleranceHarakat;
 
   /// Headroom in Harakat allowed above target duration before sound is flagged overheld.
   double get headroomHarakat => (goldenLen <= 2)
@@ -118,7 +108,8 @@ abstract class TajweedRule {
     if (goldenLen <= 0) return TajweedDurationStatus.valid;
 
     // Allow a 20% tempo & acoustic transmission tolerance margin on the required duration
-    final double req = getRequiredDuration(harakahBase) * 0.80;
+    final double req = getRequiredDuration(harakahBase) *
+        TajweedTimingConfig.underheldToleranceFactor;
 
     // 1. Underheld: Reciter held less than the required Harakat duration (minus margin)
     if (durationSeconds < req) {
@@ -126,9 +117,7 @@ abstract class TajweedRule {
     }
 
     // 2. Overheld: Reciter held beyond the target duration plus allowable headroom
-    final double maxAllowedSeconds = (goldenLen <= 2)
-        ? req + (3.5 * harakahBase)
-        : req + (4.0 * harakahBase);
+    final double maxAllowedSeconds = req + (headroomHarakat * harakahBase);
 
     if (durationSeconds > maxAllowedSeconds) {
       return TajweedDurationStatus.overheld;
@@ -190,17 +179,12 @@ class MottaselMaddPauseRule extends MaddRule {
         );
 }
 
-/// ── 3.5 Aared Madd (`المد العارض للسكون`) ──
-/// In Tajweed, Al-Madd Al-Aared Lissukun at Waqf allows three legitimate faces:
-/// 1. Fast (Hadr) = Qasr (2 Harakat) -> min 2 Harakat
-/// 2. Normal (Tadweer) = Tawassut (4 Harakat) -> min 4 Harakat
-/// 3. Slow (Tahqiq) = Tool / Ishba' (6 Harakat) -> min 6 Harakat
-class AaredMaddRule extends MaddRule {
-  const AaredMaddRule([int harakat = 4])
-      : super(
-          name: const LangName(ar: "المد العارض للسكون", en: "Aared Madd"),
-          goldenLen: harakat,
-        );
+/// Base class for Madds at Waqf with speed-dependent variable faces (2, 4, 6 Harakat).
+abstract class VariableWaqfMaddRule extends MaddRule {
+  const VariableWaqfMaddRule({
+    required super.name,
+    required super.goldenLen,
+  });
 
   @override
   TajweedDurationStatus checkDurationStatus(
@@ -215,21 +199,33 @@ class AaredMaddRule extends MaddRule {
     if (goldenLen <= 0) return TajweedDurationStatus.valid;
 
     // Minimum required duration strictly enforced by configured speed / Harakat count:
-    // With 20% tempo tolerance margin: req = goldenLen * harakahBase * 0.80
-    final double req = goldenLen * harakahBase * 0.80;
+    final double req = goldenLen * harakahBase * TajweedTimingConfig.underheldToleranceFactor;
     if (durationSeconds < req) {
       return TajweedDurationStatus.underheld;
     }
 
-    // Upper bound tolerance: allows legitimate Waqf holding up to Tool (6 Harakat) + 3.0 Harakat headroom
+    // Upper bound tolerance: allows legitimate Waqf holding up to Tool (6 Harakat) + waqf headroom
     final double maxAllowed = (max(goldenLen.toDouble(), 6.0) * harakahBase) +
-        (TajweedTimingConfig.longRuleHeadroomHarakat * harakahBase);
+        (TajweedTimingConfig.waqfHeadroomHarakat * harakahBase);
     if (durationSeconds > maxAllowed) {
       return TajweedDurationStatus.overheld;
     }
 
     return TajweedDurationStatus.valid;
   }
+}
+
+/// ── 3.5 Aared Madd (`المد العارض للسكون`) ──
+/// In Tajweed, Al-Madd Al-Aared Lissukun at Waqf allows three legitimate faces:
+/// 1. Fast (Hadr) = Qasr (2 Harakat) -> min 2 Harakat
+/// 2. Normal (Tadweer) = Tawassut (4 Harakat) -> min 4 Harakat
+/// 3. Slow (Tahqiq) = Tool / Ishba' (6 Harakat) -> min 6 Harakat
+class AaredMaddRule extends VariableWaqfMaddRule {
+  const AaredMaddRule([int harakat = 4])
+      : super(
+          name: const LangName(ar: "المد العارض للسكون", en: "Aared Madd"),
+          goldenLen: harakat,
+        );
 }
 
 /// ── 3.6 Lazem Madd (`المد اللازم`) — 6 Harakat ──
@@ -243,38 +239,12 @@ class LazemMaddRule extends MaddRule {
 
 /// ── 3.7 Leen Madd (`مد اللين`) ──
 /// Uses the target Harakat defined by active recitation speed (2, 4, or 6).
-class LeenMaddRule extends MaddRule {
+class LeenMaddRule extends VariableWaqfMaddRule {
   const LeenMaddRule([int harakat = 4])
       : super(
           name: const LangName(ar: "مد اللين", en: "Leen Madd"),
           goldenLen: harakat,
         );
-
-  @override
-  TajweedDurationStatus checkDurationStatus(
-    double durationSeconds, [
-    double harakahBase = TajweedTimingConfig.harakahBaseSeconds,
-  ]) {
-    if (durationSeconds < 0.0 ||
-        durationSeconds.isNaN ||
-        durationSeconds.isInfinite) {
-      return TajweedDurationStatus.valid;
-    }
-    if (goldenLen <= 0) return TajweedDurationStatus.valid;
-
-    final double req = goldenLen * harakahBase * 0.80;
-    if (durationSeconds < req) {
-      return TajweedDurationStatus.underheld;
-    }
-
-    final double maxAllowed = (max(goldenLen.toDouble(), 6.0) * harakahBase) +
-        (TajweedTimingConfig.longRuleHeadroomHarakat * harakahBase);
-    if (durationSeconds > maxAllowed) {
-      return TajweedDurationStatus.overheld;
-    }
-
-    return TajweedDurationStatus.valid;
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -315,27 +285,5 @@ class ShaddahRule extends TajweedRule {
         );
 
   @override
-  TajweedDurationStatus checkDurationStatus(
-    double durationSeconds, [
-    double harakahBase = TajweedTimingConfig.harakahBaseSeconds,
-  ]) {
-    if (durationSeconds < 0.0 ||
-        durationSeconds.isNaN ||
-        durationSeconds.isInfinite) {
-      return TajweedDurationStatus.valid;
-    }
-
-    final double req = getRequiredDuration(harakahBase) * 0.80;
-    if (durationSeconds < req) {
-      return TajweedDurationStatus.underheld;
-    }
-
-    // Shaddah holding ceiling: allows deliberate Tartil geminate holding up to 0.85s (req + 4.5 * harakahBase)
-    final double maxAllowed = req + (4.5 * harakahBase);
-    if (durationSeconds > maxAllowed) {
-      return TajweedDurationStatus.overheld;
-    }
-
-    return TajweedDurationStatus.valid;
-  }
+  double get headroomHarakat => TajweedTimingConfig.shaddahHeadroomHarakat;
 }

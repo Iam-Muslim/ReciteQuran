@@ -293,7 +293,7 @@ void _showTajweedErrorDialog(BuildContext context, List<Map<String, dynamic>> er
             const SizedBox(height: 12),
             ...errors.map((errorMap) {
               final error = ReciterError.fromMap(errorMap);
-              final String statusText = error.durationStatus == TajweedDurationStatus.defect
+              final String statusText = error.durationStatus == TajweedDurationStatus.underheld
                   ? 'نقص في المد / الغنة (Held too short)'
                   : 'زيادة في المد / الغنة (Held too long)';
               return ListTile(
