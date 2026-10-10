@@ -498,11 +498,33 @@ class ErrorExplainer {
     TrackerConfig config = const TrackerConfig(),
   }) {
     final List<ReciterError> errors = [];
-    const double hBase = TajweedTimingConfig.harakahBaseSeconds;
+    final double hBase = config.recitationSpeed.harakahBaseSeconds;
 
     // ── Phase 1: Base Character Verification (Letter Identity & Deletion) ──
     if (span.refText.isNotEmpty) {
       if (predText.isEmpty) {
+        if (span.isMadd || span.isShaddah || span.isGhunnah) {
+          final rule = span.matchedWordRule != null
+              ? _instantiateTajweedRule(span.matchedWordRule!, config)
+              : (span.isMadd
+                  ? _deriveMaddRuleFromLength(span.refText.length, config)
+                  : (span.isShaddah
+                      ? const ShaddahRule()
+                      : const MushaddadGhunnahRule()));
+          errors.add(
+            ReciterError(
+              errorType: ErrorCategory.tajweed,
+              speechErrorType: SpeechErrorType.delete,
+              durationStatus: TajweedDurationStatus.underheld,
+              expectedPh: span.refText,
+              predictedPh: '',
+              expectedRule: rule,
+              expectedDuration: rule.getRequiredDuration(hBase),
+              actualDuration: 0.0,
+            ),
+          );
+          return errors;
+        }
         errors.add(
           ReciterError(
             errorType: ErrorCategory.normal,
@@ -541,6 +563,11 @@ class ErrorExplainer {
       final double req = rule.getRequiredDuration(hBase);
       final TajweedDurationStatus durStatus = rule.checkDurationStatus(spanDuration, hBase);
 
+      // ignore: avoid_print
+      print(
+        '🎯 [GRADING MADD] Span: "${span.refText}" (${rule.name.en}) | ASR: "$predText" | Measured: ${spanDuration.toStringAsFixed(3)}s | Required: ${req.toStringAsFixed(3)}s | Status: ${durStatus.name.toUpperCase()}',
+      );
+
       if (durStatus == TajweedDurationStatus.underheld ||
           durStatus == TajweedDurationStatus.overheld) {
         errors.add(
@@ -572,6 +599,11 @@ class ErrorExplainer {
       final double req = rule.getRequiredDuration(hBase);
       final TajweedDurationStatus durStatus = rule.checkDurationStatus(spanDuration, hBase);
 
+      // ignore: avoid_print
+      print(
+        '🎯 [GRADING GHUNNAH] Span: "${span.refText}" (${rule.name.en}) | ASR: "$predText" | Measured: ${spanDuration.toStringAsFixed(3)}s | Required: ${req.toStringAsFixed(3)}s | Status: ${durStatus.name.toUpperCase()}',
+      );
+
       if (durStatus == TajweedDurationStatus.underheld ||
           durStatus == TajweedDurationStatus.overheld) {
         errors.add(
@@ -598,6 +630,11 @@ class ErrorExplainer {
         return errors;
       }
       final TajweedDurationStatus durStatus = rule.checkDurationStatus(spanDuration, hBase);
+
+      // ignore: avoid_print
+      print(
+        '🎯 [GRADING SHADDAH] Span: "${span.refText}" (Shaddah) | ASR: "$predText" | Measured: ${spanDuration.toStringAsFixed(3)}s | Required: ${req.toStringAsFixed(3)}s | Status: ${durStatus.name.toUpperCase()}',
+      );
 
       if (durStatus == TajweedDurationStatus.underheld ||
           durStatus == TajweedDurationStatus.overheld) {

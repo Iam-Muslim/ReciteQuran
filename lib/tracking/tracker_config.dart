@@ -51,6 +51,16 @@ enum RecitationSpeed {
         RecitationSpeed.slow => 6,
       };
 
+  /// Canonical duration of a single Harakah beat unit in seconds for this speed tier:
+  ///   - Fast (Hadr / حدر)       = 0.12s (120ms per Harakah)
+  ///   - Normal (Tadweer / تدوير) = 0.15s (150ms per Harakah)
+  ///   - Slow (Tahqiq / تحقيق)    = 0.18s (180ms per Harakah)
+  double get harakahBaseSeconds => switch (this) {
+        RecitationSpeed.fast => 0.12,
+        RecitationSpeed.normal => 0.15,
+        RecitationSpeed.slow => 0.18,
+      };
+
   /// Parses a recitation speed from a string identifier (with fallback to [normal]).
   static RecitationSpeed fromName(String? name) {
     if (name == null) return RecitationSpeed.normal;

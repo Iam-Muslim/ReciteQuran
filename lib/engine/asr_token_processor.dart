@@ -90,6 +90,18 @@ class AsrTokenProcessor {
   /// Determines if a token is a prolonged vocalic Madd sound (ا, آ, و, ي, ى, ۥ, ۦ, ٰ, ٱ, ٲ).
   static bool isMaddToken(String tok) {
     if (tok.isEmpty) return false;
+    // Any token carrying an active vowel or consonant mark (Fathah, Dammah, Kasrah, Tanween, Sukoon, Shaddah)
+    // is an articulated consonant syllable, NOT a pure unvoweled Madd vowel.
+    for (int i = 0; i < tok.length; i++) {
+      final int c = tok.codeUnitAt(i);
+      if (c >= 0x064B && c <= 0x0652) { // ً ٌ ٍ َ ُ ِ ّ ْ
+        return false;
+      }
+    }
+    // Shaddah doubled consonants (e.g. ييَ, ووَ) without Madd markings are not Madd.
+    if (isShaddahToken(tok) || isGhunnahToken(tok)) {
+      return false;
+    }
     for (int i = 0; i < tok.length; i++) {
       final int c = tok.codeUnitAt(i);
       if (c == 0x0627 || // ا
@@ -125,17 +137,38 @@ class AsrTokenProcessor {
     if (tok.length < 2) return false;
     final int c0 = tok.codeUnitAt(0);
     final int c1 = tok.codeUnitAt(1);
-    return c0 == c1 &&
-        c0 >= 0x0621 &&
-        c0 <= 0x064A &&
-        c0 != 0x0627 && // not alif
-        c0 != 0x0648 && // not waw
-        c0 != 0x064A;   // not yaa
+    if (c0 != c1) return false;
+    // Cannot be Alif (اا is Madd)
+    if (c0 == 0x0627) return false;
+    // Bare unvoweled وو or يي (length 2 without harakah) could be Madd.
+    // But if it has harakah (e.g. ييَ as in "إياك", or ووَ as in "توابا"), it is 100% Shaddah!
+    if ((c0 == 0x0648 || c0 == 0x064A) && tok.length == 2) {
+      return false;
+    }
+    return c0 >= 0x0621 && c0 <= 0x064A;
+  }
+
+  /// Defines the intrinsic physiological holding capacity of an Arabic phoneme sound.
+  static double getAcousticCapacity(String tok, [double maxDuration = 2.5]) {
+    if (isMaddToken(tok)) {
+      return maxDuration;
+    } else if (isGhunnahToken(tok)) {
+      return 0.35;
+    } else if (isShaddahToken(tok)) {
+      return 0.22;
+    } else {
+      return 0.08;
+    }
+  }
+
+  /// Identifies sounds that can absorb acoustic prolongation (Madd vowels, Shaddah gemination, Ghunnah).
+  static bool isElasticContinuant(String tok) {
+    return isMaddToken(tok) || isShaddahToken(tok) || isGhunnahToken(tok);
   }
 
   /// Determines if a token is any held or elongated acoustic sound (Madd, Ghunnah, or Shaddah).
   static bool isElongatedToken(String tok) {
-    return isMaddToken(tok) || isGhunnahToken(tok) || isShaddahToken(tok);
+    return isElasticContinuant(tok);
   }
 
   /// Ingests a new [TranscriptionResult] from the ASR recognizer,
@@ -160,6 +193,8 @@ class AsrTokenProcessor {
 
     _lastRawTokens = result.tokens.sublist(0, maxCount);
 
+    final bool hasNewTokens = commonLen < maxCount;
+
     // Ingest newly arrived non-blank tokens into filtered arrays
     for (int i = commonLen; i < maxCount; i++) {
       final String tok = result.tokens[i];
@@ -181,6 +216,17 @@ class AsrTokenProcessor {
     // Recompute accurate acoustic durations across all filtered tokens
     _recomputeDurations();
 
+    // Debug prints:
+    if (hasNewTokens && _filteredTokens.isNotEmpty) {
+      final int startPrint = max(0, _filteredTokens.length - (maxCount - commonLen + 1));
+      for (int i = startPrint; i < _filteredTokens.length; i++) {
+        // ignore: avoid_print
+        print(
+          '⏱️ [SHERPA TOKEN] #$i "${_filteredTokens[i]}" | Pure Sherpa Ts: ${_filteredSpikeTimes[i].toStringAsFixed(3)}s | Grading Dur: ${_tokenDurations[i].toStringAsFixed(3)}s [start: ${_tokenStarts[i].toStringAsFixed(3)}s -> end: ${_tokenEnds[i].toStringAsFixed(3)}s]',
+        );
+      }
+    }
+
     return ProcessedAudioStream(
       tokens: _filteredTokens,
       durations: _tokenDurations,
@@ -190,18 +236,17 @@ class AsrTokenProcessor {
     );
   }
 
-  /// Recomputes acoustic durations for all tokens in `_filteredTokens` using
-  /// an explicit contiguous acoustic boundary partition (derived from Tajweed sonorant physics).
+  /// Recomputes acoustic durations using one proven fact from aligner ground truth:
   ///
-  /// Guarantees:
-  /// 1. start_k = end_{k-1} (strictly contiguous in speech, zero lost milliseconds).
-  /// 2. Consonants before Madd end at their physical release (~0.05-0.06s),
-  ///    transferring the remaining vocalic onset into the Madd.
-  /// 3. Shaddah consonants receive their physical closure interval (the hold prior
-  ///    to release burst) instead of being cut in half by midpoint crossover.
-  /// 4. Madd vowels sustain continuously until the succeeding consonant closure (~0.05s).
-  /// 5. Pauses/breaths (> 0.60s) decouple the boundary so inter-verse silence
-  ///    does not artificially inflate token durations.
+  /// **The Sherpa CTC peak timestamp marks the END of the token's acoustic presence.**
+  ///
+  /// Therefore:
+  ///   end[k]      = peak[k]
+  ///   start[k]    = peak[k-1]  (= end[k-1], contiguous)
+  ///   duration[k] = peak[k] - peak[k-1]
+  ///
+  /// After an inter-ayah pause (silence gap), start[k] is decoupled from the
+  /// previous token and estimated from the current peak.
   void _recomputeDurations() {
     final int count = _filteredTokens.length;
     _tokenDurations.clear();
@@ -209,119 +254,56 @@ class AsrTokenProcessor {
     _tokenEnds.clear();
     if (count == 0) return;
 
-    if (count == 1) {
-      final bool isElongated = isElongatedToken(_filteredTokens[0]);
-      final double dur = isElongated ? 0.30 : 0.12;
-      _tokenDurations.add(dur);
-      _tokenStarts.add(_filteredSpikeTimes[0] - (isElongated ? 0.15 : 0.06));
-      _tokenEnds.add(_filteredSpikeTimes[0] + (isElongated ? 0.15 : 0.06));
-      return;
-    }
-
-    // Token start and end boundaries
     final List<double> starts = List.filled(count, 0.0);
     final List<double> ends = List.filled(count, 0.0);
+    final List<double> durs = List.filled(count, 0.0);
 
-    // Initial token onset: starts ~80-120ms before peak
-    final double firstStep = _filteredSpikeTimes[1] - _filteredSpikeTimes[0];
-    final bool isFirstElongated = isElongatedToken(_filteredTokens[0]);
-    starts[0] = max(
-      0.0,
-      _filteredSpikeTimes[0] -
-          (isFirstElongated ? min(0.20, max(0.08, firstStep * 0.50)) : min(0.10, max(0.04, firstStep * 0.35))),
-    );
+    for (int k = 0; k < count; k++) {
+      final double peak = _filteredSpikeTimes[k];
 
-    for (int k = 1; k < count; k++) {
-      final double tPrev = _filteredSpikeTimes[k - 1];
-      final double tCurr = _filteredSpikeTimes[k];
-      final double step = max(0.04, tCurr - tPrev);
+      // The CTC peak IS the end boundary of token k.
+      ends[k] = peak;
 
-      final String prevTok = _filteredTokens[k - 1];
-      final String currTok = _filteredTokens[k];
-
-      final bool isPrevSonorant = isMaddToken(prevTok) || isGhunnahToken(prevTok);
-      final bool isCurrSonorant = isMaddToken(currTok) || isGhunnahToken(currTok);
-
-      final bool isPrevShaddah = isShaddahToken(prevTok);
-      final bool isCurrShaddah = isShaddahToken(currTok);
-
-      final bool isPrevElongated = isPrevSonorant || isPrevShaddah;
-      final bool isCurrElongated = isCurrSonorant || isCurrShaddah;
-
-      // Check for inter-verse silence / breathing pause.
-      final double pauseThreshold =
-          (isPrevElongated || isCurrElongated) ? 1.50 : 0.90;
-      final bool isPause = step > pauseThreshold;
-
-      if (isPause) {
-        // Discontinuous pause: token k-1 releases, token k onsets after breath
-        ends[k - 1] =
-            tPrev + (isPrevElongated ? min(0.60, maxTokenDuration) : 0.10);
-        starts[k] = max(ends[k - 1], tCurr - (isCurrElongated ? 0.30 : 0.10));
+      if (k == 0) {
+        // First token: no previous peak. Estimate start from peak minus a small window.
+        starts[k] = max(0.0, peak - 0.16);
       } else {
-        // Continuous speech: strictly contiguous (ends[k-1] == starts[k] == boundary)
-        double boundary;
+        final double peakPrev = _filteredSpikeTimes[k - 1];
+        final double gap = peak - peakPrev;
 
-        if (isPrevSonorant && isCurrShaddah) {
-          // Madd/Ghunnah -> Shaddah: e.g. الضَّآلِّينَ (Madd into Shaddah للِ).
-          // Shaddah geminate closure must be preserved (~150-180ms before burst spike).
-          boundary = max(tPrev + 0.15, tCurr - min(0.18, step * 0.50));
-        } else if (isPrevShaddah && isCurrSonorant) {
-          // Shaddah -> Madd/Ghunnah: e.g. إِيَّاكَ (Shaddah into Madd اا).
-          // Shaddah releases and transfers into the vowel onset (~70-80ms).
-          boundary = tPrev + min(0.08, step * 0.35);
-        } else if (isPrevShaddah && !isCurrSonorant) {
-          // Shaddah -> Normal Consonant: e.g. رَبِّكَ (Shaddah into كَ).
-          // Shaddah burst & vowel sustain until ~50ms before next consonant closure.
-          boundary = tCurr - min(0.05, step * 0.25);
-        } else if (!isPrevSonorant && isCurrShaddah) {
-          // Normal Consonant/Vowel -> Shaddah: e.g. رَبِّ (رَ into Shaddah ببِ).
-          // Preceding short vowel releases quickly (~50ms); Shaddah gets the closure phase up to tCurr!
-          boundary = tPrev + min(0.06, step * 0.25);
-        } else if (!isPrevSonorant && isCurrSonorant) {
-          // Normal Consonant -> Madd: consonant ends at physical release (~50-60ms).
-          boundary = tPrev + min(0.06, step * 0.25);
-        } else if (isPrevSonorant && !isCurrSonorant) {
-          // Madd -> Normal Consonant: Madd sustains continuously until consonant closure (~50ms before peak).
-          boundary = tCurr - min(0.05, step * 0.25);
-        } else if (step > 0.16) {
-          // Normal Consonant -> Normal Consonant with elongated gap:
-          // A pre-spike acoustic closure (possible single-spike Shaddah uttered in audio).
-          // Preceding short vowel ends at ~50-60ms; succeeding consonant gets the closure hold!
-          boundary = tPrev + min(0.06, step * 0.25);
+        // Accurate acoustic pause detection:
+        // Prolonged vocalic sounds (Madd vowels) naturally span up to 3.5s without pausing.
+        // Geminated consonants (Shaddah) or nasal holds (Ghunnah) span up to 0.90s.
+        // Letters following a prolonged Madd or Waqf letter span up to 1.30s.
+        // A true inter-ayah breath pause is a substantial silence gap (> 1.25s).
+        final double pauseThreshold;
+        if (isMaddToken(_filteredTokens[k])) {
+          pauseThreshold = 3.50;
+        } else if (isShaddahToken(_filteredTokens[k]) ||
+            isGhunnahToken(_filteredTokens[k])) {
+          pauseThreshold = 0.90;
+        } else if (isMaddToken(_filteredTokens[k - 1]) ||
+            _filteredTokens[k - 1].length >= 2) {
+          pauseThreshold = 1.30;
         } else {
-          // Standard short consonant-to-consonant midpoint crossover
-          boundary = (tPrev + tCurr) * 0.5;
+          pauseThreshold = 1.25;
         }
 
-        // Safety clamp: boundary must strictly lie between the two peaks
-        final double lowerBound = min(tPrev, tCurr);
-        final double upperBound = max(tPrev, tCurr);
-        if (upperBound > lowerBound + 0.02) {
-          boundary = boundary.clamp(lowerBound + 0.01, upperBound - 0.01);
+        if (gap > pauseThreshold) {
+          // After a genuine breath pause: start is decoupled. Estimate onset before peak.
+          starts[k] = max(peakPrev + 0.04, peak - 0.16);
         } else {
-          boundary = (lowerBound + upperBound) * 0.5;
+          // Continuous articulation: start[k] = end[k-1] = peak[k-1]
+          starts[k] = peakPrev;
         }
-
-        ends[k - 1] = boundary;
-        starts[k] = boundary;
       }
+
+      // Duration = end - start
+      durs[k] = max(0.04, ends[k] - starts[k]);
     }
 
-    // Final token offset
-    final double lastStep = count > 1
-        ? _filteredSpikeTimes[count - 1] - _filteredSpikeTimes[count - 2]
-        : 0.20;
-    final bool isLastElongated = isElongatedToken(_filteredTokens[count - 1]);
-    ends[count - 1] = _filteredSpikeTimes[count - 1] +
-        (isLastElongated ? min(0.60, max(0.18, lastStep * 0.6)) : 0.10);
-
-    // Compute durations
-    for (int i = 0; i < count; i++) {
-      final double dur = ends[i] - starts[i];
-      _tokenDurations.add(dur.clamp(0.04, maxTokenDuration));
-      _tokenStarts.add(starts[i]);
-      _tokenEnds.add(ends[i]);
-    }
+    _tokenStarts.addAll(starts);
+    _tokenEnds.addAll(ends);
+    _tokenDurations.addAll(durs);
   }
 }

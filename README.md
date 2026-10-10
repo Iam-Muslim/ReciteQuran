@@ -198,7 +198,7 @@ When users recite, each word transitions through a clear 3-color state machine:
 | Color | Status | Condition in `WordMatchedEvent` | Meaning |
 | :--- | :---: | :--- | :--- |
 | 🟢 **Green** | **PASS** | `isRed == false && (tajweedErrors == null \|\| tajweedErrors.isEmpty)` | Pronounced correctly with valid Tajweed duration. |
-| 🟡 **Yellow** | **WARNING** | `isRed == false && tajweedErrors.isNotEmpty` | Correct word, but held Madd/Ghunnah too short (`defect`) or too long (`surplus`). |
+| 🟡 **Yellow** | **WARNING** | `isRed == false && tajweedErrors.isNotEmpty` | Correct word, but held Madd/Ghunnah too short (`underheld`) or too long (`overheld`). |
 | 🔴 **Red** | **FAIL** | `isRed == true` | Word was skipped or mispronounced (omission / substitution). |
 | ⚪ **Default** | **UNSPOKEN** | Not yet emitted by stream | Upcoming unrecited Quran text. |
 

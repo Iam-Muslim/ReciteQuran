@@ -1,9 +1,5 @@
 import "package:flutter_test/flutter_test.dart";
 import "package:recite_quran/recite_quran.dart";
-import "package:recite_quran/tracking/tajweed/error_explainer.dart";
-import "package:recite_quran/tracking/tajweed/tajweed_rules.dart";
-import "package:recite_quran/tracking/word/dictation_matcher.dart";
-import "package:recite_quran/tracking/word/dictation_sequencer.dart";
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -106,24 +102,24 @@ void main() {
   group("Tajweed Rules Mathematical Duration & Tolerance Tests", () {
     const hBase = 0.20; // Standard Harakah Base = 200ms
 
-    test("Rule 1: Normal Madd (المد الطبيعي) — 1.2 Harakat", () {
+    test("Rule 1: Normal Madd (المد الطبيعي) — 2 Harakat", () {
       const rule = NormalMaddRule();
       expect(rule.name.ar, "المد الطبيعي");
       expect(rule.name.en, "Normal Madd");
-      expect(rule.goldenLen, 1.2);
+      expect(rule.goldenLen, 2);
 
-      // Lower bound: min required duration is 0.70 * hBase = 140ms
+      // Lower bound: min required duration is 2 * 0.20 * 0.80 = 0.32s
       expect(rule.checkDurationStatus(0.00, hBase), TajweedDurationStatus.defect);
-      expect(rule.checkDurationStatus(0.10, hBase), TajweedDurationStatus.defect);
-      expect(rule.checkDurationStatus(0.05, hBase), TajweedDurationStatus.defect);
+      expect(rule.checkDurationStatus(0.15, hBase), TajweedDurationStatus.defect);
+      expect(rule.checkDurationStatus(0.28, hBase), TajweedDurationStatus.defect);
 
-      // Valid range: passes natural human recitation (140ms - 600ms)
-      expect(rule.checkDurationStatus(0.15, hBase), TajweedDurationStatus.valid);
-      expect(rule.checkDurationStatus(0.24, hBase), TajweedDurationStatus.valid);
+      // Valid range: passes natural human recitation (0.32s - 0.70s)
+      expect(rule.checkDurationStatus(0.35, hBase), TajweedDurationStatus.valid);
       expect(rule.checkDurationStatus(0.40, hBase), TajweedDurationStatus.valid);
+      expect(rule.checkDurationStatus(0.60, hBase), TajweedDurationStatus.valid);
 
       // Surplus: excessive elongation beyond +2.5 Harakat headroom
-      expect(rule.checkDurationStatus(0.90, hBase), TajweedDurationStatus.surplus);
+      expect(rule.checkDurationStatus(1.10, hBase), TajweedDurationStatus.surplus);
     });
 
     test("Rule 2: Monfasel Madd (المد المنفصل) — 4 Harakat", () {
@@ -165,28 +161,28 @@ void main() {
     });
 
     test("Rule 5: Aared Madd (المد العارض للسكون) — Qasr (2), Tawassut (4), Tool (6)", () {
-      const rule = AaredMaddRule();
-      expect(rule.name.ar, "المد العارض للسكون");
-      expect(rule.goldenLen, 4);
+      // 1. Normal recitation (Tawassut = 4 Harakat): req = 4 * 0.20 * 0.80 = 0.64s
+      const rule4 = AaredMaddRule(4);
+      expect(rule4.name.ar, "المد العارض للسكون");
+      expect(rule4.goldenLen, 4);
 
-      // Defect: shorter than allowed Qasr (0.70 * hBase = 140ms)
-      expect(rule.checkDurationStatus(0.00, hBase), TajweedDurationStatus.defect);
-      expect(rule.checkDurationStatus(0.10, hBase), TajweedDurationStatus.defect);
-      expect(rule.checkDurationStatus(0.13, hBase), TajweedDurationStatus.defect);
+      expect(rule4.checkDurationStatus(0.10, hBase), TajweedDurationStatus.defect);
+      expect(rule4.checkDurationStatus(0.35, hBase), TajweedDurationStatus.defect);
+      expect(rule4.checkDurationStatus(0.60, hBase), TajweedDurationStatus.defect);
+      expect(rule4.checkDurationStatus(0.80, hBase), TajweedDurationStatus.valid);
+      expect(rule4.checkDurationStatus(1.20, hBase), TajweedDurationStatus.valid);
+      expect(rule4.checkDurationStatus(1.60, hBase), TajweedDurationStatus.valid);
 
-      // 1. Qasr Face (2 Harakat ~ 0.40s, accepts >= 0.14s)
-      expect(rule.checkDurationStatus(0.20, hBase), TajweedDurationStatus.valid);
-      expect(rule.checkDurationStatus(0.35, hBase), TajweedDurationStatus.valid);
+      // 2. Fast recitation (Qasr = 2 Harakat): req = 2 * 0.20 * 0.80 = 0.32s
+      const rule2 = AaredMaddRule(2);
+      expect(rule2.checkDurationStatus(0.15, hBase), TajweedDurationStatus.defect);
+      expect(rule2.checkDurationStatus(0.35, hBase), TajweedDurationStatus.valid);
+      expect(rule2.checkDurationStatus(0.50, hBase), TajweedDurationStatus.valid);
 
-      // 2. Tawassut Face (4 Harakat ~ 0.80s)
-      expect(rule.checkDurationStatus(0.80, hBase), TajweedDurationStatus.valid);
-
-      // 3. Tool Face (6 Harakat ~ 1.20s - 1.80s)
-      expect(rule.checkDurationStatus(1.20, hBase), TajweedDurationStatus.valid);
-      expect(rule.checkDurationStatus(1.60, hBase), TajweedDurationStatus.valid);
-
-      // Surplus: exceeds Tool (6 * 0.20 = 1.2s) + 4 Harakat headroom (0.8s) = 2.0s
-      expect(rule.checkDurationStatus(2.10, hBase), TajweedDurationStatus.surplus);
+      // 3. Slow recitation (Tool = 6 Harakat): req = 6 * 0.20 * 0.80 = 0.96s
+      const rule6 = AaredMaddRule(6);
+      expect(rule6.checkDurationStatus(0.80, hBase), TajweedDurationStatus.defect);
+      expect(rule6.checkDurationStatus(1.20, hBase), TajweedDurationStatus.valid);
     });
 
     test("Rule 6: Lazem Madd (المد اللازم) — 6 Harakat", () {
@@ -235,33 +231,33 @@ void main() {
       expect(ruleNoon.checkDurationStatus(0.35, hBase), TajweedDurationStatus.valid);
       expect(ruleNoon.checkDurationStatus(0.50, hBase), TajweedDurationStatus.valid);
 
-      // Surplus: 0.32 + 2.5 * 0.20 (0.50) = 0.82s
-      expect(ruleNoon.checkDurationStatus(0.95, hBase), TajweedDurationStatus.surplus);
+      // Surplus: 0.32 + 3.5 * 0.20 (0.70) = 1.02s
+      expect(ruleNoon.checkDurationStatus(1.10, hBase), TajweedDurationStatus.surplus);
     });
 
-    test("Rule 9: Shaddah (الشدة) — Consonant closure holding", () {
+    test("Rule 9: Shaddah (الشدة) — Consonant closure holding (1.5 beats)", () {
       const rule = ShaddahRule();
       expect(rule.name.ar, "الشدة");
-      expect(rule.goldenLen, 1);
-      expect(rule.getRequiredDuration(hBase), closeTo(0.13, 0.001));
+      expect(rule.goldenLen, 1.5);
+      expect(rule.getRequiredDuration(hBase), closeTo(0.30, 0.001));
 
-      // 20% margin: req = 0.13 * 0.80 = 0.104s
+      // 20% margin: req = 0.30 * 0.80 = 0.24s
       expect(rule.checkDurationStatus(0.08, hBase), TajweedDurationStatus.defect);
-      expect(rule.checkDurationStatus(0.12, hBase), TajweedDurationStatus.valid);
+      expect(rule.checkDurationStatus(0.18, hBase), TajweedDurationStatus.defect);
       expect(rule.checkDurationStatus(0.25, hBase), TajweedDurationStatus.valid);
       expect(rule.checkDurationStatus(0.45, hBase), TajweedDurationStatus.valid);
     });
 
     test("Adaptive tempo scaling (Fast Hadr vs Slow Tahqiq)", () {
-      const aared = AaredMaddRule();
+      // Fast recitation (Hadr): 2 Harakat, hBase = 120ms -> req = 2 * 0.12 * 0.80 = 0.192s
+      const aaredFast = AaredMaddRule(2);
+      expect(aaredFast.checkDurationStatus(0.15, 0.12), TajweedDurationStatus.defect);
+      expect(aaredFast.checkDurationStatus(0.22, 0.12), TajweedDurationStatus.valid);
 
-      // Fast recitation (Hadr): hBase = 150ms
-      expect(aared.checkDurationStatus(0.11, 0.15), TajweedDurationStatus.valid);
-      expect(aared.checkDurationStatus(0.08, 0.15), TajweedDurationStatus.defect);
-
-      // Slow recitation (Tahqiq): hBase = 250ms
-      expect(aared.checkDurationStatus(0.20, 0.25), TajweedDurationStatus.valid);
-      expect(aared.checkDurationStatus(0.12, 0.25), TajweedDurationStatus.defect);
+      // Slow recitation (Tahqiq): 6 Harakat, hBase = 180ms -> req = 6 * 0.18 * 0.80 = 0.864s
+      const aaredSlow = AaredMaddRule(6);
+      expect(aaredSlow.checkDurationStatus(0.70, 0.18), TajweedDurationStatus.defect);
+      expect(aaredSlow.checkDurationStatus(0.95, 0.18), TajweedDurationStatus.valid);
     });
   });
 

@@ -1,8 +1,6 @@
 import "dart:convert";
 import "dart:io";
 import "package:flutter_test/flutter_test.dart";
-import "package:recite_quran/data/qiraat_ayah_mapper.dart";
-import "package:recite_quran/data/quran_data.dart";
 import "package:recite_quran/recite_quran.dart";
 
 void main() {
