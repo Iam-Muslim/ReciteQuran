@@ -43,7 +43,7 @@ class ModelDownloader {
     stdout.writeln('====================================================');
     stdout.writeln(' 📖 ReciteQuran Model Asset Downloader');
     stdout.writeln('====================================================');
-    stdout.writeln('🌐 Downloading ONNX model...');
+    stdout.writeln('  Downloading ONNX model...');
     stdout.writeln('   Source: $remoteModelUrl');
     stdout.writeln('   Target: assets/model/$defaultModelFileName');
 
@@ -94,11 +94,14 @@ class ModelDownloader {
         if (totalBytes > 0) {
           final double progress = receivedBytes / totalBytes;
           final int barWidth = 30;
-          final int filledWidth = (progress * barWidth).clamp(0, barWidth).toInt();
+          final int filledWidth =
+              (progress * barWidth).clamp(0, barWidth).toInt();
           final String bar = '█' * filledWidth + '░' * (barWidth - filledWidth);
           final String percent = (progress * 100).toStringAsFixed(1).padLeft(5);
-          final String mbReceived = (receivedBytes / (1024 * 1024)).toStringAsFixed(1);
-          final String mbTotal = (totalBytes / (1024 * 1024)).toStringAsFixed(1);
+          final String mbReceived =
+              (receivedBytes / (1024 * 1024)).toStringAsFixed(1);
+          final String mbTotal =
+              (totalBytes / (1024 * 1024)).toStringAsFixed(1);
 
           stdout.write('\r   [$bar] $percent% ($mbReceived MB / $mbTotal MB)');
         }
@@ -113,8 +116,10 @@ class ModelDownloader {
       }
       await tempFile.rename(targetFile.path);
 
-      final String finalMb = ((await targetFile.length()) / (1024 * 1024)).toStringAsFixed(1);
-      stdout.writeln(' Model saved ($finalMb MB) -> assets/model/$defaultModelFileName');
+      final String finalMb =
+          ((await targetFile.length()) / (1024 * 1024)).toStringAsFixed(1);
+      stdout.writeln(
+          ' Model saved ($finalMb MB) -> assets/model/$defaultModelFileName');
     } catch (e) {
       if (await tempFile.exists()) {
         await tempFile.delete();

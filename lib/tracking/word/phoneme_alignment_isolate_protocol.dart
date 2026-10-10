@@ -66,8 +66,9 @@ sealed class IsolateCommand {
                 RecitationSpeed.fromName(map['recitationSpeed'] as String?),
             matchingStrictness:
                 MatchingStrictness.fromName(map['matchingStrictness'] as String?),
-            autoReanchorOverride: map['enableAutoReanchor'] as bool?,
-            reanchorThresholdOverride: map['reanchorStallThreshold'] as int?,
+            enableEarlyMatching: map['enableEarlyMatching'] as bool? ?? true,
+            enableAutoReanchor: map['enableAutoReanchor'] as bool? ?? false,
+            reanchorStallThreshold: map['reanchorStallThreshold'] as int? ?? 24,
           ),
         );
 
@@ -168,8 +169,9 @@ class UpdateTrackerConfigCommand extends IsolateCommand {
     'command': 'update_config',
     'recitationSpeed': config.recitationSpeed.name,
     'matchingStrictness': config.matchingStrictness.name,
-    'enableAutoReanchor': config.autoReanchorOverride,
-    'reanchorStallThreshold': config.reanchorThresholdOverride,
+    'enableEarlyMatching': config.enableEarlyMatching,
+    'enableAutoReanchor': config.enableAutoReanchor,
+    'reanchorStallThreshold': config.reanchorStallThreshold,
   };
 }
 

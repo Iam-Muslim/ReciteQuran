@@ -34,6 +34,7 @@ class DictationSequencer {
   int _trimmedOffset = 0;
   String? _pendingTail;
   int _lastReanchorAttemptOffset = -1;
+  int _lastReanchorAttemptLen = -1;
 
   // ── Tracking ──
   int targetWordCursor = 0;
@@ -85,6 +86,7 @@ class DictationSequencer {
     _trimmedOffset = 0;
     _pendingTail = null;
     _lastReanchorAttemptOffset = -1;
+    _lastReanchorAttemptLen = -1;
 
     if (cmd.forceClear) {
       currentSegmentAsrText = '';
@@ -111,6 +113,7 @@ class DictationSequencer {
     _trimmedOffset = 0;
     _pendingTail = null;
     _lastReanchorAttemptOffset = -1;
+    _lastReanchorAttemptLen = -1;
     lastMatchedPhoneme = null;
     committedGreenWords.removeWhere((w) => w >= targetWordCursor);
     committedRedWords.removeWhere((w) => w >= targetWordCursor);
@@ -125,6 +128,7 @@ class DictationSequencer {
       _trimmedOffset = 0;
       _pendingTail = null;
       _lastReanchorAttemptOffset = -1;
+      _lastReanchorAttemptLen = -1;
       debugLog('🔄 New segment');
     }
     currentSegmentAsrText = cmd.asrText.substring(_trimmedOffset);
@@ -253,6 +257,7 @@ class DictationSequencer {
               targetWordCursor = endW + 1;
               matched = true;
               _lastReanchorAttemptOffset = -1;
+              _lastReanchorAttemptLen = -1;
 
               // ─────────────────────────────────────────────────────────────────
               // [EARLY MATCHING - TAIL RESERVATION: START]
@@ -348,24 +353,17 @@ class DictationSequencer {
     return found.clamp(0, _wordCount);
   }
 
-  void _attemptAutoReanchor() {
-    if (!config.enableAutoReanchor || isTajweed) return;
-    if (wordBoundaries.isEmpty || fullPhonemes.isEmpty) return;
+  ({int wordIndex, int dist, int probeOffset})? _probeQueryWindow(
+    String queryText,
+    int offset,
+  ) {
+    final int qLen = queryText.length;
+    if (qLen < min(18, config.reanchorStallThreshold)) return null;
 
-    final int unconsumedLen = currentSegmentAsrText.length - asrCharAnchor;
-    if (unconsumedLen < config.reanchorStallThreshold) return;
-
-    if (_lastReanchorAttemptOffset == asrCharAnchor) return;
-    _lastReanchorAttemptOffset = asrCharAnchor;
-
-    final String rawQuery = currentSegmentAsrText.substring(asrCharAnchor);
-    final int queryLen = min(36, rawQuery.length);
-    final String query = rawQuery.substring(0, queryLen);
-
-    final int maxDist = (queryLen * 0.22).toInt();
+    final int maxDist = (qLen * 0.22).toInt();
     final List<FuzzyMatch> matches =
-        findNearMatches(query, fullPhonemes, maxDist);
-    if (matches.isEmpty) return;
+        findNearMatches(queryText, fullPhonemes, maxDist);
+    if (matches.isEmpty) return null;
 
     final List<({int wordIndex, int dist})> candidateWords = [];
     for (final m in matches) {
@@ -374,28 +372,82 @@ class DictationSequencer {
         candidateWords.add((wordIndex: w, dist: m.dist));
       }
     }
-    if (candidateWords.isEmpty) return;
+    if (candidateWords.isEmpty) return null;
 
-    candidateWords.sort((a, b) => a.dist.compareTo(b.dist));
+    // Sort primarily by edit distance.
+    // If edit distances are tied, prioritize forward progression (w > targetWordCursor)
+    // and proximity to the current cursor.
+    candidateWords.sort((a, b) {
+      if (a.dist != b.dist) return a.dist.compareTo(b.dist);
+      final bool aForward = a.wordIndex > targetWordCursor;
+      final bool bForward = b.wordIndex > targetWordCursor;
+      if (aForward != bForward) return aForward ? -1 : 1;
+      return (a.wordIndex - targetWordCursor)
+          .abs()
+          .compareTo((b.wordIndex - targetWordCursor).abs());
+    });
     final best = candidateWords[0];
 
     // Anti-Ambiguity / Mutashabihat Guard:
-    // If there is another distinct candidate with a close edit distance, suppress jump.
+    // If there is another candidate at a distant verse (> 2 words apart) with a close
+    // edit distance (< 3), it is an ambiguous refrain/verse. Suppress the jump!
     for (int i = 1; i < candidateWords.length; i++) {
       final c = candidateWords[i];
-      if (c.wordIndex != best.wordIndex && (c.dist - best.dist) < 3) {
+      if ((c.wordIndex - best.wordIndex).abs() > 2 && (c.dist - best.dist) < 3) {
         debugLog(
           '⚠️ [RE-ANCHOR AMBIGUITY] Suppressed jump between word ${best.wordIndex} (dist ${best.dist}) and ${c.wordIndex} (dist ${c.dist})',
         );
-        return;
+        return null;
       }
     }
 
+    return (wordIndex: best.wordIndex, dist: best.dist, probeOffset: offset);
+  }
+
+  void _attemptAutoReanchor() {
+    if (!config.enableAutoReanchor || isTajweed) return;
+    if (wordBoundaries.isEmpty || fullPhonemes.isEmpty) return;
+
+    final int unconsumedLen = currentSegmentAsrText.length - asrCharAnchor;
+    if (unconsumedLen < config.reanchorStallThreshold) return;
+
+    final int currentTotalLen = currentSegmentAsrText.length;
+    if (_lastReanchorAttemptOffset == asrCharAnchor &&
+        _lastReanchorAttemptLen == currentTotalLen) {
+      return;
+    }
+    _lastReanchorAttemptOffset = asrCharAnchor;
+    _lastReanchorAttemptLen = currentTotalLen;
+
+    final String rawQuery = currentSegmentAsrText.substring(asrCharAnchor);
+
+    // 1. Try full unconsumed query (up to 64 chars, Myers bit-parallel single-word limit)
+    // When reciter continues past an ambiguous refrain, the combined multi-verse query
+    // resolves the ambiguity uniquely with 100% precision!
+    final int fullLen = min(64, rawQuery.length);
+    var result = _probeQueryWindow(rawQuery.substring(0, fullLen), 0);
+
+    // 2. If full query is ambiguous or no match, try standard front window (first 36 chars)
+    if (result == null && fullLen > 36) {
+      result = _probeQueryWindow(rawQuery.substring(0, 36), 0);
+    }
+
+    // 3. If front is ambiguous or no match, and buffer has accumulated more speech,
+    // probe the latest tail window (~28 chars) where the reciter is currently speaking!
+    if (result == null && rawQuery.length > 28) {
+      final int tailLen = min(28, rawQuery.length);
+      final int tailOffset = rawQuery.length - tailLen;
+      result = _probeQueryWindow(rawQuery.substring(tailOffset), tailOffset);
+    }
+
+    if (result == null) return;
+
     debugLog(
-      '⚓ [AUTO RE-ANCHOR] Stalled at word $targetWordCursor -> Re-anchoring to word ${best.wordIndex} (dist: ${best.dist})',
+      '⚓ [AUTO RE-ANCHOR] Stalled at word $targetWordCursor -> Re-anchoring to word ${result.wordIndex} (dist: ${result.dist}, offset: ${result.probeOffset})',
     );
 
-    targetWordCursor = best.wordIndex;
+    asrCharAnchor += result.probeOffset;
+    targetWordCursor = result.wordIndex;
     _pendingTail = null;
     lastMatchedPhoneme = null;
     committedGreenWords.removeWhere((w) => w >= targetWordCursor);

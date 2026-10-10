@@ -13,6 +13,13 @@ platforms:
   linux:
   web:
 
+topics:
+  - quran
+  - audio
+  - speech-to-text
+  - tajweed
+  - ai
+
 environment:
   sdk: ^3.5.0
   flutter: ">=3.24.0"

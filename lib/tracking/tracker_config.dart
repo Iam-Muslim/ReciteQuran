@@ -150,28 +150,6 @@ enum MatchingStrictness {
         MatchingStrictness.hard => false,
       };
 
-  /// Whether to enable early word committing when Tajweed mode is off.
-  bool get enableEarlyMatching => switch (this) {
-        MatchingStrictness.easy => true,
-        MatchingStrictness.normal => true,
-        MatchingStrictness.hard => false,
-      };
-
-  /// Whether to automatically re-anchor and recover tracking when the reciter
-  /// skips ahead or jumps verses in Dictation mode (always disabled in Tajweed mode).
-  bool get enableAutoReanchor => switch (this) {
-        MatchingStrictness.easy => true,
-        MatchingStrictness.normal => true,
-        MatchingStrictness.hard => false,
-      };
-
-  /// Minimum unconsumed phonetic tokens required to declare a tracking stall.
-  int get reanchorStallThreshold => switch (this) {
-        MatchingStrictness.easy => 20,
-        MatchingStrictness.normal => 24,
-        MatchingStrictness.hard => 30,
-      };
-
   /// Resolves strictness from string identifier (with fallback to [normal]).
   static MatchingStrictness fromName(String? name) {
     if (name == null) return MatchingStrictness.normal;
@@ -188,11 +166,6 @@ enum MatchingStrictness {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Unified immutable configuration for recitation tracking and Tajweed evaluation.
-///
-/// Designed with primary controls for application UI and settings:
-/// 1. [recitationSpeed]: Controls Tajweed Harakat lengths (fast, normal, slow).
-/// 2. [matchingStrictness]: Controls ASR word matching acceptance hardness (easy, normal, hard).
-/// 3. [autoReanchorOverride]: Allows explicit toggle for loss-of-tracking recovery in Dictation mode.
 @immutable
 class TrackerConfig {
   /// Recitation speed / pacing (مراتب التلاوة: الحدر، التدوير، التحقيق).
@@ -201,44 +174,66 @@ class TrackerConfig {
   /// Word matching hardness / strictness (مرن، معياري، دقيق).
   final MatchingStrictness matchingStrictness;
 
-  /// Explicit override for auto re-anchoring in Dictation mode (null = follows strictness).
-  final bool? autoReanchorOverride;
+  /// Whether to commit words early before reciter finishes trailing vowels/letters in Dictation mode.
+  final bool enableEarlyMatching;
 
-  /// Explicit override for re-anchor stall phoneme threshold (null = follows strictness).
-  final int? reanchorThresholdOverride;
+  /// Whether to automatically re-anchor and recover tracking when the reciter skips ahead in Dictation mode.
+  final bool enableAutoReanchor;
+
+  /// Minimum unconsumed phonetic tokens required to declare a tracking stall (default: 24).
+  final int reanchorStallThreshold;
 
   const TrackerConfig({
     this.recitationSpeed = RecitationSpeed.normal,
     this.matchingStrictness = MatchingStrictness.normal,
-    this.autoReanchorOverride,
-    this.reanchorThresholdOverride,
+    this.enableEarlyMatching = true,
+    this.enableAutoReanchor = false,
+    this.reanchorStallThreshold = 24,
   });
 
   /// Standard baseline configuration (Tadweer pacing + Balanced matching).
   factory TrackerConfig.normal({
     RecitationSpeed speed = RecitationSpeed.normal,
+    bool enableEarlyMatching = true,
+    bool enableAutoReanchor = false,
+    int reanchorStallThreshold = 24,
   }) =>
       TrackerConfig(
         recitationSpeed: speed,
         matchingStrictness: MatchingStrictness.normal,
+        enableEarlyMatching: enableEarlyMatching,
+        enableAutoReanchor: enableAutoReanchor,
+        reanchorStallThreshold: reanchorStallThreshold,
       );
 
   /// Easy mode for beginners, children, or noisy microphones.
   factory TrackerConfig.easy({
     RecitationSpeed speed = RecitationSpeed.fast,
+    bool enableEarlyMatching = true,
+    bool enableAutoReanchor = false,
+    int reanchorStallThreshold = 20,
   }) =>
       TrackerConfig(
         recitationSpeed: speed,
         matchingStrictness: MatchingStrictness.easy,
+        enableEarlyMatching: enableEarlyMatching,
+        enableAutoReanchor: enableAutoReanchor,
+        reanchorStallThreshold: reanchorStallThreshold,
       );
 
   /// Strict mode for advanced reciters, exams, or Tajweed certification.
   factory TrackerConfig.strict({
     RecitationSpeed speed = RecitationSpeed.slow,
+    bool enableEarlyMatching = false,
+    bool enableAutoReanchor = false,
+    int reanchorStallThreshold = 30,
   }) =>
       TrackerConfig(
         recitationSpeed: speed,
         matchingStrictness: MatchingStrictness.hard,
+        enableEarlyMatching: enableEarlyMatching,
+        enableAutoReanchor: enableAutoReanchor,
+        reanchorStallThreshold: reanchorStallThreshold,
       );
 
   // ── Delegated ASR Thresholds from [matchingStrictness] ──
@@ -252,24 +247,21 @@ class TrackerConfig {
   double get maxTokenDurationAllowed =>
       matchingStrictness.maxTokenDurationAllowed;
   bool get hideExpectedAsrNoise => matchingStrictness.hideExpectedAsrNoise;
-  bool get enableEarlyMatching => matchingStrictness.enableEarlyMatching;
-  bool get enableAutoReanchor =>
-      autoReanchorOverride ?? matchingStrictness.enableAutoReanchor;
-  int get reanchorStallThreshold =>
-      reanchorThresholdOverride ?? matchingStrictness.reanchorStallThreshold;
 
   TrackerConfig copyWith({
     RecitationSpeed? recitationSpeed,
     MatchingStrictness? matchingStrictness,
+    bool? enableEarlyMatching,
     bool? enableAutoReanchor,
     int? reanchorStallThreshold,
   }) {
     return TrackerConfig(
       recitationSpeed: recitationSpeed ?? this.recitationSpeed,
       matchingStrictness: matchingStrictness ?? this.matchingStrictness,
-      autoReanchorOverride: enableAutoReanchor ?? autoReanchorOverride,
-      reanchorThresholdOverride:
-          reanchorStallThreshold ?? reanchorThresholdOverride,
+      enableEarlyMatching: enableEarlyMatching ?? this.enableEarlyMatching,
+      enableAutoReanchor: enableAutoReanchor ?? this.enableAutoReanchor,
+      reanchorStallThreshold:
+          reanchorStallThreshold ?? this.reanchorStallThreshold,
     );
   }
 }

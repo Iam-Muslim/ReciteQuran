@@ -1,5 +1,6 @@
 ## 1.0.4
 
+* **FEAT (Dictation & Loss-of-Tracking Recovery)**: Added `enableAutoReanchor` and `enableEarlyMatching` to `TrackerConfig` with Multi-Stage Window Probing and the Anti-Ambiguity Guard ($\Delta\text{dist} < 3$) preventing false jumps across repeated refrains (Surah Ar-Rahman).
 * **FEAT (Tajweed Engine)**: Complete overhaul of the acoustic verification engine with a strict compile-time `AcousticThreshold` matrix across all recitation speeds (`Tahqiq`/`Tartil`, `Tadweer`, `Hadr`).
 * **FEAT (Tajweed)**: Multi-Madd span matching support (e.g. Lazem + Aared in "الضَّآلِّينَ") and legitimate Aared Madd Qasr/Tawassut/Tool allowance.
 * **FEAT (Tajweed)**: Pro-rated character duration distribution for multi-phoneme ASR CTC spikes, zero-duration safety shields, and glyph equivalence matching in `PhoneticCostEngine`.
@@ -9,7 +10,8 @@
 * **FEAT (Omission Detection)**: Added `LcsOmissionDetector` and `OmissionResult` using the 2-row dynamic-programming Best-Drop LCS algorithm (derived from `tasmee3-muaalem-findings` benchmark research) for precise word omission localization.
 * **FEAT (Assets & Networking)**: Built-in `ModelDownloader` for streaming on-demand neural model download (~72 MB), keeping initial app download size under 25 MB.
 * **FEAT (Voice Navigation)**: Overhauled `VoiceSearchController` with real-time candidate Ayah streaming (`onSearchResult`, `currentResult`), progressive narrowing auto-jump, Mutashabihat (متشابهات) disambiguation, and `AyahSearchMatch` metadata enrichment.
-* **DOC**: Added complete production application integration guide in `doc/APP_INTEGRATION_GUIDE.md` and enriched `README.md` with drop-in vs. custom UI guides.
+* **DOC**: Added 12 comprehensive modular engineering guides in `doc/` covering Dictation, Tajweed, Voice Search, Tarteel-style Memorization Mode, Production Audio Pipeline, Mus'haf UI & Typography, Multi-Riwayah, Neural Model Deployment, API Reference Cheat Sheet, and Troubleshooting FAQ.
+* **TEST**: Added regression test suite `test/auto_reanchor_test.dart` covering 5 critical scenarios.
 ## 1.0.3
 
 * **FEAT**: Enabled official platform classification for Windows and Linux on pub.dev.

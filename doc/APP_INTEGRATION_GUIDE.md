@@ -4,6 +4,23 @@ This comprehensive guide walks through the architectural patterns, state managem
 
 ---
 
+### 📚 Dedicated Technical Documentation Suite
+
+For deep, specialized architectural specifications on individual engine features, refer to the dedicated guides:
+
+| Specialized Guide | Focus Area |
+| :--- | :--- |
+| 📖 [**Dictation Integration Guide**](DICTATION_SYSTEM_GUIDE.md) | Hands-free page reading, Early Matching, Auto Re-anchoring, 2D DP matrix |
+|      [**Tajweed Verification Guide**](TAJWEED_GUIDE.md) | Madd rules, Ghunnah, Shaddah, speed calibration, `ErrorExplainer` |
+| 🎙️ [**Voice Search Guide**](VOICE_SEARCH_GUIDE.md) | "Recite to Navigate", 6,236 Ayah Myers bit-parallel search, candidate modal |
+| 🧠 [**Memorization & Mistake Detection Guide**](MEMORIZATION_MODE_GUIDE.md) | Tarteel-style Hifdh testing, hidden words, progressive reveal, `LcsOmissionDetector` |
+| 🎧 [**Production Audio Pipeline Guide**](AUDIO_PIPELINE_GUIDE.md) | 16kHz Float32 streaming, bypassing DSP filters, interruption handling, permissions |
+| 📜 [**Interactive Mus'haf UI & Layout Guide**](MUSHAF_UI_GUIDE.md) | 15-line Madani layout, Uthmanic fonts, line centering, auto page turns |
+|     [**Multi-Riwayah Guide**](RIWAYAH_GUIDE.md) | 20 Mutawatir Rawis, 6 counting traditions, `QiraatAyahMapper` |
+| 📦 [**Model & Assets Guide**](MODEL_DOWNLOAD_GUIDE.md) | On-demand 69MB download vs manual bundling, offline caching |
+
+---
+
 ## 📑 Table of Contents
 
 1. [Architectural Overview](#1-architectural-overview)
@@ -110,8 +127,10 @@ Future<ReciteQuran> setupRecitationEngine({
   final tracker = ReciteQuran(
     repository: repository,
     engine: engine,
-    config: TrackerConfig.normal(),
-    isTajweed: true,
+    config: TrackerConfig.normal(
+      enableAutoReanchor: true, // Strongly recommended: auto-recovers position hands-free!
+    ),
+    isTajweed: false, // Reading / Tilawah mode
   );
 
   await tracker.initialize();
@@ -557,11 +576,15 @@ class _QuranTrackerPageState extends State<QuranTrackerPage> {
     await _repository.loadSurahAsync(1);
     _words = _repository.getSurahWords(1);
 
-    // 2. Initialize tracking engine
+    // 2. Initialize tracking engine (enableAutoReanchor is strongly recommended for reader apps!)
     _tracker = ReciteQuran(
       repository: _repository,
-      config: TrackerConfig.normal(),
-      isTajweed: true,
+      config: const TrackerConfig(
+        enableEarlyMatching: true,
+        enableAutoReanchor: true, // Strongly recommended: auto-recovers position hands-free!
+        reanchorStallThreshold: 24,
+      ),
+      isTajweed: false, // Set false for reading / dictation (enables auto re-anchor); set true for Tajweed exam
     );
 
     await _tracker!.initialize();
