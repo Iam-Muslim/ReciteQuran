@@ -18,26 +18,10 @@ import 'dart:math';
 class TajweedTimingConfig {
   /// Standard duration of a single Harakah (vowel beat unit) in seconds (150ms).
   /// Aligned with Sheikh Mahmoud Khalil Al-Husary's canonical Murattal/Tadweer pacing:
-  ///   - 2 Harakat (Normal Madd / Ghunnah) = ~0.30s (range ~0.24s - 0.45s)
-  ///   - 4 Harakat (Madd Aared Tawassut)  = ~0.60s (range ~0.50s - 0.85s)
-  ///   - 6 Harakat (Madd Lazem Ishba')    = ~0.90s (range ~0.78s - 1.20s)
+  ///   - 2 Harakat (Normal Madd / Ghunnah) = ~0.30s (range ~0.16s - 0.40s)
+  ///   - 4 Harakat (Madd Aared Tawassut)  = ~0.60s (range ~0.50s - 1.80s at Waqf)
+  ///   - 6 Harakat (Madd Lazem Ishba')    = ~0.90s - 1.20s (range ~0.80s - 3.80s)
   static const double harakahBaseSeconds = 0.15;
-
-  /// Tolerance factor below nominal duration before flagging underheld (20% tempo margin).
-  static const double underheldToleranceFactor = 0.80;
-
-  /// Headroom in Harakat allowed above target duration for short rules (<= 2 Harakat)
-  /// to allow natural deliberate Tartil holding without false overheld flags.
-  static const double shortRuleHeadroomHarakat = 3.5;
-
-  /// Headroom in Harakat allowed above target duration for long rules (> 2 Harakat).
-  static const double longRuleHeadroomHarakat = 4.0;
-
-  /// Headroom in Harakat allowed for Waqf pause elongation (Madd Aared & Leen).
-  static const double waqfHeadroomHarakat = 3.0;
-
-  /// Headroom in Harakat allowed for deliberate Tartil Shaddah holds.
-  static const double shaddahHeadroomHarakat = 4.5;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -73,10 +57,12 @@ abstract class TajweedRule {
     required this.goldenLen,
   });
 
-  /// Headroom in Harakat allowed above target duration before sound is flagged overheld.
-  double get headroomHarakat => (goldenLen <= 2)
-      ? TajweedTimingConfig.shortRuleHeadroomHarakat
-      : TajweedTimingConfig.longRuleHeadroomHarakat;
+  /// The minimum tempo tolerance factor below nominal duration before flagging [underheld].
+  /// Default across Tajweed rules is 0.80 (allowing 20% tempo variation).
+  double get minToleranceFactor => 0.80;
+
+  /// Headroom in Harakat allowed above target duration before flagging [overheld].
+  double get maxHeadroomHarakat => (goldenLen <= 2) ? 3.5 : 4.0;
 
   /// Calculates exact required acoustic duration in seconds = goldenLen * harakahBase.
   double getRequiredDuration(
@@ -107,9 +93,8 @@ abstract class TajweedRule {
     }
     if (goldenLen <= 0) return TajweedDurationStatus.valid;
 
-    // Allow a 20% tempo & acoustic transmission tolerance margin on the required duration
-    final double req = getRequiredDuration(harakahBase) *
-        TajweedTimingConfig.underheldToleranceFactor;
+    // Minimum required threshold based on rule tolerance
+    final double req = getRequiredDuration(harakahBase) * minToleranceFactor;
 
     // 1. Underheld: Reciter held less than the required Harakat duration (minus margin)
     if (durationSeconds < req) {
@@ -117,7 +102,7 @@ abstract class TajweedRule {
     }
 
     // 2. Overheld: Reciter held beyond the target duration plus allowable headroom
-    final double maxAllowedSeconds = req + (headroomHarakat * harakahBase);
+    final double maxAllowedSeconds = req + (maxHeadroomHarakat * harakahBase);
 
     if (durationSeconds > maxAllowedSeconds) {
       return TajweedDurationStatus.overheld;
@@ -136,6 +121,14 @@ class MaddRule extends TajweedRule {
     required super.name,
     required super.goldenLen,
   });
+
+  /// Madd vowels allow natural connected elongation tolerance:
+  /// - 2 Harakat Madds (Normal Madd, or Monfasel / Aared / Leen with Qasr in fast mode):
+  ///   factor = 0.50 (minimum ~0.12s in fast, ~0.15s in normal).
+  /// - Multiple Harakat Madds (4, 5, 6 Harakat):
+  ///   factor = 0.75 (strictly requires prolonged vowel: ~0.36s for 4h fast, ~0.54s for 6h fast).
+  @override
+  double get minToleranceFactor => (goldenLen <= 2) ? 0.50 : 0.75;
 }
 
 /// ── 3.1 Normal Madd (`المد الطبيعي`) — 2 Harakat (0.30s) ──
@@ -186,6 +179,10 @@ abstract class VariableWaqfMaddRule extends MaddRule {
     required super.goldenLen,
   });
 
+  /// Accommodates natural Waqf breath deceleration and Ishba' pause boundary (~1.8s - 2.1s).
+  @override
+  double get maxHeadroomHarakat => 8.0;
+
   @override
   TajweedDurationStatus checkDurationStatus(
     double durationSeconds, [
@@ -199,14 +196,14 @@ abstract class VariableWaqfMaddRule extends MaddRule {
     if (goldenLen <= 0) return TajweedDurationStatus.valid;
 
     // Minimum required duration strictly enforced by configured speed / Harakat count:
-    final double req = goldenLen * harakahBase * TajweedTimingConfig.underheldToleranceFactor;
+    final double req = goldenLen * harakahBase * minToleranceFactor;
     if (durationSeconds < req) {
       return TajweedDurationStatus.underheld;
     }
 
     // Upper bound tolerance: allows legitimate Waqf holding up to Tool (6 Harakat) + waqf headroom
     final double maxAllowed = (max(goldenLen.toDouble(), 6.0) * harakahBase) +
-        (TajweedTimingConfig.waqfHeadroomHarakat * harakahBase);
+        (maxHeadroomHarakat * harakahBase);
     if (durationSeconds > maxAllowed) {
       return TajweedDurationStatus.overheld;
     }
@@ -235,6 +232,11 @@ class LazemMaddRule extends MaddRule {
           name: const LangName(ar: "المد اللازم", en: "Lazem Madd"),
           goldenLen: 6,
         );
+
+  /// In Tajweed, Al-Madd Al-Lazem is held with reverberating Tartil resonance
+  /// (Ishba' / إشباع, ~2.0s - 3.8s) and is never penalized for prolonged Ishba'.
+  @override
+  double get maxHeadroomHarakat => 20.0;
 }
 
 /// ── 3.7 Leen Madd (`مد اللين`) ──
@@ -262,6 +264,10 @@ class MushaddadGhunnahRule extends TajweedRule {
           goldenLen: 2,
         );
 
+  /// Ghunnah in Hadr/Tadweer allows 75% tempo tolerance (0.18s in fast, 0.225s in normal).
+  @override
+  double get minToleranceFactor => 0.75;
+
   factory MushaddadGhunnahRule.withNames({
     required String nameAr,
     required String nameEn,
@@ -284,6 +290,7 @@ class ShaddahRule extends TajweedRule {
           goldenLen: 1.5,
         );
 
+  /// Deliberate Tartil gemination holding up to ~0.85s.
   @override
-  double get headroomHarakat => TajweedTimingConfig.shaddahHeadroomHarakat;
+  double get maxHeadroomHarakat => 4.5;
 }
