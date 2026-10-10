@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +15,103 @@ class _SearchArgs {
 
 List<FuzzyMatch> _runSearchIsolated(_SearchArgs args) {
   return findNearMatches(args.normQuery, args.refPhNorm, args.maxEdits);
+}
+
+/// Long-lived background Isolate worker for zero-serialization fuzzy phonetic searches.
+/// Holds the 623k reference string in isolate memory once at startup, eliminating
+/// high GC and SendPort string copying on every real-time ASR chunk.
+class _PhoneticIsolateWorker {
+  Isolate? _isolate;
+  SendPort? _sendPort;
+  ReceivePort? _responsePort;
+  int _requestId = 0;
+  final Map<int, Completer<List<FuzzyMatch>>> _pendingRequests = {};
+  bool _isReady = false;
+
+  bool get isReady => _isReady;
+
+  Future<void> start(String refPhNorm) async {
+    if (_isReady) return;
+    if (kIsWeb) return;
+
+    try {
+      final initPort = ReceivePort();
+      _responsePort = ReceivePort();
+
+      _isolate = await Isolate.spawn(
+        _phoneticWorkerEntrypoint,
+        [initPort.sendPort, _responsePort!.sendPort, refPhNorm],
+      );
+
+      _sendPort = await initPort.first as SendPort;
+      initPort.close();
+
+      _responsePort!.listen((message) {
+        if (message is List && message.length == 2) {
+          final int reqId = message[0] as int;
+          final List<FuzzyMatch> matches = message[1] as List<FuzzyMatch>;
+          final completer = _pendingRequests.remove(reqId);
+          completer?.complete(matches);
+        }
+      });
+
+      _isReady = true;
+    } catch (_) {
+      _isReady = false;
+    }
+  }
+
+  Future<List<FuzzyMatch>> search(String query, int maxEdits) {
+    if (!_isReady || _sendPort == null) {
+      return Future.value(const []);
+    }
+    final int reqId = ++_requestId;
+    final completer = Completer<List<FuzzyMatch>>();
+    _pendingRequests[reqId] = completer;
+    _sendPort!.send([reqId, query, maxEdits]);
+    return completer.future.timeout(
+      const Duration(milliseconds: 1500),
+      onTimeout: () => const [],
+    );
+  }
+
+  void dispose() {
+    _isReady = false;
+    for (final c in _pendingRequests.values) {
+      if (!c.isCompleted) c.complete(const []);
+    }
+    _pendingRequests.clear();
+    _responsePort?.close();
+    _responsePort = null;
+    _isolate?.kill(priority: Isolate.immediate);
+    _isolate = null;
+    _sendPort = null;
+  }
+}
+
+void _phoneticWorkerEntrypoint(List<dynamic> args) {
+  final SendPort initSendPort = args[0] as SendPort;
+  final SendPort responseSendPort = args[1] as SendPort;
+  final String refPhNorm = args[2] as String;
+
+  final commandPort = ReceivePort();
+  initSendPort.send(commandPort.sendPort);
+
+  commandPort.listen((message) {
+    if (message is List && message.length == 3) {
+      final int reqId = message[0] as int;
+      final String normQuery = message[1] as String;
+      final int maxEdits = message[2] as int;
+
+      try {
+        final List<FuzzyMatch> matches =
+            findNearMatches(normQuery, refPhNorm, maxEdits);
+        responseSendPort.send([reqId, matches]);
+      } catch (_) {
+        responseSendPort.send([reqId, <FuzzyMatch>[]]);
+      }
+    }
+  });
 }
 
 class PhonemesSearchSpan {
@@ -59,6 +158,7 @@ class PhoneticSearch {
   late Uint16List _indexArray;
   late String _refPhNorm;
   bool _isLoaded = false;
+  final _PhoneticIsolateWorker _worker = _PhoneticIsolateWorker();
 
   /// Loads the index and reference string from the assets.
   Future<void> load() async {
@@ -85,12 +185,14 @@ class PhoneticSearch {
     }
 
     loadFromData(refPhNorm, npyData);
+    await _worker.start(_refPhNorm);
   }
 
   /// Synchronously loads from in-memory string and binary bytes (useful for unit tests and offline workers).
   void loadSync({required String refPhNorm, required Uint8List npyBytes}) {
     if (_isLoaded) return;
     loadFromData(refPhNorm, ByteData.sublistView(npyBytes));
+    _worker.start(_refPhNorm);
   }
 
   /// Parses and initializes the internal index array from decoded reference and NPY binary buffer.
@@ -258,11 +360,16 @@ class PhoneticSearch {
 
     int maxEdits = (normQuery.length * errorRatio).toInt();
 
-    // Use our fuzzy_search algorithm on a background isolate
-    List<FuzzyMatch> outs = await compute(
-      _runSearchIsolated,
-      _SearchArgs(normQuery, _refPhNorm, maxEdits),
-    );
+    // Use persistent background isolate worker; fallback gracefully to compute if not yet ready
+    List<FuzzyMatch> outs;
+    if (_worker.isReady) {
+      outs = await _worker.search(normQuery, maxEdits);
+    } else {
+      outs = await compute(
+        _runSearchIsolated,
+        _SearchArgs(normQuery, _refPhNorm, maxEdits),
+      );
+    }
 
     if (outs.isEmpty) {
       return [];
@@ -284,5 +391,10 @@ class PhoneticSearch {
     results.sort((a, b) => a.distance.compareTo(b.distance));
 
     return results;
+  }
+
+  /// Disposes background worker isolate resources.
+  void dispose() {
+    _worker.dispose();
   }
 }

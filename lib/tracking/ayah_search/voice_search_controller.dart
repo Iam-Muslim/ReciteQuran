@@ -26,6 +26,12 @@ class AyahSearchMatch {
   /// The 1-indexed Ayah (verse) number within [surah].
   final int ayah;
 
+  /// The 1-indexed Ayah number where the matched span started (from detector.py).
+  final int startAyah;
+
+  /// The 1-indexed Ayah number where the matched span ended (from detector.py).
+  final int endAyah;
+
   /// Match confidence score from 0.0 (low) to 1.0 (exact phonetic match).
   final double score;
 
@@ -50,6 +56,9 @@ class AyahSearchMatch {
   /// Full Arabic Uthmani text of this Ayah, populated if [QuranRepository] was provided.
   final String? textUthmani;
 
+  /// Whether the match spans across multiple verses (e.g. Wasl recitation across Ayah boundary).
+  bool get isMultiAyah => startAyah != endAyah;
+
   const AyahSearchMatch({
     required this.surah,
     required this.ayah,
@@ -58,15 +67,19 @@ class AyahSearchMatch {
     this.uthmaniWordIdx = 0,
     this.startWordIdx = 0,
     this.endWordIdx = 0,
+    int? startAyah,
+    int? endAyah,
     this.surahNameAr,
     this.surahNameEn,
     this.textUthmani,
-  });
+  })  : startAyah = startAyah ?? ayah,
+        endAyah = endAyah ?? ayah;
 
   /// Converts this match to a standalone [AnchorResult].
   AnchorResult toAnchorResult() => AnchorResult(
         surah: surah,
         ayah: ayah,
+        endAyah: endAyah != ayah ? endAyah : null,
         score: score,
         candidates: [this],
         isUnique: true,
@@ -74,7 +87,7 @@ class AyahSearchMatch {
 
   @override
   String toString() =>
-      'AyahSearchMatch(surah: $surah, ayah: $ayah, score: ${(score * 100).toStringAsFixed(1)}%, dist: $distance, words: $startWordIdx..$endWordIdx)';
+      'AyahSearchMatch(surah: $surah, ayah: $ayah${isMultiAyah ? "-$endAyah" : ""}, score: ${(score * 100).toStringAsFixed(1)}%, dist: $distance, words: $startWordIdx..$endWordIdx)';
 }
 
 /// Represents the real-time search state containing the current query,
@@ -113,6 +126,7 @@ class VoiceSearchResult {
     return AnchorResult(
       surah: topMatch!.surah,
       ayah: topMatch!.ayah,
+      endAyah: topMatch!.endAyah != topMatch!.ayah ? topMatch!.endAyah : null,
       score: topMatch!.score,
       candidates: candidates,
       isUnique: isUnique,
@@ -132,6 +146,9 @@ class AnchorResult {
   /// The 1-indexed Ayah (verse) number within [surah].
   final int ayah;
 
+  /// The 1-indexed ending Ayah number if the matched recitation spans multiple verses.
+  final int? endAyah;
+
   /// Acoustic phonetic match confidence score (0.0 to 1.0).
   final double score;
 
@@ -141,9 +158,13 @@ class AnchorResult {
   /// Indicates if this match is uniquely distinguished from all other verses.
   final bool isUnique;
 
+  /// Whether the match spans across multiple verses.
+  bool get isMultiAyah => endAyah != null && endAyah != ayah;
+
   AnchorResult({
     required this.surah,
     required this.ayah,
+    this.endAyah,
     this.score = 1.0,
     this.candidates = const [],
     this.isUnique = true,
@@ -151,7 +172,7 @@ class AnchorResult {
 
   @override
   String toString() =>
-      'AnchorResult(surah: $surah, ayah: $ayah, candidates: ${candidates.length}, isUnique: $isUnique)';
+      'AnchorResult(surah: $surah, ayah: $ayah${isMultiAyah ? "-$endAyah" : ""}, candidates: ${candidates.length}, isUnique: $isUnique)';
 }
 
 /// Controller managing real-time speech-to-text Quran search and navigation.
@@ -180,6 +201,7 @@ class VoiceSearchController {
   Future<void>? _loadFuture;
   bool _isSearching = false;
   String? _queuedText;
+  int _sessionEpoch = 0;
 
   VoiceSearchController({
     required this.engine,
@@ -216,6 +238,7 @@ class VoiceSearchController {
 
   /// Resets the current search result and pending queues.
   void clear() {
+    _sessionEpoch++;
     currentResult.value = null;
     _queuedText = null;
     _isSearching = false;
@@ -223,6 +246,7 @@ class VoiceSearchController {
 
   /// Resets the engine audio buffer, clears current candidate results, and ensures the index is ready.
   Future<void> startSearch() async {
+    _sessionEpoch++;
     clear();
     await preloadIndex();
     engine.resetBuffer();
@@ -250,17 +274,22 @@ class VoiceSearchController {
     }
 
     _isSearching = true;
+    final int epoch = _sessionEpoch;
     AnchorResult? uniqueAnchor;
 
     try {
       String textToSearch = normText;
 
       while (true) {
+        if (_sessionEpoch != epoch) return null;
+
         final searchResult = await _executeSearch(
           textToSearch,
           errorRatio: errorRatio,
           maxCandidates: maxCandidates,
         );
+
+        if (_sessionEpoch != epoch) return null;
 
         if (searchResult != null) {
           _resultsController.add(searchResult);
@@ -308,6 +337,7 @@ class VoiceSearchController {
       return null;
     }
 
+    final int epoch = _sessionEpoch;
     final normText = PhoneticSearch.normalizeQuery(finalAsrText);
     DebugLogger.log('VoiceSearch', 'Search input: "$normText"');
 
@@ -322,6 +352,8 @@ class VoiceSearchController {
       errorRatio: errorRatio,
       maxCandidates: maxCandidates,
     );
+
+    if (_sessionEpoch != epoch) return null;
 
     if (searchResult == null || searchResult.candidates.isEmpty) {
       DebugLogger.log('VoiceSearch', 'No match found.');
@@ -353,14 +385,20 @@ class VoiceSearchController {
     String query, {
     double errorRatio = 0.22,
     int maxCandidates = 8,
+    bool updateCurrentResult = false,
   }) async {
     await preloadIndex();
     if (_search == null) return null;
-    return _executeSearch(
+    final result = await _executeSearch(
       query.trim(),
       errorRatio: errorRatio,
       maxCandidates: maxCandidates,
     );
+    if (updateCurrentResult && result != null) {
+      _resultsController.add(result);
+      currentResult.value = result;
+    }
+    return result;
   }
 
   // ── 3. Internal Search Execution ──────────────────────────────────────────
@@ -474,10 +512,23 @@ class VoiceSearchController {
       final double score =
           (1.0 - (r.distance / max(1, searchLen))).clamp(0.0, 1.0);
 
+      // Multi-ayah span determination ported directly from detector.py (lines 154-178)
+      int startAyah = r.start.ayahIdx;
+      int endAyah = r.end.ayahIdx;
+      if (r.start.surahIdx != r.end.surahIdx) {
+        if (s == r.start.surahIdx) {
+          endAyah = r.mid.ayahIdx;
+        } else {
+          startAyah = 1;
+        }
+      }
+
       candidates.add(
         AyahSearchMatch(
           surah: s,
           ayah: a,
+          startAyah: startAyah,
+          endAyah: endAyah,
           score: score,
           distance: r.distance,
           uthmaniWordIdx: r.mid.uthmaniWordIdx,
@@ -494,12 +545,15 @@ class VoiceSearchController {
 
     // Uniqueness criteria:
     // A match is declared unique if:
-    // 1. It is the sole candidate matching within the error threshold.
+    // 1. It is the sole candidate matching within the error threshold, and distance is low (d0 <= 1 or d0/len <= 0.12).
     // 2. OR Candidate 0 has distance == 0, and runner-up is at least minGap (>= 2 for >= 18 chars, >= 3 otherwise) away.
     // 3. OR Candidate 0 has distance <= 1 on a long phrase (>= 18 chars), and runner-up is at least 3 edits behind (gap >= 3).
     bool isUnique = false;
     if (candidates.length == 1) {
-      isUnique = true;
+      final int d0 = candidates[0].distance;
+      if (d0 <= 1 || (d0 / max(1, searchLen)) <= 0.12) {
+        isUnique = true;
+      }
     } else if (candidates.length > 1) {
       final int d0 = candidates[0].distance;
       final int d1 = candidates[1].distance;
@@ -543,6 +597,7 @@ class VoiceSearchController {
   }
 
   void dispose() {
+    _search?.dispose();
     _resultsController.close();
     currentResult.dispose();
     isIndexLoading.dispose();
