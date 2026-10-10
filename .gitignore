@@ -69,4 +69,3 @@ lib/generated_plugin_registrant.dart
 # Test binaries and execution logs
 test/*.dll
 test/logs.txt
-test
