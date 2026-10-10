@@ -61,7 +61,6 @@ class PhoneticSearch {
   bool _isLoaded = false;
 
   /// Loads the index and reference string from the assets.
-  /// Loads the index and reference string from the assets.
   Future<void> load() async {
     if (_isLoaded) return;
 
@@ -157,25 +156,28 @@ class PhoneticSearch {
   }
 
   static const String _coreChars = "ءبتثجحخدذرزسشصضطظعغفقكلمنهوياۥۦ۾ںـٲ";
-  static const String _residualChars = "َُِڇؙ۪ۜ";
 
-  static final RegExp _chunkRegex = () {
-    String coreGroup = _coreChars.split('').map((c) => '$c+').join('|');
-    return RegExp('((?:$coreGroup)[$_residualChars]?)');
+  static final Uint8List _isCoreCode = () {
+    final arr = Uint8List(2048);
+    for (int i = 0; i < _coreChars.length; i++) {
+      final code = _coreChars.codeUnitAt(i);
+      if (code < 2048) arr[code] = 1;
+    }
+    return arr;
   }();
 
-  /// Normalizes the query by combining consecutive identical core characters
-  /// into a single character and stripping residuals and extraneous whitespace/symbols.
+  /// Normalizes an Arabic phoneme string by collapsing consecutive core consonants
+  /// and stripping residuals/whitespace (identical to reference normalize_phoneme_query in phonetics.py).
   static String normalizeQuery(String query) {
+    if (query.isEmpty) return '';
     final StringBuffer normQ = StringBuffer();
-    String? lastChar;
-    for (var match in _chunkRegex.allMatches(query)) {
-      final String group = match.group(1)!;
-      if (group.isNotEmpty) {
-        final String c = group[0];
-        if (c != lastChar) {
-          normQ.write(c);
-          lastChar = c;
+    int prevCode = -1;
+    for (int i = 0; i < query.length; i++) {
+      final int code = query.codeUnitAt(i);
+      if (code < 2048 && _isCoreCode[code] == 1) {
+        if (code != prevCode) {
+          normQ.writeCharCode(code);
+          prevCode = code;
         }
       }
     }

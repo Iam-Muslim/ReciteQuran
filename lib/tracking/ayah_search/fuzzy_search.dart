@@ -27,18 +27,77 @@ List<FuzzyMatch> findNearMatches(String query, String text, int maxDist) {
   }
 }
 
+/// Exact start refinement using backward Myers bit-parallel search on local window (from reference kernels.py).
+int _refineMatchStart(
+  List<int> queryUnits,
+  List<int> textUnits,
+  int endIdx,
+  int maxDist,
+) {
+  final int n = queryUnits.length;
+  final int winLen = (endIdx < n + maxDist + 4) ? endIdx : n + maxDist + 4;
+  final Uint64List charMask = Uint64List(2048);
+  for (int i = 0; i < n; i++) {
+    final int c = queryUnits[n - 1 - i];
+    if (c < 2048) {
+      charMask[c] |= (1 << i);
+    }
+  }
+
+  final int fullMask = (1 << n) - 1;
+  final int topMask = 1 << (n - 1);
+  int vp = fullMask;
+  int vn = 0;
+  int currDist = n;
+  int bestDist = 999;
+  int bestLen = n;
+
+  for (int k = 0; k < winLen; k++) {
+    final int code = textUnits[endIdx - 1 - k];
+    final int pm = code < 2048 ? charMask[code] : 0;
+    final int x = pm | vn;
+    final int d0 = (((pm & vp) + vp) ^ vp) | x;
+    final int hn = vp & d0;
+    int hp = vn | (~(vp | d0) & fullMask);
+
+    if ((hp & topMask) != 0) {
+      currDist++;
+    }
+    if ((hn & topMask) != 0) {
+      currDist--;
+    }
+
+    hp = (hp << 1) & fullMask;
+    final int hnShifted = (hn << 1) & fullMask;
+    vp = (hnShifted | (~(d0 | hp) & fullMask)) & fullMask;
+    vn = hp & d0;
+
+    if (currDist <= maxDist && currDist <= bestDist) {
+      bestDist = currDist;
+      bestLen = k + 1;
+    }
+  }
+
+  return endIdx - bestLen;
+}
+
 /// Myers' 64-bit Bit-Parallel Substring Search.
 /// Computes 64 dynamic programming matrix cells per single CPU step.
 List<FuzzyMatch> _bitParallelSearch(String query, String text, int maxDist) {
   final int n = query.length;
   final int m = text.length;
-  final List<FuzzyMatch> matches = [];
+  if (n == 0 || m == 0) return const [];
 
-  // Build character pattern bitmasks
-  final Map<int, int> charMask = {};
+  final List<int> queryUnits = query.codeUnits;
+  final List<int> textUnits = text.codeUnits;
+
+  // Build character pattern bitmask array (O(1) direct index lookup, no Map hashing overhead)
+  final Uint64List charMask = Uint64List(2048);
   for (int i = 0; i < n; i++) {
-    final int code = query.codeUnitAt(i);
-    charMask[code] = (charMask[code] ?? 0) | (1 << i);
+    final int code = queryUnits[i];
+    if (code < 2048) {
+      charMask[code] |= (1 << i);
+    }
   }
 
   final int fullMask = (1 << n) - 1;
@@ -47,17 +106,18 @@ List<FuzzyMatch> _bitParallelSearch(String query, String text, int maxDist) {
   int vp = fullMask;
   int vn = 0;
   int currDist = n;
-  final List<int> textUnits = text.codeUnits;
+  final List<FuzzyMatch> rawMatches = [];
 
   for (int j = 0; j < m; j++) {
-    final int pm = charMask[textUnits[j]] ?? 0;
+    final int code = textUnits[j];
+    final int pm = code < 2048 ? charMask[code] : 0;
 
     // Step 1: Computing D0
     final int x = pm | vn;
     final int d0 = (((pm & vp) + vp) ^ vp) | x;
 
     // Step 2: Computing HP and HN
-    int hn = vp & d0;
+    final int hn = vp & d0;
     int hp = vn | (~(vp | d0) & fullMask);
 
     // Step 3: Check boundary condition
@@ -70,16 +130,15 @@ List<FuzzyMatch> _bitParallelSearch(String query, String text, int maxDist) {
 
     // Step 4: Advance vectors (for substring search, top boundary delta is 0)
     hp = (hp << 1) & fullMask;
-    hn = (hn << 1) & fullMask;
-    vp = (hn | (~(d0 | hp) & fullMask)) & fullMask;
+    final int hnShifted = (hn << 1) & fullMask;
+    vp = (hnShifted | (~(d0 | hp) & fullMask)) & fullMask;
     vn = hp & d0;
 
     if (currDist <= maxDist) {
       final int matchEnd = j + 1;
-      final int estimatedStart = (matchEnd - n - currDist).clamp(0, matchEnd);
-      matches.add(
+      rawMatches.add(
         FuzzyMatch(
-          start: estimatedStart,
+          start: matchEnd - n > 0 ? matchEnd - n : 0,
           end: matchEnd,
           dist: currDist,
         ),
@@ -87,7 +146,15 @@ List<FuzzyMatch> _bitParallelSearch(String query, String text, int maxDist) {
     }
   }
 
-  return _filterOverlapping(matches);
+  final List<FuzzyMatch> filtered = _filterOverlapping(rawMatches);
+  if (filtered.isEmpty) return const [];
+
+  // Refine match start with exact backward Myers (from reference kernels.py)
+  return filtered.map((m) {
+    final int exactStart =
+        _refineMatchStart(queryUnits, textUnits, m.end, m.dist);
+    return FuzzyMatch(start: exactStart, end: m.end, dist: m.dist);
+  }).toList();
 }
 
 /// Fallback Dynamic Programming approach for queries longer than 64 phonemes.

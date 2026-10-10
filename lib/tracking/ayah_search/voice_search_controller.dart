@@ -388,24 +388,25 @@ class VoiceSearchController {
     final int qLen = normText.length;
     if (qLen < 4) return null;
 
-    // 1. Preamble Slicing: If recitation begins with Basmalah or Isti'adha
-    // followed by an Ayah (e.g. "بسم الله الرحمن الرحيم قل هو الله أحد"),
-    // check if searching the verse text after the preamble yields an exact match.
+    // 1. Preamble Slicing: If recitation begins with Isti'adha, Basmalah, or both
+    // followed by an Ayah (e.g. "أعوذ بالله... بسم الله... قل أعوذ برب الناس"),
+    // strip opening preambles sequentially so the actual verse text matches directly.
     String textToSearch = normText;
-    if (qLen > 18) {
-      final basMatches = findNearMatches(_basmalahPh, normText, 3);
-      if (basMatches.isNotEmpty && basMatches.first.start <= 3) {
-        final suf = normText.substring(basMatches.first.end).trim();
+    if (textToSearch.length > 18) {
+      final istMatches = findNearMatches(_istiaadhaPh, textToSearch, 4);
+      if (istMatches.isNotEmpty && istMatches.first.start <= 3) {
+        final suf = textToSearch.substring(istMatches.first.end).trim();
         if (suf.length >= 6) {
           textToSearch = suf;
         }
-      } else {
-        final istMatches = findNearMatches(_istiaadhaPh, normText, 4);
-        if (istMatches.isNotEmpty && istMatches.first.start <= 3) {
-          final suf = normText.substring(istMatches.first.end).trim();
-          if (suf.length >= 6) {
-            textToSearch = suf;
-          }
+      }
+    }
+    if (textToSearch.length > 18) {
+      final basMatches = findNearMatches(_basmalahPh, textToSearch, 3);
+      if (basMatches.isNotEmpty && basMatches.first.start <= 3) {
+        final suf = textToSearch.substring(basMatches.first.end).trim();
+        if (suf.length >= 6) {
+          textToSearch = suf;
         }
       }
     }
@@ -492,13 +493,25 @@ class VoiceSearchController {
     if (candidates.isEmpty) return null;
 
     // Uniqueness criteria:
-    // If top candidate is an exact match (distance == 0) and the phrase is sufficiently long (>= 20 chars),
-    // a distance gap of >= 2 to the runner-up is conclusive evidence of uniqueness.
-    final int minGap = (searchLen >= 20) ? 2 : 3;
-    bool isUnique = candidates.length == 1 ||
-        (candidates.length > 1 &&
-            candidates[0].distance == 0 &&
-            candidates[1].distance >= minGap);
+    // A match is declared unique if:
+    // 1. It is the sole candidate matching within the error threshold.
+    // 2. OR Candidate 0 has distance == 0, and runner-up is at least minGap (>= 2 for >= 18 chars, >= 3 otherwise) away.
+    // 3. OR Candidate 0 has distance <= 1 on a long phrase (>= 18 chars), and runner-up is at least 3 edits behind (gap >= 3).
+    bool isUnique = false;
+    if (candidates.length == 1) {
+      isUnique = true;
+    } else if (candidates.length > 1) {
+      final int d0 = candidates[0].distance;
+      final int d1 = candidates[1].distance;
+      final int gap = d1 - d0;
+
+      if (d0 == 0) {
+        final int minGap = (searchLen >= 18) ? 2 : 3;
+        isUnique = gap >= minGap;
+      } else if (d0 <= 1 && searchLen >= 18) {
+        isUnique = gap >= 3;
+      }
+    }
 
     // Inter-Surah Basmalah Disambiguation (from detector.py):
     // Surah 1:1 is "بسم الله الرحمن الرحيم", which precedes 113 chapters.
@@ -507,6 +520,17 @@ class VoiceSearchController {
         candidates.length > 1 &&
         candidates[0].surah == 1 &&
         candidates[0].ayah == 1) {
+      isUnique = false;
+    }
+
+    // Isti'adha Opening Safeguard:
+    // When the reciter speaks the opening formula "أعوذ بالله من الشيطان الرجيم",
+    // it can match Surah 16:98 ("فَاسْتَعِذْ بِاللَّهِ مِنَ الشَّيْطَانِ الرَّجِيمِ").
+    // Never mark 16:98 as unique if the query is just the short opening preamble.
+    if (isUnique &&
+        candidates.first.surah == 16 &&
+        candidates.first.ayah == 98 &&
+        qLen <= 25) {
       isUnique = false;
     }
 
