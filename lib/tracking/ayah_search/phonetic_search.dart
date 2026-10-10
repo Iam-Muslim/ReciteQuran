@@ -15,7 +15,6 @@ List<FuzzyMatch> _runSearchIsolated(_SearchArgs args) {
   return findNearMatches(args.normQuery, args.refPhNorm, args.maxEdits);
 }
 
-
 class PhonemesSearchSpan {
   final int surahIdx;
   final int ayahIdx;
@@ -62,18 +61,19 @@ class PhoneticSearch {
   bool _isLoaded = false;
 
   /// Loads the index and reference string from the assets.
+  /// Loads the index and reference string from the assets.
   Future<void> load() async {
     if (_isLoaded) return;
 
     // Load reference phoneme string
+    String refPhNorm;
     try {
-      _refPhNorm = await rootBundle.loadString(
+      refPhNorm = await rootBundle.loadString(
         'packages/recite_quran/assets/model/ref_norm_ph.txt',
       );
     } catch (_) {
-      _refPhNorm = await rootBundle.loadString('assets/model/ref_norm_ph.txt');
+      refPhNorm = await rootBundle.loadString('assets/model/ref_norm_ph.txt');
     }
-    _refPhNorm = _refPhNorm.trim();
 
     // Load NPY index file
     ByteData npyData;
@@ -84,6 +84,19 @@ class PhoneticSearch {
     } catch (_) {
       npyData = await rootBundle.load('assets/model/ph_index.npy');
     }
+
+    loadFromData(refPhNorm, npyData);
+  }
+
+  /// Synchronously loads from in-memory string and binary bytes (useful for unit tests and offline workers).
+  void loadSync({required String refPhNorm, required Uint8List npyBytes}) {
+    if (_isLoaded) return;
+    loadFromData(refPhNorm, ByteData.sublistView(npyBytes));
+  }
+
+  /// Parses and initializes the internal index array from decoded reference and NPY binary buffer.
+  void loadFromData(String refPhNorm, ByteData npyData) {
+    _refPhNorm = refPhNorm.trim();
 
     // An NPY file starts with a Magic string "\x93NUMPY"
     // Then 1 byte major version, 1 byte minor version.
@@ -121,10 +134,11 @@ class PhoneticSearch {
     // In Dart, we can just create a Uint16List view over the remaining buffer.
     int remainingBytes = npyData.lengthInBytes - offset;
     int numElements = remainingBytes ~/ 2;
-    
+
     int byteOffset = npyData.offsetInBytes + offset;
     if (byteOffset % 2 != 0) {
-      Uint8List unaligned = npyData.buffer.asUint8List(byteOffset, remainingBytes);
+      Uint8List unaligned =
+          npyData.buffer.asUint8List(byteOffset, remainingBytes);
       Uint8List aligned = Uint8List.fromList(unaligned);
       _indexArray = aligned.buffer.asUint16List();
     } else {
@@ -151,13 +165,18 @@ class PhoneticSearch {
   }();
 
   /// Normalizes the query by combining consecutive identical core characters
-  /// into a single character and stripping residuals.
-  String _normalizeQuery(String query) {
-    StringBuffer normQ = StringBuffer();
+  /// into a single character and stripping residuals and extraneous whitespace/symbols.
+  static String normalizeQuery(String query) {
+    final StringBuffer normQ = StringBuffer();
+    String? lastChar;
     for (var match in _chunkRegex.allMatches(query)) {
-      String group = match.group(1)!;
+      final String group = match.group(1)!;
       if (group.isNotEmpty) {
-        normQ.write(group[0]);
+        final String c = group[0];
+        if (c != lastChar) {
+          normQ.write(c);
+          lastChar = c;
+        }
       }
     }
     return normQ.toString();
@@ -182,12 +201,10 @@ class PhoneticSearch {
       surahIdx: _indexArray[rowOffset + 0],
       ayahIdx: _indexArray[rowOffset + 1],
       uthmaniWordIdx: _indexArray[rowOffset + 2],
-      uthmaniCharIdx: isEnd
-          ? _indexArray[rowOffset + 4]
-          : _indexArray[rowOffset + 3],
-      phonemesIdx: isEnd
-          ? _indexArray[rowOffset + 6]
-          : _indexArray[rowOffset + 5],
+      uthmaniCharIdx:
+          isEnd ? _indexArray[rowOffset + 4] : _indexArray[rowOffset + 3],
+      phonemesIdx:
+          isEnd ? _indexArray[rowOffset + 6] : _indexArray[rowOffset + 5],
     );
   }
 
@@ -197,7 +214,7 @@ class PhoneticSearch {
       throw Exception("PhoneticSearch must be loaded before searching");
     }
 
-    String normQuery = _normalizeQuery(query);
+    String normQuery = normalizeQuery(query);
     if (normQuery.isEmpty) return [];
 
     int maxEdits = (normQuery.length * errorRatio).toInt();
@@ -228,12 +245,13 @@ class PhoneticSearch {
   }
 
   /// Searches for the query asynchronously on a background isolate to prevent UI freezes.
-  Future<List<PhonemesSearchResult>> searchIsolated(String query, {double errorRatio = 0.1}) async {
+  Future<List<PhonemesSearchResult>> searchIsolated(String query,
+      {double errorRatio = 0.1}) async {
     if (!_isLoaded) {
       throw Exception("PhoneticSearch must be loaded before searching");
     }
 
-    String normQuery = _normalizeQuery(query);
+    String normQuery = normalizeQuery(query);
     if (normQuery.isEmpty) return [];
 
     int maxEdits = (normQuery.length * errorRatio).toInt();

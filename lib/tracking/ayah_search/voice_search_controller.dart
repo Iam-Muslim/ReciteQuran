@@ -15,6 +15,7 @@ import 'package:flutter/foundation.dart';
 import '../../data/quran_data.dart';
 import '../../engine/sherpa_engine.dart';
 import '../../utils/debug_logger.dart';
+import 'fuzzy_search.dart';
 import 'phonetic_search.dart';
 
 /// Represents a single candidate Ayah match produced by phonetic search.
@@ -31,8 +32,14 @@ class AyahSearchMatch {
   /// Levenshtein edit distance between the normalized query and reference phonemes.
   final int distance;
 
-  /// 0-indexed word offset within the matched Ayah where alignment began.
+  /// 0-indexed word offset within the matched Ayah (midpoint of alignment).
   final int uthmaniWordIdx;
+
+  /// 0-indexed word offset within the matched Ayah where alignment began.
+  final int startWordIdx;
+
+  /// 0-indexed word offset within the matched Ayah where alignment ended.
+  final int endWordIdx;
 
   /// Arabic Surah name (e.g. "الفاتحة"), populated if [QuranRepository] was provided.
   final String? surahNameAr;
@@ -49,6 +56,8 @@ class AyahSearchMatch {
     required this.score,
     required this.distance,
     this.uthmaniWordIdx = 0,
+    this.startWordIdx = 0,
+    this.endWordIdx = 0,
     this.surahNameAr,
     this.surahNameEn,
     this.textUthmani,
@@ -65,7 +74,7 @@ class AyahSearchMatch {
 
   @override
   String toString() =>
-      'AyahSearchMatch(surah: $surah, ayah: $ayah, score: ${(score * 100).toStringAsFixed(1)}%, dist: $distance)';
+      'AyahSearchMatch(surah: $surah, ayah: $ayah, score: ${(score * 100).toStringAsFixed(1)}%, dist: $distance, words: $startWordIdx..$endWordIdx)';
 }
 
 /// Represents the real-time search state containing the current query,
@@ -90,9 +99,17 @@ class VoiceSearchResult {
     this.topMatch,
   });
 
+  /// Whether at least one candidate Ayah was found.
+  bool get hasCandidates => candidates.isNotEmpty;
+
+  /// Whether multiple candidates match and none is definitively unique yet.
+  bool get isAmbiguous => candidates.length > 1 && !isUnique;
+
   /// Backward-compatible conversion to [AnchorResult].
-  AnchorResult? toAnchorResult() {
+  /// If [requireUnique] is true, returns null if [isUnique] is false.
+  AnchorResult? toAnchorResult({bool requireUnique = false}) {
     if (topMatch == null) return null;
+    if (requireUnique && !isUnique) return null;
     return AnchorResult(
       surah: topMatch!.surah,
       ayah: topMatch!.ayah,
@@ -197,11 +214,16 @@ class VoiceSearchController {
     return _loadFuture!;
   }
 
-  // ── 2. Search Lifecycle ────────────────────────────────────────────────────
+  /// Resets the current search result and pending queues.
+  void clear() {
+    currentResult.value = null;
+    _queuedText = null;
+    _isSearching = false;
+  }
 
   /// Resets the engine audio buffer, clears current candidate results, and ensures the index is ready.
   Future<void> startSearch() async {
-    currentResult.value = null;
+    clear();
     await preloadIndex();
     engine.resetBuffer();
   }
@@ -219,11 +241,11 @@ class VoiceSearchController {
   }) async {
     if (_search == null) return null;
 
-    final text = partialText.trim();
-    if (text.length < minLength) return null;
+    final normText = PhoneticSearch.normalizeQuery(partialText);
+    if (normText.length < minLength) return null;
 
     if (_isSearching) {
-      _queuedText = text;
+      _queuedText = normText;
       return null;
     }
 
@@ -231,7 +253,7 @@ class VoiceSearchController {
     AnchorResult? uniqueAnchor;
 
     try {
-      String textToSearch = text;
+      String textToSearch = normText;
 
       while (true) {
         final searchResult = await _executeSearch(
@@ -273,27 +295,30 @@ class VoiceSearchController {
   ///
   /// Runs final fuzzy phonetic search and returns the best matching [AnchorResult].
   /// The returned result includes all evaluated [AnchorResult.candidates].
+  /// If [requireUnique] is true and multiple candidate Ayahs match ([isUnique] is false),
+  /// returns null to prevent auto-navigating to an ambiguous verse.
   Future<AnchorResult?> stopSearch(
     String finalAsrText, {
     double errorRatio = 0.22,
     int maxCandidates = 8,
+    bool requireUnique = false,
   }) async {
     if (_search == null) {
       DebugLogger.logSimple('VoiceSearch', 'Search failed: index not loaded.');
       return null;
     }
 
-    final text = finalAsrText.trim();
-    DebugLogger.log('VoiceSearch', 'Search input: "$text"');
+    final normText = PhoneticSearch.normalizeQuery(finalAsrText);
+    DebugLogger.log('VoiceSearch', 'Search input: "$normText"');
 
-    if (text.length < 4) {
+    if (normText.length < 4) {
       DebugLogger.log('VoiceSearch', 'Search aborted: input too short.');
       currentResult.value = null;
       return null;
     }
 
     final searchResult = await _executeSearch(
-      text,
+      normText,
       errorRatio: errorRatio,
       maxCandidates: maxCandidates,
     );
@@ -307,10 +332,18 @@ class VoiceSearchController {
     _resultsController.add(searchResult);
     currentResult.value = searchResult;
 
+    if (requireUnique && !searchResult.isUnique) {
+      DebugLogger.log(
+        'VoiceSearch',
+        'Result ambiguous (${searchResult.candidates.length} candidates); auto-anchor suppressed.',
+      );
+      return null;
+    }
+
     final anchor = searchResult.toAnchorResult();
     DebugLogger.log(
       'VoiceSearch',
-      'Result: Surah ${anchor?.surah}, Ayah ${anchor?.ayah} (Candidates: ${searchResult.candidates.length})',
+      'Result: Surah ${anchor?.surah}, Ayah ${anchor?.ayah} (Candidates: ${searchResult.candidates.length}, isUnique: ${searchResult.isUnique})',
     );
     return anchor;
   }
@@ -332,13 +365,88 @@ class VoiceSearchController {
 
   // ── 3. Internal Search Execution ──────────────────────────────────────────
 
+  // Normalized Preamble Reference Constants (from detector.py)
+  static const String _basmalahPh = 'بسملاهرحمانرحۦم';
+  static const String _istiaadhaPh = 'ءعۥذبلاهمنشيطانرجۦم';
+
+  /// Scales error tolerance dynamically with length to prevent short-phrase false matches (from detector.py).
+  static double _adaptiveErrorRatio(int qLen, {required double baseRatio}) {
+    if (qLen < 16) {
+      return 0.15; // Strict: prevents short phrases from falsely matching
+    } else if (qLen < 28) {
+      return 0.20; // Standard tolerance for medium phrases
+    }
+    return baseRatio.clamp(0.20, 0.25); // Long recitations: allows up to baseRatio (max 0.25)
+  }
+
   Future<VoiceSearchResult?> _executeSearch(
     String text, {
     required double errorRatio,
     required int maxCandidates,
   }) async {
-    final rawMatches =
-        await _search!.searchIsolated(text, errorRatio: errorRatio);
+    final String normText = PhoneticSearch.normalizeQuery(text);
+    final int qLen = normText.length;
+    if (qLen < 4) return null;
+
+    // 1. Preamble Slicing: If recitation begins with Basmalah or Isti'adha
+    // followed by an Ayah (e.g. "بسم الله الرحمن الرحيم قل هو الله أحد"),
+    // check if searching the verse text after the preamble yields an exact match.
+    String textToSearch = normText;
+    if (qLen > 18) {
+      final basMatches = findNearMatches(_basmalahPh, normText, 3);
+      if (basMatches.isNotEmpty && basMatches.first.start <= 3) {
+        final suf = normText.substring(basMatches.first.end).trim();
+        if (suf.length >= 6) {
+          textToSearch = suf;
+        }
+      } else {
+        final istMatches = findNearMatches(_istiaadhaPh, normText, 4);
+        if (istMatches.isNotEmpty && istMatches.first.start <= 3) {
+          final suf = normText.substring(istMatches.first.end).trim();
+          if (suf.length >= 6) {
+            textToSearch = suf;
+          }
+        }
+      }
+    }
+
+    final int searchLen = textToSearch.length;
+    final double effectiveRatio =
+        _adaptiveErrorRatio(searchLen, baseRatio: errorRatio);
+
+    // 2. Primary search over searchInput
+    List<PhonemesSearchResult> rawMatches =
+        await _search!.searchIsolated(textToSearch, errorRatio: effectiveRatio);
+
+    // 3. Fallback: If stripped text returned nothing, try full normalized input
+    if (rawMatches.isEmpty && textToSearch != normText) {
+      rawMatches =
+          await _search!.searchIsolated(normText, errorRatio: effectiveRatio);
+    }
+
+    // 4. Fallback Probe Slicing: If full input fails due to leading noise, hesitation,
+    // or coughing, probe trailing suffix slices (from detector.py probe_offsets).
+    if (rawMatches.isEmpty && searchLen >= 12) {
+      final List<int> probeCuts = [
+        (searchLen * 0.25).toInt(),
+        (searchLen * 0.45).toInt(),
+        (searchLen * 0.65).toInt(),
+      ];
+      for (final cut in probeCuts) {
+        final suffix = textToSearch.substring(cut).trim();
+        if (suffix.length >= 8) {
+          final double sufRatio =
+              _adaptiveErrorRatio(suffix.length, baseRatio: errorRatio);
+          final suffixMatches =
+              await _search!.searchIsolated(suffix, errorRatio: sufRatio);
+          if (suffixMatches.isNotEmpty) {
+            rawMatches = suffixMatches;
+            break;
+          }
+        }
+      }
+    }
+
     if (rawMatches.isEmpty) return null;
 
     // Deduplicate matches by (surah, ayah): keep best distance for each distinct verse
@@ -363,7 +471,7 @@ class VoiceSearchController {
 
       // Score: 1.0 is exact match, degrades relative to query length
       final double score =
-          (1.0 - (r.distance / max(1, text.length))).clamp(0.0, 1.0);
+          (1.0 - (r.distance / max(1, searchLen))).clamp(0.0, 1.0);
 
       candidates.add(
         AyahSearchMatch(
@@ -372,6 +480,8 @@ class VoiceSearchController {
           score: score,
           distance: r.distance,
           uthmaniWordIdx: r.mid.uthmaniWordIdx,
+          startWordIdx: r.start.uthmaniWordIdx,
+          endWordIdx: r.end.uthmaniWordIdx,
           surahNameAr: verse?.surahName,
           surahNameEn: verse?.surahNameEn,
           textUthmani: verse?.textUthmani,
@@ -382,12 +492,23 @@ class VoiceSearchController {
     if (candidates.isEmpty) return null;
 
     // Uniqueness criteria:
-    // Either exactly 1 candidate exists,
-    // OR top candidate has distance 0 (exact match) and runner-up is noticeably further away.
-    final bool isUnique = candidates.length == 1 ||
+    // If top candidate is an exact match (distance == 0) and the phrase is sufficiently long (>= 20 chars),
+    // a distance gap of >= 2 to the runner-up is conclusive evidence of uniqueness.
+    final int minGap = (searchLen >= 20) ? 2 : 3;
+    bool isUnique = candidates.length == 1 ||
         (candidates.length > 1 &&
             candidates[0].distance == 0 &&
-            candidates[1].distance >= 3);
+            candidates[1].distance >= minGap);
+
+    // Inter-Surah Basmalah Disambiguation (from detector.py):
+    // Surah 1:1 is "بسم الله الرحمن الرحيم", which precedes 113 chapters.
+    // If Candidate 0 is 1:1 and other candidates exist, do not declare it unique.
+    if (isUnique &&
+        candidates.length > 1 &&
+        candidates[0].surah == 1 &&
+        candidates[0].ayah == 1) {
+      isUnique = false;
+    }
 
     return VoiceSearchResult(
       queryText: text,
