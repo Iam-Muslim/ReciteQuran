@@ -24,6 +24,7 @@ export 'tracking/ayah_search/fuzzy_search.dart';
 export 'tracking/ayah_search/phonetic_search.dart';
 export 'tracking/ayah_search/voice_search_controller.dart';
 export 'tracking/tajweed/error_explainer.dart';
+export 'tracking/tajweed/tajweed_error_sheet.dart';
 export 'tracking/tajweed/tajweed_rules.dart';
 export 'tracking/tracker_config.dart';
 export 'tracking/word/dictation_matcher.dart';

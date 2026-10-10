@@ -70,6 +70,97 @@ class ReciterError {
     this.actualDuration,
   });
 
+  /// Formatted Arabic explanation for display in UI dialogs / bottom sheets.
+  String get messageAr {
+    if (errorType == ErrorCategory.tajweed) {
+      final ruleName = expectedRule?.name.ar ?? 'حكم التجويد';
+      if (durationStatus == TajweedDurationStatus.underheld) {
+        if (actualDuration != null && expectedDuration != null) {
+          return 'نقص في $ruleName: قمت بمد الصوت ${actualDuration!.toStringAsFixed(2)}ث، والمطلوب ${expectedDuration!.toStringAsFixed(2)}ث';
+        }
+        return 'نقص في $ruleName: تم حبس الصوت بأقل من الزمن المطلوب';
+      } else if (durationStatus == TajweedDurationStatus.overheld) {
+        if (actualDuration != null && expectedDuration != null) {
+          return 'زيادة في $ruleName: قمت بمد الصوت ${actualDuration!.toStringAsFixed(2)}ث، المسموح ${expectedDuration!.toStringAsFixed(2)}ث';
+        }
+        return 'زيادة في $ruleName: تم مد الصوت ';
+      }
+      return 'خطأ في تطبيق $ruleName';
+    } else if (errorType == ErrorCategory.tashkeel) {
+      return 'خطأ في التشكيل: المتوقع ($expectedPh) ونُطِق ($predictedPh)';
+    } else {
+      if (speechErrorType == SpeechErrorType.delete) {
+        return 'إسقاط حرف: لم يتم نطق ($expectedPh)';
+      }
+      return 'خطأ في نطق الحرف: المتوقع ($expectedPh) ونُطِق ($predictedPh)';
+    }
+  }
+
+  /// Formatted English explanation for display in UI dialogs / bottom sheets.
+  String get messageEn {
+    if (errorType == ErrorCategory.tajweed) {
+      final ruleName = expectedRule?.name.en ?? 'Tajweed Rule';
+      if (durationStatus == TajweedDurationStatus.underheld) {
+        if (actualDuration != null && expectedDuration != null) {
+          return 'Underheld $ruleName: held for ${actualDuration!.toStringAsFixed(2)}s, target is ${expectedDuration!.toStringAsFixed(2)}s';
+        }
+        return 'Underheld $ruleName: held for less than required duration';
+      } else if (durationStatus == TajweedDurationStatus.overheld) {
+        if (actualDuration != null && expectedDuration != null) {
+          return 'Overheld $ruleName: held for ${actualDuration!.toStringAsFixed(2)}s, exceeding target';
+        }
+        return 'Overheld $ruleName: held longer ';
+      }
+      return 'Mistake in $ruleName';
+    } else if (errorType == ErrorCategory.tashkeel) {
+      return 'Diacritic error: expected "$expectedPh", heard "$predictedPh"';
+    } else {
+      if (speechErrorType == SpeechErrorType.delete) {
+        return 'Omitted letter: missed "$expectedPh"';
+      }
+      return 'Letter mismatch: expected "$expectedPh", heard "$predictedPh"';
+    }
+  }
+
+  /// Actionable advice in Arabic.
+  String get adviceAr {
+    if (errorType == ErrorCategory.tajweed) {
+      if (expectedRule is ShaddahRule) {
+        return 'اضغط على مخرج الحرف المشدد';
+      }
+      if (expectedRule is MushaddadGhunnahRule) {
+        return 'أعطِ الغنة زمن حركتين كاملتين ';
+      }
+      if (durationStatus == TajweedDurationStatus.underheld) {
+        final beats = expectedRule?.goldenLen ?? 2;
+        return 'أطل زمن مد الصوت بمقدار $beats ${beats <= 2 ? 'حركتين' : 'حركات'}';
+      }
+      return 'لا تبالغ في مد الصوت';
+    } else if (errorType == ErrorCategory.tashkeel) {
+      return 'احرص على ضبط الحركة الصحيحة (فتحة، ضمة، كسرة)';
+    }
+    return 'انطق الحرف بوضوح من مخرجه الصحيح';
+  }
+
+  /// Actionable advice in English.
+  String get adviceEn {
+    if (errorType == ErrorCategory.tajweed) {
+      if (expectedRule is ShaddahRule) {
+        return 'Hold the consonant.';
+      }
+      if (expectedRule is MushaddadGhunnahRule) {
+        return 'Give the Ghunnah a full 2-beat nasal resonance.';
+      }
+      if (durationStatus == TajweedDurationStatus.underheld) {
+        return 'Hold the vowel elongation for the full ${expectedRule?.goldenLen ?? 2} beats.';
+      }
+      return 'Avoid over-extending the vowel past the allowed length.';
+    } else if (errorType == ErrorCategory.tashkeel) {
+      return 'Pay attention to the correct vowel mark (Fatha, Damma, Kasra).';
+    }
+    return 'Articulate the letter clearly';
+  }
+
   @override
   String toString() {
     return 'ReciterError(type: $errorType, action: $speechErrorType, status: $durationStatus, expected: "$expectedPh", predicted: "$predictedPh", expectedRule: ${expectedRule?.name.en}, expDur: $expectedDuration, actDur: $actualDuration)';
@@ -77,25 +168,60 @@ class ReciterError {
 
   Map<String, dynamic> toMap() {
     return {
-      'errorType': errorType.index,
-      'speechErrorType': speechErrorType.index,
-      'durationStatus': durationStatus?.index,
+      'errorType': errorType.name,
+      'errorTypeIndex': errorType.index,
+      'speechErrorType': speechErrorType.name,
+      'speechErrorTypeIndex': speechErrorType.index,
+      'durationStatus': durationStatus?.name,
+      'durationStatusIndex': durationStatus?.index,
       'expectedPh': expectedPh,
       'predictedPh': predictedPh,
       'expectedRule': _ruleToMap(expectedRule),
       'predictedRule': _ruleToMap(predictedRule),
       'expectedDuration': expectedDuration,
       'actualDuration': actualDuration,
+      'messageAr': messageAr,
+      'messageEn': messageEn,
+      'adviceAr': adviceAr,
+      'adviceEn': adviceEn,
     };
   }
 
   static ReciterError fromMap(Map<String, dynamic> map) {
+    final rawErrorType = map['errorType'] ?? map['errorTypeIndex'];
+    final ErrorCategory errorType = (rawErrorType is int)
+        ? ErrorCategory.values[rawErrorType]
+        : (rawErrorType is String
+            ? ErrorCategory.values.firstWhere(
+                (e) => e.name == rawErrorType,
+                orElse: () => ErrorCategory.normal,
+              )
+            : ErrorCategory.normal);
+
+    final rawSpeech = map['speechErrorType'] ?? map['speechErrorTypeIndex'];
+    final SpeechErrorType speechErrorType = (rawSpeech is int)
+        ? SpeechErrorType.values[rawSpeech]
+        : (rawSpeech is String
+            ? SpeechErrorType.values.firstWhere(
+                (e) => e.name == rawSpeech,
+                orElse: () => SpeechErrorType.replace,
+              )
+            : SpeechErrorType.replace);
+
+    final rawStatus = map['durationStatus'] ?? map['durationStatusIndex'];
+    final TajweedDurationStatus? durationStatus = (rawStatus is int)
+        ? TajweedDurationStatus.values[rawStatus]
+        : (rawStatus is String
+            ? TajweedDurationStatus.values.firstWhere(
+                (e) => e.name == rawStatus,
+                orElse: () => TajweedDurationStatus.valid,
+              )
+            : null);
+
     return ReciterError(
-      errorType: ErrorCategory.values[map['errorType']],
-      speechErrorType: SpeechErrorType.values[map['speechErrorType']],
-      durationStatus: map['durationStatus'] != null
-          ? TajweedDurationStatus.values[map['durationStatus']]
-          : null,
+      errorType: errorType,
+      speechErrorType: speechErrorType,
+      durationStatus: durationStatus,
       expectedPh: map['expectedPh'] as String? ?? '',
       predictedPh: map['predictedPh'] as String? ?? '',
       expectedRule: _ruleFromMap(map['expectedRule'] as Map<String, dynamic>?),
@@ -128,7 +254,8 @@ class ReciterError {
     if (type == 'AaredMaddRule') return AaredMaddRule(goldenLen.toInt());
     if (type == 'MonfaselMaddRule') return MonfaselMaddRule(goldenLen.toInt());
     if (type == 'MottaselMaddRule') return MottaselMaddRule(goldenLen.toInt());
-    if (type == 'MottaselMaddPauseRule') return MottaselMaddPauseRule(goldenLen.toInt());
+    if (type == 'MottaselMaddPauseRule')
+      return MottaselMaddPauseRule(goldenLen.toInt());
     if (type == 'NormalMaddRule') return const NormalMaddRule();
     if (type == 'MushaddadGhunnahRule') {
       return MushaddadGhunnahRule.withNames(nameAr: nameAr, nameEn: nameEn);
@@ -161,7 +288,7 @@ class PhonemeGroupAlignment {
 
 class _PhoneticSpan {
   final int refStart; // absolute index in fullPhonemes
-  final int refEnd;   // absolute index in fullPhonemes
+  final int refEnd; // absolute index in fullPhonemes
   final String refText;
   final String baseChar;
   final bool isMadd;
@@ -284,7 +411,8 @@ class ErrorExplainer {
         // Filter out expected ASR noise
         wordErrors.removeWhere((e) {
           if (e.errorType == ErrorCategory.normal) {
-            return config.hideExpectedAsrNoise && _isExpectedAsrNoise(e, config);
+            return config.hideExpectedAsrNoise &&
+                _isExpectedAsrNoise(e, config);
           }
           return false;
         });
@@ -293,7 +421,8 @@ class ErrorExplainer {
         final List<ReciterError> deduplicated = [];
         final Set<String> seenKeys = {};
         for (final e in wordErrors) {
-          final key = '${e.errorType.name}_${e.expectedRule?.name.en ?? ''}_${e.expectedPh}';
+          final key =
+              '${e.errorType.name}_${e.expectedRule?.name.en ?? ''}_${e.expectedPh}';
           if (!seenKeys.contains(key)) {
             seenKeys.add(key);
             deduplicated.add(e);
@@ -335,9 +464,8 @@ class ErrorExplainer {
     // Track available Madd rules so multiple Madd spans in the same word
     // (e.g. Lazem + Aared in "الضَّآلِّينَ", or Normal + Aared in "العَٰلَمِينَ")
     // each receive their distinct rule rather than reusing the first rule.
-    final List<WordTajweedRule> remainingMaddRules = expectedWordRules
-        .where((r) => r.ruleId >= 1 && r.ruleId <= 7)
-        .toList();
+    final List<WordTajweedRule> remainingMaddRules =
+        expectedWordRules.where((r) => r.ruleId >= 1 && r.ruleId <= 7).toList();
 
     while (cursor < wordRefEnd) {
       final String ch = fullPhonemes[cursor];
@@ -577,7 +705,8 @@ class ErrorExplainer {
           ? _instantiateTajweedRule(span.matchedWordRule!, config)
           : MushaddadGhunnahRule.withNames(
               nameAr: span.baseChar == 'ن' ? 'النون المشددة' : 'الميم المشددة',
-              nameEn: span.baseChar == 'ن' ? 'Mushaddad Noon' : 'Mushaddad Meem',
+              nameEn:
+                  span.baseChar == 'ن' ? 'Mushaddad Noon' : 'Mushaddad Meem',
             );
 
       return _evaluateDurationRule(
@@ -609,7 +738,8 @@ class ErrorExplainer {
 
     if (refVowels.isNotEmpty || predVowels.isNotEmpty) {
       // Stopping on Sukoon (no vowel) on the terminal letter of the word is valid Waqf, not a Tashkeel error
-      final bool isTerminalWaqf = span.refEnd == wordRefEnd && predVowels.isEmpty;
+      final bool isTerminalWaqf =
+          span.refEnd == wordRefEnd && predVowels.isEmpty;
       if (!isTerminalWaqf && refVowels != predVowels) {
         errors.add(
           ReciterError(
@@ -643,8 +773,8 @@ class ErrorExplainer {
     final TajweedDurationStatus durStatus =
         rule.checkDurationStatus(spanDuration, speed);
 
-    // ignore: avoid_print
-    print(
+    DebugLogger.log(
+      'Tajweed',
       '🎯 [GRADING $categoryTag] Span: "${span.refText}" (${rule.name.en}) | ASR: "$predText" | Measured: ${spanDuration.toStringAsFixed(3)}s | Target: ${req.toStringAsFixed(3)}s (min: ${minReq.toStringAsFixed(3)}s) | Status: ${durStatus.name.toUpperCase()}',
     );
 
@@ -720,19 +850,39 @@ class ErrorExplainer {
     }
   }
 
-  static bool _isExpectedAsrNoise(ReciterError e, [TrackerConfig config = const TrackerConfig()]) {
-    final int refCode = e.expectedPh.isNotEmpty ? e.expectedPh.codeUnitAt(0) : 0;
-    final int asrCode = e.predictedPh.isNotEmpty ? e.predictedPh.codeUnitAt(0) : 0;
+  static bool _isExpectedAsrNoise(ReciterError e,
+      [TrackerConfig config = const TrackerConfig()]) {
+    final int refCode =
+        e.expectedPh.isNotEmpty ? e.expectedPh.codeUnitAt(0) : 0;
+    final int asrCode =
+        e.predictedPh.isNotEmpty ? e.predictedPh.codeUnitAt(0) : 0;
 
     switch (e.speechErrorType) {
       case SpeechErrorType.replace:
-        return refCode > 0 && asrCode > 0 && PhoneticCostEngine.getSubstitutionCost(asrCode, refCode, config.acousticConfusionCost) <= config.acousticConfusionCost;
+        return refCode > 0 &&
+            asrCode > 0 &&
+            PhoneticCostEngine.getSubstitutionCost(
+                    asrCode, refCode, config.acousticConfusionCost) <=
+                config.acousticConfusionCost;
       case SpeechErrorType.delete:
         // Common ASR drops (ا, ء, ل, ٱ) and Madd vowels (و, ي, ۥ, ۦ)
-        return refCode == 0x0627 || refCode == 0x0621 || refCode == 0x0644 || refCode == 0x0671 ||
-               refCode == 0x0648 || refCode == 0x064A || refCode == 0x06E5 || refCode == 0x06E6;
+        return refCode == 0x0627 ||
+            refCode == 0x0621 ||
+            refCode == 0x0644 ||
+            refCode == 0x0671 ||
+            refCode == 0x0648 ||
+            refCode == 0x064A ||
+            refCode == 0x06E5 ||
+            refCode == 0x06E6;
       case SpeechErrorType.insert:
-        return asrCode > 0 && (PhoneticCostEngine.isTashkeel(asrCode) || PhoneticCostEngine.getInsertionCost(e.predictedPh, 0, config.standardInsertionCost, config.acousticConfusionCost) <= config.acousticConfusionCost);
+        return asrCode > 0 &&
+            (PhoneticCostEngine.isTashkeel(asrCode) ||
+                PhoneticCostEngine.getInsertionCost(
+                        e.predictedPh,
+                        0,
+                        config.standardInsertionCost,
+                        config.acousticConfusionCost) <=
+                    config.acousticConfusionCost);
     }
   }
 
@@ -745,4 +895,3 @@ class ErrorExplainer {
     return 5;
   }
 }
-

@@ -1,12 +1,15 @@
-## 1.1.0
+## 1.0.4
 
-* **FEAT**: Added `LcsOmissionDetector` and `OmissionResult` using the 2-row dynamic-programming Best-Drop LCS algorithm (derived from `tasmee3-muaalem-findings` benchmark research) for precise word omission localization.
-* **FEAT**: Added `WarshHafsMapper` and bundled `assets/json/warsh-to-hafs.json` (sourced from Quranpedia) for O(1) bidirectional ayah numbering and boundary mapping between Warsh (Madani-last) and Hafs (Kufi).
-* **FEAT**: Added built-in `ModelDownloader` for background streaming on-demand model asset downloading and verification, reducing initial app binary size by ~70 MB.
-* **FEAT**: Added `phonemeFilePath` override in `QuranMetadataService` and `assetOverrideDir` in `SherpaEngine` for custom dynamic model and phoneme paths.
-* **FEAT**: Added flexible JSON schema key fallbacks in `QuranVerse` (`uthmani`, `aya_text`, `phoneme_words`).
-* **CHORE**: Added unit test suite in `test/` for omission detection, Warsh mapping, custom asset loading, and model downloading.
-* **CHORE**: Broadened `record` dependency constraint to `>=6.0.0 <8.0.0` for wider Flutter & Dart SDK compatibility.
+* **FEAT (Tajweed Engine)**: Complete overhaul of the acoustic verification engine with a strict compile-time `AcousticThreshold` matrix across all recitation speeds (`Tahqiq`/`Tartil`, `Tadweer`, `Hadr`).
+* **FEAT (Tajweed)**: Multi-Madd span matching support (e.g. Lazem + Aared in "الضَّآلِّينَ") and legitimate Aared Madd Qasr/Tawassut/Tool allowance.
+* **FEAT (Tajweed)**: Pro-rated character duration distribution for multi-phoneme ASR CTC spikes, zero-duration safety shields, and glyph equivalence matching in `PhoneticCostEngine`.
+* **FEAT (UI & DX)**: Enhanced `ReciterError` with localized message & advice helpers (`messageAr`, `messageEn`, `adviceAr`, `adviceEn`), clean JSON serialization (`toMap`/`fromMap`), while preserving full raw telemetry for custom UIs.
+* **FEAT (UI)**: Added built-in `showTajweedErrorSheet` and `TajweedErrorSheet` widget for 1-line drop-in Islamic modal bottom sheets with automatic dark/light theme adaptation.
+* **FEAT (Multi-Riwayah & Qira'at)**: Comprehensive cross-Riwayah and cross-madhhab ayah mapping via `QiraatAyahMapper`, `RiwayaRegistry`, `RiwayaDescriptor`, and `AyahMappingDownloader`, supporting all 6 canonical counting madhhabs (6,236 down to 6,204 ayahs) and 20 mutawatir rawis sourced from Quranpedia.
+* **FEAT (Omission Detection)**: Added `LcsOmissionDetector` and `OmissionResult` using the 2-row dynamic-programming Best-Drop LCS algorithm (derived from `tasmee3-muaalem-findings` benchmark research) for precise word omission localization.
+* **FEAT (Assets & Networking)**: Built-in `ModelDownloader` for streaming on-demand neural model download (~72 MB), keeping initial app download size under 25 MB.
+* **FEAT (Voice Navigation)**: Overhauled `VoiceSearchController` with real-time candidate Ayah streaming (`onSearchResult`, `currentResult`), progressive narrowing auto-jump, Mutashabihat (متشابهات) disambiguation, and `AyahSearchMatch` metadata enrichment.
+* **DOC**: Added complete production application integration guide in `doc/APP_INTEGRATION_GUIDE.md` and enriched `README.md` with drop-in vs. custom UI guides.
 ## 1.0.3
 
 * **FEAT**: Enabled official platform classification for Windows and Linux on pub.dev.

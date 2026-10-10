@@ -28,6 +28,8 @@ class TrackingScreen extends StatefulWidget {
   final bool isLoadingEngine;
   final ValueNotifier<bool>? isVoiceSearchLoading;
   final VoidCallback onClearBuffer;
+  final VoiceSearchController? voiceSearchController;
+  final void Function(int surah, int ayah)? onSelectVoiceCandidate;
 
   const TrackingScreen({
     super.key,
@@ -40,6 +42,8 @@ class TrackingScreen extends StatefulWidget {
     this.isLoadingEngine = false,
     this.isVoiceSearchLoading,
     required this.onClearBuffer,
+    this.voiceSearchController,
+    this.onSelectVoiceCandidate,
   });
 
   @override
@@ -124,9 +128,12 @@ class _TrackingScreenState extends State<TrackingScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           VoiceSearchDialog.show(
-            context, 
+            context,
             onStop: widget.onVoiceSearchToggle,
             isLoading: widget.isVoiceSearchLoading,
+            asrTextNotifier: _voiceSearchNotifier,
+            searchResultNotifier: widget.voiceSearchController?.currentResult,
+            onSelectCandidate: widget.onSelectVoiceCandidate,
           );
         }
       });

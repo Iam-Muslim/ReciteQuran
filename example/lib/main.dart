@@ -270,6 +270,7 @@ class _OrchestratorState extends State<_Orchestrator> {
       final service = QuranMetadataService();
       _repo = QuranRepository(service);
       await _repo!.loadSurahAsync(1);
+      _voiceSearchCtrl.repository = _repo;
 
       _voiceSearchCtrl.preloadIndex(); // Fire-and-forget in background
 
@@ -632,9 +633,13 @@ class _OrchestratorState extends State<_Orchestrator> {
       isLoadingEngine: _isEngineLoading,
       isVoiceSearching: _isVoiceSearching,
       voiceSearchText: _voiceSearchAsrText,
+      voiceSearchController: _voiceSearchCtrl,
       onToggleRecord: _toggleRecord,
       onVoiceSearchToggle: _toggleVoiceSearch,
       isVoiceSearchLoading: _voiceSearchCtrl.isIndexLoading,
+      onSelectVoiceCandidate: (surah, ayah) {
+        _stopVoiceSearch(precalculatedResult: AnchorResult(surah: surah, ayah: ayah));
+      },
       onClearBuffer: () {
         _engine.resetBuffer();
         _audio.clearBuffer();
