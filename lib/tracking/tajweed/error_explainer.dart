@@ -498,7 +498,7 @@ class ErrorExplainer {
     TrackerConfig config = const TrackerConfig(),
   }) {
     final List<ReciterError> errors = [];
-    final double hBase = config.recitationSpeed.harakahBaseSeconds;
+    final speed = config.recitationSpeed;
 
     // ── Phase 1: Base Character Verification (Letter Identity & Deletion) ──
     if (span.refText.isNotEmpty) {
@@ -519,7 +519,7 @@ class ErrorExplainer {
               expectedPh: span.refText,
               predictedPh: '',
               expectedRule: rule,
-              expectedDuration: rule.getRequiredDuration(hBase),
+              expectedDuration: rule.getRequiredDuration(speed),
               actualDuration: 0.0,
             ),
           );
@@ -560,30 +560,14 @@ class ErrorExplainer {
           ? _instantiateTajweedRule(span.matchedWordRule!, config)
           : _deriveMaddRuleFromLength(span.refText.length, config);
 
-      final double req = rule.getRequiredDuration(hBase);
-      final TajweedDurationStatus durStatus = rule.checkDurationStatus(spanDuration, hBase);
-
-      // ignore: avoid_print
-      print(
-        '🎯 [GRADING MADD] Span: "${span.refText}" (${rule.name.en}) | ASR: "$predText" | Measured: ${spanDuration.toStringAsFixed(3)}s | Required: ${req.toStringAsFixed(3)}s | Status: ${durStatus.name.toUpperCase()}',
+      return _evaluateDurationRule(
+        rule: rule,
+        span: span,
+        predText: predText,
+        spanDuration: spanDuration,
+        speed: speed,
+        categoryTag: 'MADD',
       );
-
-      if (durStatus == TajweedDurationStatus.underheld ||
-          durStatus == TajweedDurationStatus.overheld) {
-        errors.add(
-          ReciterError(
-            errorType: ErrorCategory.tajweed,
-            speechErrorType: SpeechErrorType.replace,
-            durationStatus: durStatus,
-            expectedPh: span.refText,
-            predictedPh: predText,
-            expectedRule: rule,
-            expectedDuration: req,
-            actualDuration: spanDuration,
-          ),
-        );
-      }
-      return errors;
     }
 
     if (span.isGhunnah) {
@@ -596,62 +580,27 @@ class ErrorExplainer {
               nameEn: span.baseChar == 'ن' ? 'Mushaddad Noon' : 'Mushaddad Meem',
             );
 
-      final double req = rule.getRequiredDuration(hBase);
-      final TajweedDurationStatus durStatus = rule.checkDurationStatus(spanDuration, hBase);
-
-      // ignore: avoid_print
-      print(
-        '🎯 [GRADING GHUNNAH] Span: "${span.refText}" (${rule.name.en}) | ASR: "$predText" | Measured: ${spanDuration.toStringAsFixed(3)}s | Required: ${req.toStringAsFixed(3)}s | Status: ${durStatus.name.toUpperCase()}',
+      return _evaluateDurationRule(
+        rule: rule,
+        span: span,
+        predText: predText,
+        spanDuration: spanDuration,
+        speed: speed,
+        categoryTag: 'GHUNNAH',
       );
-
-      if (durStatus == TajweedDurationStatus.underheld ||
-          durStatus == TajweedDurationStatus.overheld) {
-        errors.add(
-          ReciterError(
-            errorType: ErrorCategory.tajweed,
-            speechErrorType: SpeechErrorType.replace,
-            durationStatus: durStatus,
-            expectedPh: span.refText,
-            predictedPh: predText,
-            expectedRule: rule,
-            expectedDuration: req,
-            actualDuration: spanDuration,
-          ),
-        );
-      }
-      return errors;
     }
 
     if (span.isShaddah) {
-      const rule = ShaddahRule();
-      final double req = rule.getRequiredDuration(hBase);
+      if (spanDuration <= 0.0) return errors;
 
-      if (spanDuration <= 0.0) {
-        return errors;
-      }
-      final TajweedDurationStatus durStatus = rule.checkDurationStatus(spanDuration, hBase);
-
-      // ignore: avoid_print
-      print(
-        '🎯 [GRADING SHADDAH] Span: "${span.refText}" (Shaddah) | ASR: "$predText" | Measured: ${spanDuration.toStringAsFixed(3)}s | Required: ${req.toStringAsFixed(3)}s | Status: ${durStatus.name.toUpperCase()}',
+      return _evaluateDurationRule(
+        rule: const ShaddahRule(),
+        span: span,
+        predText: predText,
+        spanDuration: spanDuration,
+        speed: speed,
+        categoryTag: 'SHADDAH',
       );
-
-      if (durStatus == TajweedDurationStatus.underheld ||
-          durStatus == TajweedDurationStatus.overheld) {
-        errors.add(
-          ReciterError(
-            errorType: ErrorCategory.tajweed,
-            speechErrorType: SpeechErrorType.replace,
-            durationStatus: durStatus,
-            expectedPh: span.refText,
-            predictedPh: predText,
-            expectedRule: rule,
-            expectedDuration: req,
-            actualDuration: spanDuration,
-          ),
-        );
-      }
-      return errors;
     }
 
     // ── Phase 3: Tashkeel / Harakat Evaluation on Matching Base Consonants ──
@@ -679,6 +628,43 @@ class ErrorExplainer {
   // ───────────────────────────────────────────────────────────────────────────
   // 3.4 HELPER METHODS
   // ───────────────────────────────────────────────────────────────────────────
+
+  static List<ReciterError> _evaluateDurationRule({
+    required TajweedRule rule,
+    required _PhoneticSpan span,
+    required String predText,
+    required double spanDuration,
+    required RecitationSpeed speed,
+    required String categoryTag,
+  }) {
+    final List<ReciterError> errors = [];
+    final double req = rule.getRequiredDuration(speed);
+    final double minReq = rule.getMinAllowedDuration(speed);
+    final TajweedDurationStatus durStatus =
+        rule.checkDurationStatus(spanDuration, speed);
+
+    // ignore: avoid_print
+    print(
+      '🎯 [GRADING $categoryTag] Span: "${span.refText}" (${rule.name.en}) | ASR: "$predText" | Measured: ${spanDuration.toStringAsFixed(3)}s | Target: ${req.toStringAsFixed(3)}s (min: ${minReq.toStringAsFixed(3)}s) | Status: ${durStatus.name.toUpperCase()}',
+    );
+
+    if (durStatus == TajweedDurationStatus.underheld ||
+        durStatus == TajweedDurationStatus.overheld) {
+      errors.add(
+        ReciterError(
+          errorType: ErrorCategory.tajweed,
+          speechErrorType: SpeechErrorType.replace,
+          durationStatus: durStatus,
+          expectedPh: span.refText,
+          predictedPh: predText,
+          expectedRule: rule,
+          expectedDuration: req,
+          actualDuration: spanDuration,
+        ),
+      );
+    }
+    return errors;
+  }
 
   static TajweedRule _deriveMaddRuleFromLength(
     int len, [
