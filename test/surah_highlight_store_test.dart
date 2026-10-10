@@ -103,7 +103,7 @@ void main() {
           expectedPh: 'a',
           predictedPh: 'b',
           expectedRule: const NormalMaddRule(),
-          durationStatus: TajweedDurationStatus.defect,
+          durationStatus: TajweedDurationStatus.underheld,
           expectedDuration: 0.4,
           actualDuration: 0.1,
         ),

@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import '../../data/quran_data.dart';
+import '../ayah_search/fuzzy_search.dart';
 import '../tajweed/error_explainer.dart';
 import 'dictation_matcher.dart';
 import 'phoneme_alignment_isolate.dart';
@@ -32,6 +33,7 @@ class DictationSequencer {
   int asrCharAnchor = 0;
   int _trimmedOffset = 0;
   String? _pendingTail;
+  int _lastReanchorAttemptOffset = -1;
 
   // ── Tracking ──
   int targetWordCursor = 0;
@@ -82,6 +84,7 @@ class DictationSequencer {
     asrCharAnchor = 0;
     _trimmedOffset = 0;
     _pendingTail = null;
+    _lastReanchorAttemptOffset = -1;
 
     if (cmd.forceClear) {
       currentSegmentAsrText = '';
@@ -107,6 +110,7 @@ class DictationSequencer {
     asrCharAnchor = 0;
     _trimmedOffset = 0;
     _pendingTail = null;
+    _lastReanchorAttemptOffset = -1;
     lastMatchedPhoneme = null;
     committedGreenWords.removeWhere((w) => w >= targetWordCursor);
     committedRedWords.removeWhere((w) => w >= targetWordCursor);
@@ -120,6 +124,7 @@ class DictationSequencer {
       asrCharAnchor = 0;
       _trimmedOffset = 0;
       _pendingTail = null;
+      _lastReanchorAttemptOffset = -1;
       debugLog('🔄 New segment');
     }
     currentSegmentAsrText = cmd.asrText.substring(_trimmedOffset);
@@ -247,6 +252,7 @@ class DictationSequencer {
               asrCharAnchor += result.tokensConsumed;
               targetWordCursor = endW + 1;
               matched = true;
+              _lastReanchorAttemptOffset = -1;
 
               // ─────────────────────────────────────────────────────────────────
               // [EARLY MATCHING - TAIL RESERVATION: START]
@@ -288,7 +294,22 @@ class DictationSequencer {
         if (matched || waitingForPartial) break;
       }
 
-      if (!matched) break; // Wait for more ASR text
+      if (!matched) {
+        // [AUTO RE-ANCHOR - LOSS OF TRACKING RECOVERY: START]
+        // In Dictation mode (Tajweed OFF), recover synchrony when reciter skips ahead.
+        // If unconsumed speech exceeds the stall threshold, any local partial match
+        // on the current word was merely an accidental prefix collision.
+        if (config.enableAutoReanchor && !isTajweed) {
+          final int oldCursor = targetWordCursor;
+          _attemptAutoReanchor();
+          if (targetWordCursor != oldCursor) {
+            // Re-anchored: continue loop to immediately test & commit the new word
+            continue;
+          }
+        }
+        // [AUTO RE-ANCHOR - LOSS OF TRACKING RECOVERY: END]
+        break; // Wait for more ASR text
+      }
     }
 
     // Sliding-window head-trimming:
@@ -305,6 +326,84 @@ class DictationSequencer {
       asrCharAnchor = keepCushion;
     }
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // [AUTO RE-ANCHORING - RECOVERY HELPER: START]
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  int _findWordIndexAtPhonemeOffset(int charOffset) {
+    if (wordBoundaries.isEmpty) return 0;
+    int low = 0;
+    int high = wordBoundaries.length - 1;
+    int found = 0;
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      if (wordBoundaries[mid] <= charOffset) {
+        found = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return found.clamp(0, _wordCount);
+  }
+
+  void _attemptAutoReanchor() {
+    if (!config.enableAutoReanchor || isTajweed) return;
+    if (wordBoundaries.isEmpty || fullPhonemes.isEmpty) return;
+
+    final int unconsumedLen = currentSegmentAsrText.length - asrCharAnchor;
+    if (unconsumedLen < config.reanchorStallThreshold) return;
+
+    if (_lastReanchorAttemptOffset == asrCharAnchor) return;
+    _lastReanchorAttemptOffset = asrCharAnchor;
+
+    final String rawQuery = currentSegmentAsrText.substring(asrCharAnchor);
+    final int queryLen = min(36, rawQuery.length);
+    final String query = rawQuery.substring(0, queryLen);
+
+    final int maxDist = (queryLen * 0.22).toInt();
+    final List<FuzzyMatch> matches =
+        findNearMatches(query, fullPhonemes, maxDist);
+    if (matches.isEmpty) return;
+
+    final List<({int wordIndex, int dist})> candidateWords = [];
+    for (final m in matches) {
+      final int w = _findWordIndexAtPhonemeOffset(m.start);
+      if (w != targetWordCursor && w != targetWordCursor + 1) {
+        candidateWords.add((wordIndex: w, dist: m.dist));
+      }
+    }
+    if (candidateWords.isEmpty) return;
+
+    candidateWords.sort((a, b) => a.dist.compareTo(b.dist));
+    final best = candidateWords[0];
+
+    // Anti-Ambiguity / Mutashabihat Guard:
+    // If there is another distinct candidate with a close edit distance, suppress jump.
+    for (int i = 1; i < candidateWords.length; i++) {
+      final c = candidateWords[i];
+      if (c.wordIndex != best.wordIndex && (c.dist - best.dist) < 3) {
+        debugLog(
+          '⚠️ [RE-ANCHOR AMBIGUITY] Suppressed jump between word ${best.wordIndex} (dist ${best.dist}) and ${c.wordIndex} (dist ${c.dist})',
+        );
+        return;
+      }
+    }
+
+    debugLog(
+      '⚓ [AUTO RE-ANCHOR] Stalled at word $targetWordCursor -> Re-anchoring to word ${best.wordIndex} (dist: ${best.dist})',
+    );
+
+    targetWordCursor = best.wordIndex;
+    _pendingTail = null;
+    lastMatchedPhoneme = null;
+    committedGreenWords.removeWhere((w) => w >= targetWordCursor);
+    committedRedWords.removeWhere((w) => w >= targetWordCursor);
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
+  // [AUTO RE-ANCHORING - RECOVERY HELPER: END]
+  // ─────────────────────────────────────────────────────────────────────────────
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Commit Helpers
