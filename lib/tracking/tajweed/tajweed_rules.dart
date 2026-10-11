@@ -333,12 +333,11 @@ class LazemMaddRule extends MaddRule {
 
 class MushaddadGhunnahRule extends TajweedRule {
   const MushaddadGhunnahRule({
-    LangName name = const LangName(
+    super.name = const LangName(
       ar: "النون أو الميم المشددة",
       en: "Mushaddad Noon/Meem",
     ),
   }) : super(
-          name: name,
           goldenLen: 2,
         );
 
@@ -347,17 +346,17 @@ class MushaddadGhunnahRule extends TajweedRule {
         RecitationSpeed.fast => const AcousticThreshold(
             minSeconds: 0.180,
             targetSeconds: 0.240,
-            maxSeconds: 0.650,
+            maxSeconds: 0.850,
           ),
         RecitationSpeed.normal => const AcousticThreshold(
             minSeconds: 0.225,
             targetSeconds: 0.300,
-            maxSeconds: 0.850,
+            maxSeconds: 1.250,
           ),
         RecitationSpeed.slow => const AcousticThreshold(
             minSeconds: 0.270,
             targetSeconds: 0.360,
-            maxSeconds: 1.000,
+            maxSeconds: 1.600,
           ),
       };
 

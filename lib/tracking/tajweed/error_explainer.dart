@@ -254,8 +254,9 @@ class ReciterError {
     if (type == 'AaredMaddRule') return AaredMaddRule(goldenLen.toInt());
     if (type == 'MonfaselMaddRule') return MonfaselMaddRule(goldenLen.toInt());
     if (type == 'MottaselMaddRule') return MottaselMaddRule(goldenLen.toInt());
-    if (type == 'MottaselMaddPauseRule')
+    if (type == 'MottaselMaddPauseRule') {
       return MottaselMaddPauseRule(goldenLen.toInt());
+    }
     if (type == 'NormalMaddRule') return const NormalMaddRule();
     if (type == 'MushaddadGhunnahRule') {
       return MushaddadGhunnahRule.withNames(nameAr: nameAr, nameEn: nameEn);

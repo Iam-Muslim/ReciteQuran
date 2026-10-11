@@ -254,34 +254,33 @@ class AsrTokenProcessor {
         final double gap = peak - peakPrev;
 
         // Accurate acoustic pause detection:
-        // Prolonged vocalic sounds (Madd vowels) naturally span up to 3.5s without pausing.
-        // Geminated consonants (Shaddah) or nasal holds (Ghunnah) span up to 0.90s.
-        // Letters following a prolonged Madd or Waqf letter span up to 1.30s.
+        // Prolonged vocalic sounds (Madd vowels), geminated consonants (Shaddah),
+        // and held nasals (Ghunnah) naturally span up to 3.5s without pausing.
+        // Sounds following a prolonged continuant span up to 2.0s.
         // A true inter-ayah breath pause is a substantial silence gap (> 1.25s).
         final double pauseThreshold;
-        if (isMaddToken(_filteredTokens[k])) {
+        if (isElasticContinuant(_filteredTokens[k])) {
           pauseThreshold = 3.50;
-        } else if (isShaddahToken(_filteredTokens[k]) ||
-            isGhunnahToken(_filteredTokens[k])) {
-          pauseThreshold = 0.90;
-        } else if (isMaddToken(_filteredTokens[k - 1]) ||
+        } else if (isElasticContinuant(_filteredTokens[k - 1]) ||
             _filteredTokens[k - 1].length >= 2) {
-          pauseThreshold = 1.30;
+          pauseThreshold = 2.00;
         } else {
           pauseThreshold = 1.25;
         }
 
         if (gap > pauseThreshold) {
           // After a genuine breath pause: start is decoupled. Estimate onset before peak.
-          starts[k] = max(peakPrev + 0.04, peak - 0.16);
+          final double onsetWindow =
+              isElasticContinuant(_filteredTokens[k]) ? 0.35 : 0.16;
+          starts[k] = max(peakPrev + 0.04, peak - onsetWindow);
         } else {
           // Continuous articulation: start[k] = end[k-1] = peak[k-1]
           starts[k] = peakPrev;
         }
       }
 
-      // Duration = end - start
-      durs[k] = max(0.04, ends[k] - starts[k]);
+      // Duration = end - start, bounded by acoustic ceiling
+      durs[k] = (ends[k] - starts[k]).clamp(0.04, maxTokenDuration);
     }
 
     _tokenStarts.addAll(starts);

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:recite_quran/data/model_downloader.dart';
 
 void main() {
@@ -26,7 +27,7 @@ void main() {
     });
 
     test('isModelReady returns true when neural model file is present with sufficient size', () async {
-      final modelFile = File('${tempDir.path}/${ModelDownloader.defaultModelFileName}');
+      final modelFile = File(p.join(tempDir.path, ModelDownloader.defaultModelFileName));
 
       // Write mock file with required minimum size (> 10MB)
       await modelFile.writeAsBytes(List.filled(11 * 1024 * 1024, 0));

@@ -1,13 +1,14 @@
 <div align="center">
 
-# وَمَا أَسْأَلُكُمْ عَلَيْهِ مِنْ أَجْرٍ ۖ إِنْ أَجْرِيَ إِلَّا عَلَىٰ رَبِّ الْعَالَمِينَ
-### الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ • بِفَضْلِ اللَّهِ وَبِرَحْمَتِهِ
+
+# و ما اسالكم عليه من اجر ان اجري الا على رب العالمين
+### الحمد لله رب العالمين • بفضل الله و برحمته
 
 # ReciteQuran — اتلو القرآن
 ### Real-Time On-Device Quran Recitation Tracking, Tajweed Verification & Voice Navigation for Flutter
 
 [![License](https://img.shields.io/badge/License-For%20The%20Sake%20Of%20Allah%20Subhanu-purple.svg)](#-sacred-covenant--license-لوجه-الله-تعالى)
-[![pub package](https://img.shields.io/badge/pub.dev-recite__quran%20v1.0.4-blue.svg)](https://pub.dev/packages/recite_quran)
+[![pub package](https://img.shields.io/badge/pub.dev-recite__quran%20v1.0.5-blue.svg)](https://pub.dev/packages/recite_quran)
 [![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS%20%7C%20macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20Web-green.svg)](https://pub.dev/packages/recite_quran)
 [![Offline](https://img.shields.io/badge/Offline-100%25%20On--Device-orange.svg)](https://pub.dev/packages/recite_quran)
 
@@ -18,9 +19,9 @@
 ---
 
 > [!IMPORTANT]
-> **Scholarly & Pedagogical Covenant (تنبيه وأمانة شرعية):**
+> **Scholarly & Pedagogical Covenant:**
 > **This engine is an assistive algorithmic aid designed to facilitate revision, memorization practice, and self-testing.**
-> It **can never substitute** for learning directly from and reciting to a qualified, certified Sheikh (*المشافهة والتلقي على شيخ متقن ومجاز بالسند المتصل*). Verifying letter articulation points (*مخارج الحروف*), subtle oral characteristics (*صفات الحروف*), and sound Hifdh must always be confirmed through direct recitation to authorized scholars.
+> It **can never substitute** for learning directly from and reciting to a qualified, certified Sheikh. Verifying letter articulation points, subtle oral characteristics, and sound Hifdh must always be confirmed through direct recitation to authorized scholars.
 
 ---
 
@@ -42,7 +43,7 @@
 - [📚 Full Documentation Suite](#-full-documentation-suite)
 - [📁 Example Application](#-example-application)
 - [  Sacred Covenant & License (لوجه الله تعالى)](#️-sacred-covenant--license-لوجه-الله-تعالى)
-- [🤲 Acknowledgments](#-acknowledgments)
+- [ Acknowledgments](#-acknowledgments)
 
 ---
 
@@ -53,7 +54,7 @@ Get live word tracking running in your Flutter app in four simple steps:
 ### 1. Add Dependency
 ```yaml
 dependencies:
-  recite_quran: ^1.0.4
+  recite_quran: ^1.0.5
 ```
 
 ### 2. Download Neural Model
@@ -164,7 +165,7 @@ Designed for seamless, responsive page reading:
   >
   > The engine is protected by an **Anti-Ambiguity Guard** ($\Delta\text{dist} < 3$) and multi-stage window probing, ensuring that false jumps are suppressed even across repeated refrains (*فَبِأَيِّ آلَاءِ رَبِّكُمَا تُكَذِّبَانِ* in Surah Ar-Rahman). Enjoy the magical hands-free experience!
 
-👉 [**Deep Dive: Dictation Integration Guide →**](doc/DICTATION_SYSTEM_GUIDE.md)
+👉 [**Deep Dive: Dictation Integration Guide →**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/DICTATION_SYSTEM_GUIDE.md)
 
 ---
 
@@ -175,7 +176,7 @@ Evaluates reciter pronunciation against an acoustic matrix:
 - **Shaddah**: Measures consonant closure duration (~1.5 Harakat) and doubling.
 - **Pedagogical Feedback**: Emits bilingual explanations (Arabic & English) via `ErrorExplainer` and the pre-built `TajweedErrorSheet`.
 
-👉 [**Deep Dive: Tajweed Verification Guide →**](doc/TAJWEED_GUIDE.md)
+👉 [**Deep Dive: Tajweed Verification Guide →**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/TAJWEED_GUIDE.md)
 
 ---
 
@@ -185,7 +186,7 @@ Search across all **6,236 Ayahs** in $< 5\text{ ms}$:
 - **Prefix Stripping**: Intelligently removes *Isti'adha* and *Basmalah* if recited before the verse.
 - **Auto-Navigation**: Emits live candidate verses and navigates immediately upon detecting a unique match.
 
-👉 [**Deep Dive: Voice Search & Ayah Finder Guide →**](doc/VOICE_SEARCH_GUIDE.md)
+👉 [**Deep Dive: Voice Search & Ayah Finder Guide →**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/VOICE_SEARCH_GUIDE.md)
 
 ---
 
@@ -196,7 +197,7 @@ Build a full digital memorization companion:
 - **Omission Detection (`LcsOmissionDetector`)**: Uses the Best-Drop LCS algorithm to pinpoint skipped or forgotten words.
 - **Hint System**: Peek at the next word for 2 seconds or reveal the first letter.
 
-👉 [**Deep Dive: Memorization & Mistake Detection Guide →**](doc/MEMORIZATION_MODE_GUIDE.md)
+👉 [**Deep Dive: Memorization & Mistake Detection Guide →**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/MEMORIZATION_MODE_GUIDE.md)
 
 ---
 
@@ -206,7 +207,7 @@ Studio-grade audio recording tailored for Quranic speech:
 - **Automatic 16kHz Resampling**: Resamples hardware streams to 16,000 Hz Mono Float32 `[-1.0, 1.0]`.
 - **Audio Interruption Resilience**: Gracefully handles incoming phone calls, Siri/Google Assistant, and Bluetooth AirPods switches.
 
-👉 [**Deep Dive: Production Audio Pipeline Guide →**](doc/AUDIO_PIPELINE_GUIDE.md)
+👉 [**Deep Dive: Production Audio Pipeline Guide →**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/AUDIO_PIPELINE_GUIDE.md)
 
 ---
 
@@ -216,7 +217,7 @@ Render authentic Islamic typography in Flutter:
 - **Uthmanic Fonts**: Guidance on integrating `KFGQPC Uthman Taha Naskh` and handling diacritics and verse end markers (۝).
 - **Smooth Auto-Scroll & Page Turns**: Automatically flips pages when the reciter reaches the last word of a page.
 
-👉 [**Deep Dive: Interactive Mus'haf UI & Layout Guide →**](doc/MUSHAF_UI_GUIDE.md)
+👉 [**Deep Dive: Interactive Mus'haf UI & Layout Guide →**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/MUSHAF_UI_GUIDE.md)
 
 ---
 
@@ -226,7 +227,7 @@ First-class support for Islamic recitation traditions:
 - **6 Counting Madhhabs (مذاهب العدّ الستة)**: Resolves verse number discrepancies between Kufi (6,236), Madani (6,214), Basri (6,204), Makki (6,219), and Dimashqi (6,226).
 - **`QiraatAyahMapper`**: Maps verse indices across traditions using canonical Quranpedia datasets.
 
-👉 [**Deep Dive: Multi-Riwayah & Multi-Qira'at Guide →**](doc/RIWAYAH_GUIDE.md)
+👉 [**Deep Dive: Multi-Riwayah & Multi-Qira'at Guide →**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/RIWAYAH_GUIDE.md)
 
 ---
 
@@ -235,7 +236,7 @@ Flexible deployment options for app publishers:
 - **Strategy A (On-Demand Streaming)**: Keep your app store install size tiny (~10–15 MB) and download the 69MB model on first launch using `ModelDownloader`.
 - **Strategy B (Asset Bundling)**: Bundle the `.onnx` file directly in `assets/model/` for 100% offline, zero-network, out-of-the-box operation.
 
-👉 [**Deep Dive: Model & Assets Deployment Guide →**](doc/MODEL_DOWNLOAD_GUIDE.md)
+👉 [**Deep Dive: Model & Assets Deployment Guide →**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/MODEL_DOWNLOAD_GUIDE.md)
 
 ---
 
@@ -277,34 +278,34 @@ final examConfig = const TrackerConfig(
 final fastConfig = TrackerConfig.fast();
 ```
 
-👉 **Need quick method signatures?** [Check the API Quick Reference Cheat Sheet →](doc/API_REFERENCE.md)
+👉 **Need quick method signatures?** [Check the API Quick Reference Cheat Sheet →](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/API_REFERENCE.md)
 
 ---
 
 ## 📚 Full Documentation Suite
 
-All in-depth documentation is housed in the [`doc/`](doc/) directory:
+All in-depth documentation is housed in the [`doc/`](https://github.com/Iam-Muslim/ReciteQuran/tree/HEAD/doc) directory:
 
 | Guide | Description |
 | :--- | :--- |
-| 🗺️ [**Documentation Hub**](doc/README.md) | Master directory index and structured learning pathways |
-| 📖 [**Dictation Integration Guide**](doc/DICTATION_SYSTEM_GUIDE.md) | Early Matching, Auto Re-anchoring, 24 vs 30 phoneme threshold |
-| 🎯 [**Tajweed Verification Guide**](doc/TAJWEED_GUIDE.md) | Madd rules, Ghunnah, Shaddah, speed calibration, `ErrorExplainer` |
-| 🎙️ [**Voice Search Guide**](doc/VOICE_SEARCH_GUIDE.md) | "Recite to Navigate", 6,236 Ayah Myers bit-parallel search |
-| 🧠 [**Memorization & Mistake Detection Guide**](doc/MEMORIZATION_MODE_GUIDE.md) | Tarteel-style Hifdh testing, hidden words, `LcsOmissionDetector` |
-| 🎧 [**Production Audio Pipeline Guide**](doc/AUDIO_PIPELINE_GUIDE.md) | 16kHz Float32 streaming, bypassing DSP filters, interruptions |
-| 📜 [**Interactive Mus'haf UI & Layout Guide**](doc/MUSHAF_UI_GUIDE.md) | 15-line Madani layout, Uthmanic fonts, line centering, page turns |
-|   [**Multi-Riwayah Guide**](doc/RIWAYAH_GUIDE.md) | 20 Mutawatir Rawis, 6 counting traditions, `QiraatAyahMapper` |
-| 📦 [**Model & Assets Guide**](doc/MODEL_DOWNLOAD_GUIDE.md) | On-demand 69MB download (`ModelDownloader`) vs manual bundling |
-| 📱 [**Complete App Integration Guide**](doc/APP_INTEGRATION_GUIDE.md) | State management (Riverpod/Bloc), lifecycle, 1-file minimal app |
-| ⚡ [**API Quick Reference & Cheat Sheet**](doc/API_REFERENCE.md) | High-density method signatures, streams, configs, models |
-| 🛠️ [**Troubleshooting & FAQ**](doc/TROUBLESHOOTING_FAQ.md) | Debugging microphone silence, alignment lag, repeated refrain jumping |
+| 🗺️ [**Documentation Hub**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/README.md) | Master directory index and structured learning pathways |
+| 📖 [**Dictation Integration Guide**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/DICTATION_SYSTEM_GUIDE.md) | Early Matching, Auto Re-anchoring, 24 vs 30 phoneme threshold |
+| 🎯 [**Tajweed Verification Guide**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/TAJWEED_GUIDE.md) | Madd rules, Ghunnah, Shaddah, speed calibration, `ErrorExplainer` |
+| 🎙️ [**Voice Search Guide**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/VOICE_SEARCH_GUIDE.md) | "Recite to Navigate", 6,236 Ayah Myers bit-parallel search |
+| 🧠 [**Memorization & Mistake Detection Guide**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/MEMORIZATION_MODE_GUIDE.md) | Tarteel-style Hifdh testing, hidden words, `LcsOmissionDetector` |
+| 🎧 [**Production Audio Pipeline Guide**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/AUDIO_PIPELINE_GUIDE.md) | 16kHz Float32 streaming, bypassing DSP filters, interruptions |
+| 📜 [**Interactive Mus'haf UI & Layout Guide**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/MUSHAF_UI_GUIDE.md) | 15-line Madani layout, Uthmanic fonts, line centering, page turns |
+|   [**Multi-Riwayah Guide**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/RIWAYAH_GUIDE.md) | 20 Mutawatir Rawis, 6 counting traditions, `QiraatAyahMapper` |
+| 📦 [**Model & Assets Guide**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/MODEL_DOWNLOAD_GUIDE.md) | On-demand 69MB download (`ModelDownloader`) vs manual bundling |
+| 📱 [**Complete App Integration Guide**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/APP_INTEGRATION_GUIDE.md) | State management (Riverpod/Bloc), lifecycle, 1-file minimal app |
+| ⚡ [**API Quick Reference & Cheat Sheet**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/API_REFERENCE.md) | High-density method signatures, streams, configs, models |
+| 🛠️ [**Troubleshooting & FAQ**](https://github.com/Iam-Muslim/ReciteQuran/blob/HEAD/doc/TROUBLESHOOTING_FAQ.md) | Debugging microphone silence, alignment lag, repeated refrain jumping |
 
 ---
 
 ## 📁 Example Application
 
-A complete, production-ready sample application is included in the [`example/`](example/) directory:
+A complete, production-ready sample application is included in the [`example/`](https://github.com/Iam-Muslim/ReciteQuran/tree/HEAD/example) directory:
 
 ```bash
 cd example
@@ -315,7 +316,7 @@ flutter run -d windows   # or -d android / -d chrome
 
 ---
 
-##   Sacred Covenant & License (لوجه الله تعالى)
+## License (لوجه الله تعالى)
 
 ### **مَا أَسْأَلُكُمْ عَلَيْهِ مِنْ أَجْرٍ ۖ إِنْ أَجْرِيَ إِلَّا عَلَىٰ رَبِّ الْعَالَمِينَ**
 
@@ -324,7 +325,7 @@ flutter run -d windows   # or -d android / -d chrome
 Before viewing, using, distributing, or modifying any part of this repository, you explicitly agree to the following covenants:
 
 1. **100% Free to End Users**:
-   You may use, study, and redistribute this software or its logic **ONLY** in applications and services that are completely free of charge to all end users for the end inshaa Allah .
+   You may use, study, and redistribute this software or its logic **ONLY** in applications and services that are completely free of charge to all end users till the end inshaa Allah .
 2. **Strict Prohibition on Commercialization & Profit**:
    You are **STRICTLY FORBIDDEN** from selling this application, placing it behind paywalls, subscription models, in-app purchases, charging download fees, monetizing it with advertisements (AdMob, Unity Ads, etc.), or extracting any financial revenue from this codebase, models, or outputs.
 3. **Pass-Through**:
@@ -332,7 +333,7 @@ Before viewing, using, distributing, or modifying any part of this repository, y
 
 ---
 
-## 🤲 Acknowledgments
+##   Acknowledgments
 
 *Alhamdulillah (الحمد لله رب العالمين) — بفضل الله وبرحمته وحده*
 
@@ -346,6 +347,6 @@ Before viewing, using, distributing, or modifying any part of this repository, y
 
 <div align="center">
 
-**هَٰذَا مِنْ فَضْلِ رَبِّي — رَبَّنَا تَقَبَّلْ مِنَّا ۖ إِنَّكَ أَنتَ السَّمِيعُ الْعَلِيمُ**
+**هذا من فضل ربي - ربنا تقبل منا انك انت السميع العليم**
 
 </div>

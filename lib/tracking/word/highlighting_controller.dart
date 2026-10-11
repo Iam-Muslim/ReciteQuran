@@ -123,6 +123,7 @@ class HighlightingController extends ChangeNotifier {
   Future<void> _initIsolate() async {
     await _alignmentIsolate.start();
     _isolateStarted = true;
+    _alignmentIsolate.updateConfig(config);
 
     _wordSub = _alignmentIsolate.wordStream.listen(_onIsolateWordMatched);
 

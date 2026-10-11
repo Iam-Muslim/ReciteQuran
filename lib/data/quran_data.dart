@@ -71,10 +71,7 @@ class QuranVerse {
   List<int>? _wordMap;
 
   List<int> get wordMap {
-    if (_wordMap == null) {
-      _wordMap = List.generate(uthmaniWords.length, (i) => i);
-    }
-    return _wordMap!;
+    return _wordMap ??= List.generate(uthmaniWords.length, (i) => i);
   }
 
   QuranVerse({
@@ -327,7 +324,7 @@ class QuranMetadataService {
         );
       }
     } catch (e, stack) {
-      print('CRITICAL ERROR loading quran phonemes: $e\n$stack');
+      debugPrint('CRITICAL ERROR loading quran phonemes: $e\n$stack');
       rethrow;
     }
     return phonemeData;

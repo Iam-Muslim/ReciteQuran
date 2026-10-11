@@ -78,8 +78,8 @@ class SherpaEngine {
   Future<bool> isModelCached() async {
     try {
       final res = await _isSherpaModelCached().toDart;
-      if (res != null && res is JSBoolean) {
-        return res.toDart;
+      if (res != null && res.isA<JSBoolean>()) {
+        return (res as JSBoolean).toDart;
       }
     } catch (_) {}
     return false;

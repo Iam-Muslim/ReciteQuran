@@ -67,6 +67,7 @@ void main() async {
       if (kReleaseMode) {
         debugPrint = (String? message, {int? wrapWidth}) {
           // //logs: Send debugPrint into our custom print zone instead of the void!
+          // ignore: avoid_print
           if (message != null) print(message);
         };
       }
@@ -389,10 +390,11 @@ class _OrchestratorState extends State<_Orchestrator> {
       }
     } catch (e) {
       DebugLogger.logSimple('RECORD', '❌ ERROR: $e');
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isRecording = false;
         });
+      }
     } finally {
       _isToggling = false;
     }
@@ -492,10 +494,8 @@ class _OrchestratorState extends State<_Orchestrator> {
         });
       }
 
-      AnchorResult? result = precalculatedResult;
-      if (result == null) {
-        result = await _voiceSearchCtrl.stopSearch(_voiceSearchAsrText);
-      }
+      AnchorResult? result = precalculatedResult ??
+          await _voiceSearchCtrl.stopSearch(_voiceSearchAsrText);
       if (result != null && _ctrl != null) {
         // Automatically navigate to the found Ayah!
         await _ctrl!.setTargetSurah(result.surah);

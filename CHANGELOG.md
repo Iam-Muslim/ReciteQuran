@@ -1,3 +1,10 @@
+## 1.0.5
+
+* **FIX (Static Analysis)**: Fixed flow control block syntax in `ErrorExplainer` (`curly_braces_in_flow_control_structures`), conditional assignment and super parameter lints across engine and models.
+* **FIX (Web JS Interop)**: Updated Web runtime type check to `res.isA<JSBoolean>()` conforming to modern Dart 3 JS interop.
+* **DOC**: Updated all documentation guide links in `README.md` to absolute repository references for full link resolution on pub.dev.
+* **CHORE**: Package quality, static analysis and pana score enhancements.
+
 ## 1.0.4
 
 * **FEAT (Dictation & Loss-of-Tracking Recovery)**: Added `enableAutoReanchor` and `enableEarlyMatching` to `TrackerConfig` with Multi-Stage Window Probing and the Anti-Ambiguity Guard ($\Delta\text{dist} < 3$) preventing false jumps across repeated refrains (Surah Ar-Rahman).
